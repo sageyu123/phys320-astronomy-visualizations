@@ -1,0 +1,1522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Ptolemy's Model — PHYS 320</title>
+<style>
+  :root{
+    --background:#050607;
+    --rail:#171a1f;
+    --canvas:#0d1015;
+    --panel-deep:#151a20;
+    --panel:#202328;
+    --panel-raised:#292d32;
+    --border:#3b4046;
+    --border-strong:#4a5057;
+    --border-hover:#69717a;
+    --text:#e7e9eb;
+    --muted:#979ea6;
+    --cyan:#56c7d9;
+    --magenta:#ee65be;
+    --purple:#a99bff;
+    --amber:#ffcc66;
+    --green:#56dc72;
+    --on-accent:#0c181b;
+    --control-hover:#343a41;
+    --cyan-wash: rgb(86 199 217/10%);
+    --cyan-border: rgb(86 199 217/55%);
+    --black-shadow: rgb(0 0 0/25%);
+    --black-shadow-soft: rgb(0 0 0/13%);
+  }
+
+  *,*::before,*::after{ box-sizing:border-box; }
+  html,body{ height:100%; width:100%; overflow-x:hidden; }
+  body{
+    margin:0;
+    background:var(--background);
+    color:var(--text);
+    font-family:Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:13px;
+    line-height:1.4;
+    -webkit-font-smoothing:antialiased;
+  }
+  .math{ font-family:"STIX Two Math","Cambria Math","Times New Roman",serif; font-style:italic; }
+  .tabular{ font-variant-numeric:tabular-nums; }
+
+  button, input, select{ font-family:inherit; }
+
+  /* ---------- app shell ---------- */
+  #app{ height:100dvh; width:100%; display:grid; grid-template-rows:44px 1fr; overflow:hidden; }
+
+  .topbar{
+    grid-row:1; display:flex; align-items:center; justify-content:space-between;
+    gap:12px; height:44px; padding:0 12px;
+    background:var(--rail); border-bottom:1px solid var(--border);
+    min-width:0; overflow:hidden;
+  }
+  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; }
+  .brand-icon{ flex:0 0 auto; filter:drop-shadow(0 0 5px rgb(86 199 217/28%)); }
+  .brand-text{ display:flex; flex-direction:column; line-height:1.15; min-width:0; }
+  .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
+  .brand-sub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .tabbar{ flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:thin; }
+  .tabbar::-webkit-scrollbar{ height:4px; }
+  .tabbar::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
+
+  .segmented{
+    display:inline-flex; align-items:stretch;
+    border:1px solid var(--border); border-radius:6px; overflow:hidden;
+    background:var(--panel-raised); white-space:nowrap;
+  }
+  .segmented button{
+    appearance:none; border:none; border-right:1px solid var(--border);
+    background:transparent; color:var(--text);
+    font-size:12px; min-height:28px; padding:0 12px; cursor:pointer; white-space:nowrap;
+    transition:background .12s ease, color .12s ease;
+  }
+  .segmented button:last-child{ border-right:none; }
+  .segmented button:hover{ background:var(--control-hover); }
+  .segmented button.active{ background:var(--cyan); color:var(--on-accent); font-weight:600; }
+  .segmented button:disabled{ opacity:.45; cursor:default; }
+
+  /* ---------- body / rail / workspace ---------- */
+  .body{ grid-row:2; display:grid; grid-template-columns:300px minmax(0,1fr); min-height:0; min-width:0; }
+
+  .rail{
+    background:var(--rail); border-right:1px solid var(--border);
+    overflow-y:auto; overflow-x:hidden;
+    display:flex; flex-direction:column; gap:8px; padding:10px; min-width:0;
+  }
+
+  .workspace{
+    min-width:0; min-height:0; padding:10px;
+    display:grid; grid-template-rows:minmax(0,1fr) 190px; gap:8px;
+    background:radial-gradient(circle at 50% 45%, var(--panel-deep) 0%, var(--canvas) 60%, var(--background) 100%);
+  }
+
+  .card{
+    border-radius:6px; border:1px solid var(--border); background:var(--panel);
+    box-shadow:0 5px 18px var(--black-shadow-soft); padding:10px; flex:0 0 auto; min-width:0;
+  }
+  .eyebrow{ font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 8px; }
+
+  /* ---------- canvas panels ---------- */
+  .panel{
+    border-radius:6px; border:1px solid var(--border); background:var(--canvas);
+    box-shadow:0 5px 18px var(--black-shadow-soft);
+    display:flex; flex-direction:column; overflow:hidden; min-height:0; min-width:0;
+  }
+  .panel-header{
+    height:34px; flex:0 0 34px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 10px; background:var(--panel-deep); border-bottom:1px solid var(--border);
+    gap:10px; overflow:hidden;
+  }
+  .panel-title{ font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .panel-readouts{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); white-space:nowrap; flex:0 0 auto; }
+  .panel-readouts b{ color:var(--text); font-weight:600; }
+  .panel-body{ flex:1 1 auto; min-height:0; min-width:0; position:relative; }
+  .panel-body canvas{ display:block; width:100%; height:100%; }
+
+  .swatch{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+
+  .pill{ display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+  .pill-direct{ background:color-mix(in srgb, var(--green) 16%, var(--panel)); color:var(--green); }
+  .pill-retro{ background:color-mix(in srgb, var(--magenta) 16%, var(--panel)); color:var(--magenta); }
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    min-height:28px; padding:0 10px; color:var(--text); background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; font-size:12px; cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .btn:hover{ background:var(--control-hover); border-color:var(--border-hover); }
+  .btn:disabled{ opacity:.45; cursor:default; }
+
+  /* ---------- transport (playback) ---------- */
+  .transport{ width:100%; margin-bottom:10px; }
+  .transport button{ flex:1 1 0; }
+
+  /* ---------- slider + number fields ---------- */
+  .field{ margin-bottom:10px; }
+  .field:last-child{ margin-bottom:0; }
+  .field-label{ display:block; font-size:11px; color:var(--muted); margin-bottom:5px; }
+  .field-label .math{ color:var(--text); font-size:12px; }
+  .field-row{ display:flex; align-items:center; gap:8px; min-width:0; }
+  input[type=range]{ flex:1 1 auto; min-width:0; accent-color:var(--cyan); height:22px; background:transparent; }
+  .num-input{
+    width:64px; flex:0 0 auto; min-height:28px; background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; color:var(--text);
+    padding:4px 7px; font:inherit; font-variant-numeric:tabular-nums; text-align:right;
+  }
+  .unit{ flex:0 0 auto; font-size:11px; color:var(--muted); }
+
+  /* ---------- toggles (display card) ---------- */
+  .toggle{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    width:100%; min-height:28px; padding:0 10px; margin-bottom:6px;
+    background:var(--panel-raised); border:1px solid var(--border); border-radius:4px;
+    color:var(--text); font-size:12px; cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .toggle:last-child{ margin-bottom:0; }
+  .toggle:hover{ background:var(--control-hover); border-color:var(--border-hover); }
+  .toggle .dot{ width:8px; height:8px; border-radius:50%; background:var(--border-strong); flex:0 0 auto; }
+  .toggle[aria-pressed="true"]{ background:var(--cyan); color:var(--on-accent); border-color:var(--cyan); font-weight:600; }
+  .toggle[aria-pressed="true"] .dot{ background:var(--on-accent); }
+
+  /* ---------- about card ---------- */
+  .about h3{ font-size:12px; font-weight:700; margin:0 0 8px; }
+  .about p{ margin:0 0 8px; color:var(--text); }
+  .about p:last-child{ margin-bottom:0; }
+  .about em{ font-style:italic; }
+  .tint-cyan{ background:color-mix(in srgb, var(--cyan) 7%, var(--panel)); border-color:color-mix(in srgb, var(--cyan) 30%, var(--border)); }
+  .tint-purple{ background:color-mix(in srgb, var(--purple) 7%, var(--panel)); border-color:color-mix(in srgb, var(--purple) 30%, var(--border)); }
+  .tint-magenta{ background:color-mix(in srgb, var(--magenta) 7%, var(--panel)); border-color:color-mix(in srgb, var(--magenta) 30%, var(--border)); }
+  .tint-amber{ background:color-mix(in srgb, var(--amber) 7%, var(--panel)); border-color:color-mix(in srgb, var(--amber) 30%, var(--border)); }
+  .tint-green{ background:color-mix(in srgb, var(--green) 7%, var(--panel)); border-color:color-mix(in srgb, var(--green) 30%, var(--border)); }
+
+  :focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition:none !important; animation:none !important; }
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width:900px){
+    .body{ grid-template-columns:1fr; overflow-y:auto; }
+    .rail{
+      order:2; border-right:none; border-top:1px solid var(--border);
+      display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start;
+      overflow-y:visible;
+    }
+    .workspace{ order:1; grid-template-rows:clamp(320px, 55vw, 420px) 160px; }
+  }
+  @media (max-width:560px){
+    .rail{ grid-template-columns:1fr; }
+  }
+  @media (max-width:480px){
+    .brand-sub{ display:none; }
+    .panel-title{ font-size:11px; }
+    .panel-readouts{ font-size:10px; gap:6px; }
+    .panel-header{ padding:0 8px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <svg class="brand-icon" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+        <circle cx="10" cy="10" r="7.5" fill="none" stroke="#4a5057" stroke-width="1.4"/>
+        <circle cx="10" cy="10" r="2.6" fill="#56c7d9"/>
+        <circle cx="17" cy="10" r="1.5" fill="#56c7d9"/>
+      </svg>
+      <div class="brand-text">
+        <div class="brand-title">PTOLEMY'S MODEL</div>
+        <div class="brand-sub">PHYS 320 · Geocentric Astronomy</div>
+      </div>
+    </div>
+    <div class="tabbar">
+      <div class="segmented" id="tabBar" role="tablist" aria-label="Model device">
+        <button type="button" data-tab="eccentric" class="active" role="tab" aria-selected="true">Eccentric</button>
+        <button type="button" data-tab="epicycle" role="tab" aria-selected="false">Epicycle</button>
+        <button type="button" data-tab="equant" role="tab" aria-selected="false">Equant</button>
+        <button type="button" data-tab="full" role="tab" aria-selected="false">Full Model</button>
+        <button type="button" data-tab="compare" role="tab" aria-selected="false">Geo &#8646; Helio</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="rail">
+
+      <div class="card" id="playbackCard">
+        <div class="eyebrow">Playback</div>
+        <div class="segmented transport" id="transport">
+          <button type="button" id="btnStepBack" title="Step back 1 day">&lang; &minus;1d</button>
+          <button type="button" id="btnPlay" title="Play / pause">&#9658;</button>
+          <button type="button" id="btnStepFwd" title="Step forward 1 day">+1d &rang;</button>
+          <button type="button" id="btnReset" title="Reset (t = 0, clear traces)">&#8634;</button>
+        </div>
+        <div class="field">
+          <label class="field-label" for="speedRange">Speed</label>
+          <div class="field-row">
+            <input type="range" id="speedRange" min="1" max="100" step="1" value="25">
+            <input type="number" id="speedNum" class="num-input" min="1" max="100" step="1" value="25">
+            <span class="unit">d/s</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="paramsCard">
+        <div class="eyebrow">Parameters</div>
+        <div id="paramsFields"></div>
+      </div>
+
+      <div class="card" id="displayCard">
+        <div class="eyebrow">Display</div>
+        <button type="button" class="toggle" data-key="trace" aria-pressed="false"><span>Trace path</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="markers" id="toggleMarkers" aria-pressed="false"><span>Equal-time markers</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="sight" aria-pressed="false"><span>Line of sight</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="labels" aria-pressed="true"><span>Labels</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="vectors" id="toggleVectors" aria-pressed="true" style="display:none"><span>Show vectors</span><span class="dot"></span></button>
+      </div>
+
+      <div class="card about tint-cyan" id="aboutCard">
+        <div class="eyebrow">About this device</div>
+        <h3 id="aboutTitle"></h3>
+        <div id="aboutBody"></div>
+      </div>
+
+    </div>
+
+    <div class="workspace">
+      <div class="panel" id="mainPanel">
+        <div class="panel-header">
+          <div class="panel-title" id="mainPanelTitle">Orbital diagram — Eccentric</div>
+          <div class="panel-readouts">
+            <span>t = <b id="readoutT" class="tabular">0</b> d</span>
+            <span id="lambdaReadout">&lambda; = <b id="readoutLambda" class="tabular">0.0</b>&deg;</span>
+            <span id="ddtReadout" style="display:none">d&lambda;/dt = <b class="tabular">0.00</b> &deg;/d</span>
+            <span id="compareReadouts" style="display:none">&lambda;<sub>geo</sub> = <b id="readoutLambdaGeo" class="tabular">0.0</b>&deg; &nbsp; &lambda;<sub>helio</sub> = <b id="readoutLambdaHelio" class="tabular">0.0</b>&deg; &nbsp; &Delta;&lambda; = <b id="readoutDeltaLambda" class="tabular">0.00</b>&deg;</span>
+            <span id="motionBadge" class="pill pill-direct">DIRECT</span>
+          </div>
+        </div>
+        <div class="panel-body"><canvas id="mainCanvas"></canvas></div>
+      </div>
+
+      <div class="panel" id="stripPanel">
+        <div class="panel-header">
+          <div class="panel-title">Apparent longitude from Earth &lambda;(t)</div>
+          <div class="panel-readouts" id="stripLegend" style="display:none">
+            <span><i class="swatch" style="background:var(--amber)"></i>&lambda; geocentric</span>
+            <span><i class="swatch" style="background:var(--cyan)"></i>&lambda; heliocentric</span>
+          </div>
+        </div>
+        <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* =========================================================================
+   1. CONSTANTS / DESIGN TOKENS
+   ========================================================================= */
+const TAU = Math.PI * 2;
+const DEG = 180 / Math.PI;
+const RAD = Math.PI / 180;
+
+const PERIOD_SUN        = 365.25;  // days — solar / eccentric deferent
+const PERIOD_MARS_DEF   = 687;     // days — Mars-like deferent / equant
+const PERIOD_MARS_EPI   = 365.25;  // days — Mars-like epicycle
+
+const SUBSTEP = 0.5;              // fixed simulation sub-step, in days
+const MAX_STEPS_PER_FRAME = 60;   // caps worst-case catch-up per rendered frame
+const STRIP_SAMPLES = 900;        // target sample count spanning a full strip window
+
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+const COLORS = {};
+function loadColors(){
+  ["background","rail","canvas","panel-deep","panel","panel-raised","border",
+   "border-strong","border-hover","text","muted","cyan","magenta","purple",
+   "amber","green","on-accent"].forEach(function(n){ COLORS[n] = cssVar("--"+n); });
+}
+
+function hexToRgb(hex){
+  hex = hex.replace("#","");
+  if(hex.length===3){ hex = hex.split("").map(function(c){ return c+c; }).join(""); }
+  const num = parseInt(hex,16);
+  return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+}
+function hexAlpha(hex, a){ const c = hexToRgb(hex); return "rgba("+c.r+","+c.g+","+c.b+","+a+")"; }
+function clamp(v,lo,hi){ return Math.min(hi, Math.max(lo, v)); }
+function norm360(d){ d = d % 360; if(d<0) d += 360; return d; }
+function wrapDiff(d){ // normalize an angle difference to (-180, 180]
+  d = ((d + 180) % 360 + 360) % 360 - 180;
+  if(d <= -180) d += 360;
+  return d;
+}
+function decimalsFromStep(step){
+  const s = String(step);
+  const i = s.indexOf(".");
+  return i<0 ? 0 : (s.length - i - 1);
+}
+function fmtNum(v, step){ return Number(v).toFixed(decimalsFromStep(step)); }
+
+/* pre-rendered radial glow sprite, drawn with drawImage instead of shadowBlur
+   (shadowBlur forces a slow software compositing path on many GPUs) */
+let glowSprite = null;
+function makeGlowSprite(colorHex, cssSize){
+  const dpr = window.devicePixelRatio || 1;
+  const size = Math.max(2, Math.round(cssSize*dpr));
+  const c = document.createElement("canvas");
+  c.width = size; c.height = size;
+  const gctx = c.getContext("2d");
+  const rgb = hexToRgb(colorHex);
+  const grad = gctx.createRadialGradient(size/2,size/2,0, size/2,size/2, size/2);
+  grad.addColorStop(0, "rgba("+rgb.r+","+rgb.g+","+rgb.b+",0.85)");
+  grad.addColorStop(0.5, "rgba("+rgb.r+","+rgb.g+","+rgb.b+",0.35)");
+  grad.addColorStop(1, "rgba("+rgb.r+","+rgb.g+","+rgb.b+",0)");
+  gctx.fillStyle = grad;
+  gctx.beginPath(); gctx.arc(size/2,size/2,size/2,0,TAU); gctx.fill();
+  return { canvas:c, cssSize:cssSize };
+}
+function drawGlow(ctx, sprite, x, y, destSize){
+  const s = destSize || sprite.cssSize;
+  ctx.drawImage(sprite.canvas, x-s/2, y-s/2, s, s);
+}
+
+/* =========================================================================
+   2. MODEL  (pure functions: t [days], params -> scene descriptor)
+   ========================================================================= */
+
+// Equant radial law: point on the R=1 deferent (center at origin) reached by
+// sweeping a uniform angle phi about the equant point Q=(e,0).
+function rho(e, phi){
+  const s = e * Math.sin(phi);
+  return -e*Math.cos(phi) + Math.sqrt(Math.max(0, 1 - s*s));
+}
+
+function apparentLongitude(earth, planet){
+  return norm360(Math.atan2(planet.y - earth.y, planet.x - earth.x) * DEG);
+}
+
+function modelEccentric(t, p){
+  const e = p.e;
+  const w = TAU / PERIOD_SUN;
+  const theta = w * t;
+  const earth = { x:-e, y:0 };
+  const C = { x:0, y:0 };
+  const planet = { x:Math.cos(theta), y:Math.sin(theta) };
+  const markers = [];
+  for(let k=0;k<12;k++){
+    const a = k * 30 * RAD;
+    markers.push({ x:Math.cos(a), y:Math.sin(a) });
+  }
+  return {
+    earth: earth, C: C, Q: null, D: null,
+    planet: planet, planetLabel: "Sun",
+    deferent: { center: C, r: 1 },
+    epicycle: null,
+    markers: markers,
+    equantHand: null, equantPhi: null,
+    lambda: apparentLongitude(earth, planet),
+    worldExtent: 1 + e,
+    fastSlowLabels: { fast:{x:-1,y:0}, slow:{x:1,y:0} }
+  };
+}
+
+function modelEpicycle(t, p){
+  const r = p.r, ratio = p.ratio;
+  const wd = TAU / PERIOD_MARS_DEF;
+  const we = ratio * wd;
+  const thetaD = wd * t;
+  const thetaE = we * t;
+  const earth = { x:0, y:0 };
+  const D = { x:Math.cos(thetaD), y:Math.sin(thetaD) };
+  const planet = { x:D.x + r*Math.cos(thetaE), y:D.y + r*Math.sin(thetaE) };
+  return {
+    earth: earth, C: earth, Q: null, D: D,
+    planet: planet, planetLabel: "Mars",
+    deferent: { center: earth, r: 1 },
+    epicycle: { center: D, r: r },
+    markers: [],
+    equantHand: null, equantPhi: null,
+    lambda: apparentLongitude(earth, planet),
+    worldExtent: 1 + r
+  };
+}
+
+function modelEquant(t, p){
+  const e = p.e;
+  const w = TAU / PERIOD_MARS_DEF;
+  const phi = w * t;
+  const earth = { x:-e, y:0 };
+  const C = { x:0, y:0 };
+  const Q = { x:e, y:0 };
+  const rr = rho(e, phi);
+  const planet = { x:Q.x + rr*Math.cos(phi), y:Q.y + rr*Math.sin(phi) };
+  const markers = [];
+  for(let k=0;k<24;k++){
+    const ph = k * 15 * RAD;
+    const rk = rho(e, ph);
+    markers.push({ x:Q.x + rk*Math.cos(ph), y:Q.y + rk*Math.sin(ph) });
+  }
+  return {
+    earth: earth, C: C, Q: Q, D: null,
+    planet: planet, planetLabel: "Mars",
+    deferent: { center: C, r: 1 },
+    epicycle: null,
+    markers: markers,
+    equantHand: { from:Q, to:planet }, equantPhi: phi,
+    lambda: apparentLongitude(earth, planet),
+    worldExtent: 1 + e
+  };
+}
+
+function modelFull(t, p){
+  const e = p.e, r = p.r;
+  const wd = TAU / PERIOD_MARS_DEF;
+  const we = TAU / PERIOD_MARS_EPI;
+  const phi = wd * t;
+  const earth = { x:-e, y:0 };
+  const C = { x:0, y:0 };
+  const Q = { x:e, y:0 };
+  const rr = rho(e, phi);
+  const D = { x:Q.x + rr*Math.cos(phi), y:Q.y + rr*Math.sin(phi) };
+  const thetaE = we * t;
+  const planet = { x:D.x + r*Math.cos(thetaE), y:D.y + r*Math.sin(thetaE) };
+  return {
+    earth: earth, C: C, Q: Q, D: D,
+    planet: planet, planetLabel: "Mars",
+    deferent: { center: C, r: 1 },
+    epicycle: { center: D, r: r },
+    markers: [],
+    equantHand: { from:Q, to:D }, equantPhi: phi,
+    lambda: apparentLongitude(earth, planet),
+    worldExtent: 1 + e + r
+  };
+}
+
+// Tab 5 — exact vector equivalence of geocentric and heliocentric superior-planet models.
+// Heliocentric: Sun fixed at origin, Earth_h and Mars_h orbit it.
+// Geocentric:   Earth fixed at origin, D (epicycle center) = Mars_h, planet = Mars_h - Earth_h.
+function modelCompare(t, p){
+  const rE = p.rE;
+  const wM = TAU / PERIOD_MARS_DEF;
+  const wE = TAU / PERIOD_SUN;
+  const Mars_h = { x: Math.cos(wM*t), y: Math.sin(wM*t) };
+  const Earth_h = { x: rE*Math.cos(wE*t), y: rE*Math.sin(wE*t) };
+  const Sun_h = { x:0, y:0 };
+  const D = Mars_h;
+  const P_geo = { x: Mars_h.x - Earth_h.x, y: Mars_h.y - Earth_h.y };
+  const Sun_geo = { x: -Earth_h.x, y: -Earth_h.y };
+  const lambdaGeo = apparentLongitude({x:0,y:0}, P_geo);
+  const lambdaHelio = apparentLongitude(Earth_h, Mars_h);
+  return {
+    rE: rE,
+    Mars_h: Mars_h, Earth_h: Earth_h, Sun_h: Sun_h,
+    D: D, P_geo: P_geo, Sun_geo: Sun_geo,
+    planet: P_geo, earth: {x:0,y:0},
+    lambda: lambdaGeo, lambdaHelio: lambdaHelio,
+    worldExtent: 1 + rE
+  };
+}
+
+/* =========================================================================
+   TAB CONFIG (labels, parameters, defaults, about text)
+   ========================================================================= */
+const TAB_CONFIG = {
+  eccentric: {
+    label: "Eccentric",
+    tint: "cyan",
+    traceCap: 1200,
+    windowDays: 4 * PERIOD_SUN,
+    computeModel: modelEccentric,
+    params: [ { key:"e", label:'Eccentricity <span class="math">e</span>', min:0, max:0.40, step:0.01, def:0.20 } ],
+    displayDefaults: { trace:false, markers:true, sight:true, labels:true },
+    aboutTitle: "The Eccentric — an off-center circle",
+    aboutHTML:
+      '<p>The Sun drifts through the zodiac at an uneven rate: Hipparchus knew the seasons have unequal lengths (spring &asymp; 94.5 days, autumn &asymp; 88.5). Yet Greek astronomy demanded perfectly uniform circular motion.</p>' +
+      '<p>The eccentric keeps the motion uniform on the circle &mdash; but displaces Earth from the circle\'s center by a distance <span class="math">e</span>. Seen from Earth, the Sun then appears fastest at perigee and slowest at apogee, with no actual change of speed.</p>' +
+      '<p>Hipparchus (&sim;150 BCE) fit the Sun with <span class="math">e</span> &asymp; 1/24 of the radius; the slider here is exaggerated so the effect is easy to see.</p>'
+  },
+  epicycle: {
+    label: "Epicycle",
+    tint: "purple",
+    traceCap: 1200,
+    windowDays: 1800,
+    computeModel: modelEpicycle,
+    params: [
+      { key:"r", label:'Epicycle radius <span class="math">r/R</span>', min:0.10, max:0.90, step:0.01, def:0.66 },
+      { key:"ratio", label:'Speed ratio <span class="math">&omega;<sub>e</sub>/&omega;<sub>d</sub></span>', min:1.0, max:4.0, step:0.05, def:1.88 }
+    ],
+    displayDefaults: { trace:true, markers:false, sight:true, labels:true },
+    aboutTitle: "The Epicycle — a circle riding a circle",
+    aboutHTML:
+      '<p>Planets sometimes halt against the stars, move backward for weeks (<em>retrograde</em>), then resume &mdash; and they are brightest in mid-retrograde.</p>' +
+      '<p>In this device the planet rides a small circle (the epicycle) whose center <span class="math">D</span> rides a large circle (the deferent) around Earth. Near the epicycle\'s inner point the planet\'s epicyclic motion outruns the deferent\'s, so from Earth it appears to reverse &mdash; precisely when it is closest, hence brightest.</p>' +
+      '<p>The geometry is due to Apollonius (&sim;200 BCE). Defaults here are Mars-like: <span class="math">r/R</span> &asymp; 0.66 with periods 687&nbsp;d (deferent) and 365&nbsp;d (epicycle) &mdash; Earth\'s own orbit hidden inside the geocentric model.</p>'
+  },
+  equant: {
+    label: "Equant",
+    tint: "magenta",
+    traceCap: 1200,
+    windowDays: 4 * PERIOD_MARS_DEF,
+    computeModel: modelEquant,
+    params: [ { key:"e", label:'Equant offset <span class="math">e</span>', min:0, max:0.40, step:0.01, def:0.20 } ],
+    displayDefaults: { trace:false, markers:true, sight:true, labels:true },
+    aboutTitle: "The Equant — uniform as seen from where?",
+    aboutHTML:
+      '<p>Even an eccentric circle cannot match the planets\' uneven drift around the zodiac. Ptolemy\'s fix: let the motion be uniform neither about the center <span class="math">C</span> nor about Earth, but about the equant point <span class="math">Q</span> &mdash; Earth\'s mirror image across the center.</p>' +
+      '<p>The magenta hand sweeps at a constant rate, so the planet must genuinely travel faster along the circle on Earth\'s side and slower opposite &mdash; closely mimicking what we now call Kepler\'s equal-area law (<span class="math">Q</span> sits nearly at the ellipse\'s empty focus).</p>' +
+      '<p>Introduced in the <em>Almagest</em> (&sim;150 CE), the equant quietly abandoned uniform circular motion &mdash; the flaw Copernicus called intolerable, and set out to repair.</p>'
+  },
+  full: {
+    label: "Full Model",
+    tint: "amber",
+    traceCap: 2000,
+    windowDays: 1800,
+    computeModel: modelFull,
+    params: [
+      { key:"e", label:'Eccentricity / equant offset <span class="math">e</span>', min:0, max:0.30, step:0.01, def:0.10 },
+      { key:"r", label:'Epicycle radius <span class="math">r/R</span>', min:0.10, max:0.90, step:0.01, def:0.66 }
+    ],
+    displayDefaults: { trace:true, markers:false, sight:true, labels:true },
+    aboutTitle: "The full Ptolemaic planet",
+    aboutHTML:
+      '<p>Assemble all three devices: an eccentric deferent, an epicycle carrying the planet, and an equant driving the epicycle\'s center at a uniform angular rate.</p>' +
+      '<p>This machine reproduced planetary longitudes to about a degree &mdash; retrograde loops of different sizes at different places in the zodiac, uneven drift, and brightness variations. It worked so well it stood for 1,400 years.</p>'
+  },
+  compare: {
+    label: "Geo ⇄ Helio",
+    tint: "green",
+    traceCap: 1200,
+    windowDays: 1800,
+    computeModel: modelCompare,
+    params: [
+      { key:"rE", label:'Earth orbit radius <span class="math">r<sub>E</sub>/a<sub>M</sub></span>', min:0.10, max:0.90, step:0.01, def:0.66 }
+    ],
+    displayDefaults: { trace:true, markers:false, sight:true, labels:true, vectors:true },
+    aboutTitle: "Two models, one sky",
+    aboutHTML:
+      '<p>Why did Ptolemy\'s model work for 1,400 years? Because for a superior planet it is the heliocentric model in disguise. The planet\'s apparent position is the vector <span class="math">Earth&rarr;Mars</span> = <span class="math">Earth&rarr;Sun</span> + <span class="math">Sun&rarr;Mars</span>.</p>' +
+      '<p>Ptolemy\'s deferent vector (Earth to <span class="math">D</span>) is exactly the <span class="math">Sun&rarr;Mars</span> vector, and his epicycle vector (<span class="math">D</span> to the planet) is exactly the <span class="math">Earth&rarr;Sun</span> vector &mdash; the same two arrows, added in the opposite order. Vector addition commutes, so the direction from Earth to the planet is identical in both models at every instant &mdash; and direction was all Ptolemy could measure.</p>' +
+      '<p>Watch the epicycle arrow: it stays perfectly parallel to the Earth&rarr;Sun line, with the planet brightest and retrograde exactly at opposition &mdash; heliocentrism hiding inside the epicycle. Distinguishing the two took observations beyond angles: stellar parallax, the phases of Venus, and physical distances.</p>'
+  }
+};
+const TAB_ORDER = ["eccentric","epicycle","equant","full","compare"];
+
+/* =========================================================================
+   3. STATE
+   ========================================================================= */
+const state = {
+  tab: "eccentric",
+  t: 0,
+  playing: false,
+  speed: 25,          // days per second
+  pendingDays: 0,      // fixed-substep accumulator
+  params: {},
+  display: {},
+  trace: [],
+  stripHistory: [],   // {t, lambda} — kept monotonic in t, front-pruned to the window
+  lastStripSampleT: null,
+  lastLambda: null,
+  lastT: null,
+  dLambdaDt: 0,
+  currentModel: null,
+  stripDirty: true,
+  mainW: 0, mainH: 0, stripW: 0, stripH: 0,
+  _lastT: null, _lastDirect: null, _lastLambdaStr: null, _lastDdtStr: null,
+  _lastGeoStr: null, _lastHelioStr: null, _lastDeltaStr: null
+};
+
+function computeModel(tab, t, params){ return TAB_CONFIG[tab].computeModel(t, params); }
+
+/* ---- fixed-substep simulation step: advances t, records trace + strip sample ---- */
+function simStep(deltaDays){
+  state.t += deltaDays;
+  const m = computeModel(state.tab, state.t, state.params);
+  state.currentModel = m;
+
+  const cap = TAB_CONFIG[state.tab].traceCap;
+  state.trace.push({ x:m.planet.x, y:m.planet.y });
+  if(state.trace.length > cap) state.trace.splice(0, state.trace.length - cap);
+
+  if(state.lastLambda != null){
+    const dl = wrapDiff(m.lambda - state.lastLambda);
+    state.dLambdaDt = dl / deltaDays;
+  }
+  state.lastLambda = m.lambda;
+  state.lastT = state.t;
+
+  maybeAppendStripSample(m);
+}
+
+function maybeAppendStripSample(m){
+  const W = TAB_CONFIG[state.tab].windowDays;
+  const stripDt = W / STRIP_SAMPLES;
+  const hist = state.stripHistory;
+  if(hist.length===0 || state.t >= state.lastStripSampleT + stripDt){
+    hist.push({ t: state.t, lambda: m.lambda });
+    state.lastStripSampleT = state.t;
+    state.stripDirty = true;
+    const tMin = state.t - W;
+    while(hist.length && hist[0].t < tMin) hist.shift();
+  }
+}
+
+// Rewind: never resimulate backward. Just move t back and pop any trace/strip
+// entries that are now "in the future" — keeps both buffers monotonic with no sort.
+function rewindBy(days){
+  state.t -= days;
+  const n = Math.round(days / SUBSTEP);
+  if(state.trace.length){
+    const removeN = Math.min(n, state.trace.length);
+    state.trace.splice(state.trace.length - removeN, removeN);
+  }
+  const hist = state.stripHistory;
+  while(hist.length && hist[hist.length-1].t > state.t + 1e-9) hist.pop();
+  state.lastStripSampleT = hist.length ? hist[hist.length-1].t : null;
+
+  const m = computeModel(state.tab, state.t, state.params);
+  state.currentModel = m;
+  state.lastLambda = m.lambda;
+  state.lastT = state.t;
+  state.stripDirty = true;
+  state.pendingDays = 0;
+}
+
+function seedAtCurrentT(){
+  const m = computeModel(state.tab, state.t, state.params);
+  state.currentModel = m;
+  state.lastLambda = m.lambda;
+  state.lastT = state.t;
+  state.trace.push({ x:m.planet.x, y:m.planet.y });
+  maybeAppendStripSample(m);
+  state.stripDirty = true;
+}
+
+function resetHistory(){
+  state.trace = [];
+  state.stripHistory = [];
+  state.lastStripSampleT = null;
+  state.lastLambda = null;
+  state.lastT = null;
+  state.dLambdaDt = 0;
+  state.pendingDays = 0;
+  state.stripDirty = true;
+}
+
+function fullClearAndSeed(){
+  resetHistory();
+  seedAtCurrentT();
+}
+
+function stepForwardDays(days){
+  const n = Math.round(days / SUBSTEP);
+  for(let i=0;i<n;i++) simStep(SUBSTEP);
+  state.pendingDays = 0;
+  render();
+}
+function stepBackwardDays(days){
+  rewindBy(days);
+  render();
+}
+
+/* =========================================================================
+   4. CONTROLS WIRING
+   ========================================================================= */
+const els = {};
+function cacheEls(){
+  ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum",
+   "paramsFields","displayCard","aboutCard","aboutTitle","aboutBody",
+   "mainPanelTitle","readoutT","readoutLambda","ddtReadout","motionBadge",
+   "lambdaReadout","compareReadouts","readoutLambdaGeo","readoutLambdaHelio","readoutDeltaLambda",
+   "toggleMarkers","toggleVectors","stripLegend",
+   "mainCanvas","stripCanvas"].forEach(function(id){ els[id] = document.getElementById(id); });
+}
+
+function buildParamsCard(){
+  const container = els.paramsFields;
+  container.innerHTML = "";
+  const cfg = TAB_CONFIG[state.tab];
+  cfg.params.forEach(function(p){
+    const field = document.createElement("div");
+    field.className = "field";
+
+    const label = document.createElement("label");
+    label.className = "field-label";
+    label.innerHTML = p.label;
+
+    const row = document.createElement("div");
+    row.className = "field-row";
+
+    const range = document.createElement("input");
+    range.type = "range"; range.min = p.min; range.max = p.max; range.step = p.step;
+    range.value = state.params[p.key];
+
+    const num = document.createElement("input");
+    num.type = "number"; num.className = "num-input";
+    num.min = p.min; num.max = p.max; num.step = p.step;
+    num.value = fmtNum(state.params[p.key], p.step);
+
+    function commit(v){
+      state.params[p.key] = v;
+      fullClearAndSeed();
+      render();
+    }
+
+    range.addEventListener("input", function(){
+      const v = parseFloat(range.value);
+      num.value = fmtNum(v, p.step);
+      commit(v);
+    });
+    num.addEventListener("input", function(){
+      const v = parseFloat(num.value);
+      if(!isNaN(v)){ range.value = clamp(v, p.min, p.max); commit(v); }
+    });
+    num.addEventListener("blur", function(){
+      let v = parseFloat(num.value);
+      if(isNaN(v)) v = state.params[p.key];
+      v = clamp(v, p.min, p.max);
+      num.value = fmtNum(v, p.step);
+      range.value = v;
+      commit(v);
+    });
+
+    row.appendChild(range); row.appendChild(num);
+    field.appendChild(label); field.appendChild(row);
+    container.appendChild(field);
+  });
+}
+
+function buildAboutCard(){
+  const cfg = TAB_CONFIG[state.tab];
+  els.aboutCard.className = "card about tint-" + cfg.tint;
+  els.aboutTitle.textContent = cfg.aboutTitle;
+  els.aboutBody.innerHTML = cfg.aboutHTML;
+}
+
+function applyDisplayDefaults(){
+  state.display = Object.assign({}, TAB_CONFIG[state.tab].displayDefaults);
+  document.querySelectorAll(".toggle").forEach(function(btn){
+    const key = btn.dataset.key;
+    btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
+  });
+}
+
+function wireDisplayToggles(){
+  document.querySelectorAll(".toggle").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      const key = btn.dataset.key;
+      state.display[key] = !state.display[key];
+      btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
+      state.stripDirty = true;
+      render();
+    });
+  });
+}
+
+function wireTabs(){
+  els.tabBar.querySelectorAll("button").forEach(function(btn){
+    btn.addEventListener("click", function(){ switchTab(btn.dataset.tab); });
+  });
+}
+
+function switchTab(tabId){
+  state.tab = tabId;
+  const cfg = TAB_CONFIG[tabId];
+  state.params = {};
+  cfg.params.forEach(function(p){ state.params[p.key] = p.def; });
+
+  applyDisplayDefaults();
+  buildParamsCard();
+  buildAboutCard();
+
+  els.tabBar.querySelectorAll("button").forEach(function(b){
+    const active = b.dataset.tab === tabId;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  els.mainPanelTitle.textContent = "Orbital diagram — " + cfg.label;
+
+  const isCompare = tabId === "compare";
+  els.toggleMarkers.style.display = isCompare ? "none" : "";
+  els.toggleVectors.style.display = isCompare ? "" : "none";
+  els.stripLegend.style.display = isCompare ? "" : "none";
+  els.lambdaReadout.style.display = isCompare ? "none" : "";
+  els.compareReadouts.style.display = isCompare ? "" : "none";
+
+  // force every readout to repaint at least once on the new tab
+  state._lastT = null; state._lastDirect = null; state._lastLambdaStr = null; state._lastDdtStr = null;
+  state._lastGeoStr = null; state._lastHelioStr = null; state._lastDeltaStr = null;
+
+  fullClearAndSeed();
+  render();
+}
+
+function updatePlayButton(){
+  els.btnPlay.innerHTML = state.playing ? "&#10074;&#10074;" : "&#9658;";
+  els.btnPlay.classList.toggle("active", state.playing);
+}
+
+let rafId = null, lastFrameTs = null;
+function startLoop(){ if(rafId == null){ lastFrameTs = null; rafId = requestAnimationFrame(loop); } }
+function stopLoop(){ if(rafId != null){ cancelAnimationFrame(rafId); rafId = null; } }
+function loop(ts){
+  if(lastFrameTs == null) lastFrameTs = ts;
+  const dtSec = Math.min((ts - lastFrameTs) / 1000, 0.25);
+  lastFrameTs = ts;
+
+  state.pendingDays += state.speed * dtSec;
+  let steps = 0;
+  while(state.pendingDays >= SUBSTEP && steps < MAX_STEPS_PER_FRAME){
+    simStep(SUBSTEP);
+    state.pendingDays -= SUBSTEP;
+    steps++;
+  }
+  if(steps === MAX_STEPS_PER_FRAME) state.pendingDays = 0; // drop backlog, never spiral
+
+  render();
+  rafId = requestAnimationFrame(loop);
+}
+
+function wirePlayback(){
+  els.btnStepBack.addEventListener("click", function(){ stepBackwardDays(1); });
+  els.btnStepFwd.addEventListener("click", function(){ stepForwardDays(1); });
+  els.btnPlay.addEventListener("click", function(){
+    state.playing = !state.playing;
+    updatePlayButton();
+    if(state.playing) startLoop(); else stopLoop();
+  });
+  els.btnReset.addEventListener("click", function(){
+    state.t = 0;
+    fullClearAndSeed();
+    render();
+  });
+
+  function syncSpeed(v){
+    v = clamp(v, 1, 100);
+    state.speed = v;
+    els.speedRange.value = v;
+    els.speedNum.value = v;
+  }
+  els.speedRange.addEventListener("input", function(){ syncSpeed(parseFloat(els.speedRange.value)); });
+  els.speedNum.addEventListener("input", function(){
+    const v = parseFloat(els.speedNum.value);
+    if(!isNaN(v)) syncSpeed(v);
+  });
+  els.speedNum.addEventListener("blur", function(){
+    let v = parseFloat(els.speedNum.value);
+    if(isNaN(v)) v = state.speed;
+    syncSpeed(v);
+  });
+}
+
+/* =========================================================================
+   5. RENDERING
+   ========================================================================= */
+function outwardDir(sx, sy, cx, cy){
+  let vx = sx - cx, vy = sy - cy;
+  const len = Math.hypot(vx, vy);
+  if(len < 1e-6) return { dx:0, dy:-1 };
+  return { dx: vx/len, dy: vy/len };
+}
+
+function drawLabel(ctx, sx, sy, text, dir, opts){
+  opts = opts || {};
+  const color = opts.color || COLORS.text;
+  const italic = opts.italic ? "italic " : "";
+  const size = opts.size || 11;
+  ctx.font = italic + size + "px Inter, sans-serif";
+  ctx.fillStyle = color;
+  const offset = opts.offset || 11;
+  const x = sx + dir.dx * offset;
+  const y = sy + dir.dy * offset;
+  ctx.textAlign = dir.dx > 0.15 ? "left" : (dir.dx < -0.15 ? "right" : "center");
+  ctx.textBaseline = dir.dy > 0.15 ? "top" : (dir.dy < -0.15 ? "bottom" : "middle");
+  ctx.fillText(text, x, y);
+}
+
+function drawArrow(ctx, from, to, colorHex, alpha){
+  alpha = (alpha==null) ? 1 : alpha;
+  ctx.save();
+  ctx.strokeStyle = hexAlpha(colorHex, alpha);
+  ctx.fillStyle = hexAlpha(colorHex, alpha);
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke();
+  const ang = Math.atan2(to.y-from.y, to.x-from.x);
+  const headLen = 8, headAngle = Math.PI/7;
+  ctx.beginPath();
+  ctx.moveTo(to.x, to.y);
+  ctx.lineTo(to.x - headLen*Math.cos(ang-headAngle), to.y - headLen*Math.sin(ang-headAngle));
+  ctx.lineTo(to.x - headLen*Math.cos(ang+headAngle), to.y - headLen*Math.sin(ang+headAngle));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawExtendedDashed(ctx, A, B, colorHex, alpha, extendFrac){
+  const dx = B.x-A.x, dy = B.y-A.y;
+  const ex = B.x + dx*extendFrac, ey = B.y + dy*extendFrac;
+  ctx.save();
+  ctx.setLineDash([4,4]);
+  ctx.strokeStyle = hexAlpha(colorHex, alpha);
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(ex,ey); ctx.stroke();
+  ctx.restore();
+}
+
+// Zero-allocation bucketed trace stroke: 8 contiguous index slices, one path
+// each, adjacent slices overlap by one index so the polyline stays unbroken.
+function drawTrace(ctx, toScreen, trace){
+  const n = trace.length;
+  if(n < 2) return;
+  const buckets = 8;
+  ctx.lineWidth = 1.5;
+  for(let b=0;b<buckets;b++){
+    const i0 = Math.floor(n*b/buckets);
+    const i1 = Math.floor(n*(b+1)/buckets);
+    if(i1 <= i0) continue;
+    const startIdx = Math.max(0, i0-1);
+    const alpha = 0.05 + 0.85*((b+0.5)/buckets);
+    ctx.strokeStyle = hexAlpha(COLORS.amber, alpha);
+    ctx.beginPath();
+    let first = true;
+    for(let i=startIdx;i<i1;i++){
+      const pt = toScreen(trace[i]);
+      if(first){ ctx.moveTo(pt.x, pt.y); first = false; }
+      else { ctx.lineTo(pt.x, pt.y); }
+    }
+    ctx.stroke();
+  }
+}
+
+function drawMain(){
+  const canvas = els.mainCanvas;
+  const ctx = canvas.getContext("2d");
+  const w = state.mainW || canvas.clientWidth;
+  const h = state.mainH || canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if(w<=0 || h<=0) return;
+  if(state.tab === "compare") drawCompareMain(ctx, w, h);
+  else drawStandardMain(ctx, w, h);
+}
+
+function drawStandardMain(ctx, w, h){
+  const m = state.currentModel;
+  const disp = state.display;
+  const scale = (Math.min(w,h)/2 - 30) / m.worldExtent;
+  const cx = w/2, cy = h/2;
+  function toScreen(pt){ return { x: cx + pt.x*scale, y: cy - pt.y*scale }; }
+
+  const earthS = toScreen(m.earth);
+  const planetS = toScreen(m.planet);
+
+  // deferent circle
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = COLORS["border-strong"];
+  ctx.beginPath();
+  const defC = toScreen(m.deferent.center);
+  ctx.arc(defC.x, defC.y, m.deferent.r*scale, 0, TAU);
+  ctx.stroke();
+
+  // epicycle circle
+  if(m.epicycle){
+    ctx.strokeStyle = COLORS.purple;
+    ctx.beginPath();
+    const epiC = toScreen(m.epicycle.center);
+    ctx.arc(epiC.x, epiC.y, m.epicycle.r*scale, 0, TAU);
+    ctx.stroke();
+  }
+
+  // equal-time markers
+  if(disp.markers && m.markers.length){
+    ctx.fillStyle = hexAlpha(COLORS.text, 0.55);
+    m.markers.forEach(function(pt){
+      const s = toScreen(pt);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 2.5, 0, TAU);
+      ctx.fill();
+    });
+  }
+
+  // line of sight
+  if(disp.sight){
+    ctx.save();
+    ctx.setLineDash([4,4]);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.6);
+    ctx.beginPath();
+    ctx.moveTo(earthS.x, earthS.y);
+    ctx.lineTo(planetS.x, planetS.y);
+    ctx.stroke();
+
+    if(state.tab === "eccentric" && m.markers.length){
+      ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.2);
+      m.markers.forEach(function(pt){
+        const s = toScreen(pt);
+        ctx.beginPath();
+        ctx.moveTo(earthS.x, earthS.y);
+        ctx.lineTo(s.x, s.y);
+        ctx.stroke();
+      });
+    }
+    ctx.restore();
+  }
+
+  // trace
+  if(disp.trace) drawTrace(ctx, toScreen, state.trace);
+
+  // equant hand + mini sweep dial
+  if(m.equantHand){
+    const fromS = toScreen(m.equantHand.from);
+    const toS = toScreen(m.equantHand.to);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = COLORS.magenta;
+    ctx.beginPath();
+    ctx.moveTo(fromS.x, fromS.y);
+    ctx.lineTo(toS.x, toS.y);
+    ctx.stroke();
+
+    if(m.equantPhi != null){
+      const dialR = 0.12 * scale;
+      ctx.strokeStyle = hexAlpha(COLORS.magenta, 0.35);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(fromS.x, fromS.y, dialR, 0, TAU);
+      ctx.stroke();
+      ctx.strokeStyle = hexAlpha(COLORS.magenta, 0.5);
+      for(let k=0;k<12;k++){
+        const a = k*30*RAD;
+        const x1 = fromS.x + Math.cos(a)*dialR*0.8, y1 = fromS.y - Math.sin(a)*dialR*0.8;
+        const x2 = fromS.x + Math.cos(a)*dialR*1.15, y2 = fromS.y - Math.sin(a)*dialR*1.15;
+        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      }
+      ctx.strokeStyle = COLORS.magenta;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(fromS.x, fromS.y);
+      ctx.lineTo(fromS.x + Math.cos(m.equantPhi)*dialR, fromS.y - Math.sin(m.equantPhi)*dialR);
+      ctx.stroke();
+    }
+  }
+
+  // C marker (skip when it coincides with Earth, i.e. pure epicycle tab)
+  if(state.tab !== "epicycle"){
+    const cS = toScreen(m.C);
+    ctx.strokeStyle = COLORS.muted;
+    ctx.lineWidth = 1.5;
+    const hs = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(cS.x-hs, cS.y-hs); ctx.lineTo(cS.x+hs, cS.y+hs);
+    ctx.moveTo(cS.x-hs, cS.y+hs); ctx.lineTo(cS.x+hs, cS.y-hs);
+    ctx.stroke();
+    if(disp.labels){
+      const dir = outwardDir(cS.x, cS.y, cx, cy);
+      drawLabel(ctx, cS.x, cS.y, "C", dir, { color: COLORS.muted, size:11 });
+    }
+  }
+
+  // Q marker
+  if(m.Q){
+    const qS = toScreen(m.Q);
+    ctx.strokeStyle = COLORS.magenta;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(qS.x, qS.y, 5, 0, TAU);
+    ctx.stroke();
+    if(disp.labels){
+      const dir = outwardDir(qS.x, qS.y, cx, cy);
+      drawLabel(ctx, qS.x, qS.y, "Q", dir, { color: COLORS.magenta, size:11 });
+    }
+  }
+
+  // D marker
+  if(m.D){
+    const dS = toScreen(m.D);
+    ctx.fillStyle = COLORS.purple;
+    ctx.beginPath();
+    ctx.arc(dS.x, dS.y, 4, 0, TAU);
+    ctx.fill();
+    if(disp.labels){
+      const dir = outwardDir(dS.x, dS.y, cx, cy);
+      drawLabel(ctx, dS.x, dS.y, "D", dir, { color: COLORS.purple, size:11 });
+    }
+  }
+
+  // fast / slow labels (eccentric only)
+  if(state.tab === "eccentric" && disp.labels && m.fastSlowLabels){
+    const fS = toScreen(m.fastSlowLabels.fast);
+    const sS = toScreen(m.fastSlowLabels.slow);
+    const fDir = outwardDir(fS.x, fS.y, cx, cy);
+    const sDir = outwardDir(sS.x, sS.y, cx, cy);
+    drawLabel(ctx, fS.x, fS.y, "fast (perigee)", fDir, { color: COLORS.muted, size:10, italic:true, offset:14 });
+    drawLabel(ctx, sS.x, sS.y, "slow (apogee)", sDir, { color: COLORS.muted, size:10, italic:true, offset:14 });
+  }
+
+  // Earth
+  ctx.fillStyle = COLORS.cyan;
+  ctx.beginPath();
+  ctx.arc(earthS.x, earthS.y, 5.5, 0, TAU);
+  ctx.fill();
+  if(disp.labels){
+    const dir = outwardDir(earthS.x, earthS.y, cx, cy);
+    drawLabel(ctx, earthS.x, earthS.y, "Earth", dir, { color: COLORS.cyan, size:11 });
+  }
+
+  // planet (pre-rendered glow sprite + solid dot)
+  drawGlow(ctx, glowSprite, planetS.x, planetS.y, 26);
+  ctx.fillStyle = COLORS.amber;
+  ctx.beginPath();
+  ctx.arc(planetS.x, planetS.y, 6, 0, TAU);
+  ctx.fill();
+  if(disp.labels){
+    const dir = outwardDir(planetS.x, planetS.y, cx, cy);
+    drawLabel(ctx, planetS.x, planetS.y, m.planetLabel, dir, { color: COLORS.amber, size:11 });
+  }
+}
+
+/* ---- Tab 5: side-by-side (or stacked) geocentric / heliocentric viewports ---- */
+function drawCompareMain(ctx, w, h){
+  const m = state.currentModel;
+  const disp = state.display;
+  const sideBySide = (w/h) >= 1.1;
+  let geoCell, helioCell;
+  if(sideBySide){
+    geoCell = { x:0, y:0, w:w/2, h:h };
+    helioCell = { x:w/2, y:0, w:w/2, h:h };
+  } else {
+    geoCell = { x:0, y:0, w:w, h:h/2 };
+    helioCell = { x:0, y:h/2, w:w, h:h/2 };
+  }
+
+  ctx.strokeStyle = COLORS.border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if(sideBySide){ ctx.moveTo(w/2+0.5,0); ctx.lineTo(w/2+0.5,h); }
+  else { ctx.moveTo(0,h/2+0.5); ctx.lineTo(w,h/2+0.5); }
+  ctx.stroke();
+
+  drawGeoViewport(ctx, geoCell, m, disp);
+  drawHelioViewport(ctx, helioCell, m, disp);
+}
+
+function viewportTransform(cell, extent){
+  const topReserve = 20;
+  const availW = cell.w, availH = cell.h - topReserve;
+  const size = Math.min(availW, availH);
+  const cx = cell.x + cell.w/2;
+  const cy = cell.y + topReserve + availH/2;
+  const scale = (size/2 - 24) / extent;
+  return { cx:cx, cy:cy, scale:scale };
+}
+
+function drawViewportLabel(ctx, cell, text){
+  ctx.save();
+  ctx.font = "700 10px Inter, sans-serif";
+  ctx.fillStyle = COLORS.muted;
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  try{ ctx.letterSpacing = "0.06em"; }catch(e){ /* not universally supported; harmless no-op */ }
+  ctx.fillText(text, cell.x+8, cell.y+6);
+  ctx.restore();
+}
+
+function drawGeoViewport(ctx, cell, m, disp){
+  drawViewportLabel(ctx, cell, "GEOCENTRIC — Ptolemy");
+  const extent = 1 + m.rE;
+  const t = viewportTransform(cell, extent);
+  const cx = t.cx, cy = t.cy, scale = t.scale;
+  function toS(pt){ return { x:cx+pt.x*scale, y:cy-pt.y*scale }; }
+
+  const earthS = toS({x:0,y:0});
+  const DS = toS(m.D);
+  const PS = toS(m.P_geo);
+  const sunGeoS = toS(m.Sun_geo);
+
+  // Sun's apparent orbit around Earth
+  ctx.save();
+  ctx.setLineDash([3,3]);
+  ctx.strokeStyle = hexAlpha(COLORS.amber, 0.5);
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(earthS.x, earthS.y, m.rE*scale, 0, TAU); ctx.stroke();
+  ctx.restore();
+
+  // deferent
+  ctx.strokeStyle = COLORS["border-strong"]; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(earthS.x, earthS.y, 1*scale, 0, TAU); ctx.stroke();
+
+  // epicycle
+  ctx.strokeStyle = COLORS.purple; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(DS.x, DS.y, m.rE*scale, 0, TAU); ctx.stroke();
+
+  // line of sight — green, extended beyond the planet
+  if(disp.sight) drawExtendedDashed(ctx, earthS, PS, COLORS.green, 0.7, 0.15);
+
+  // trace of the looping geocentric path
+  if(disp.trace) drawTrace(ctx, toS, state.trace);
+
+  // the commuted vector pair
+  if(disp.vectors){
+    drawArrow(ctx, earthS, DS, COLORS.amber, 0.95);   // Sun->Mars, drawn as Earth->D
+    drawArrow(ctx, DS, PS, COLORS.cyan, 0.95);        // Earth->Sun, drawn as D->P
+  }
+
+  // Sun marker
+  ctx.fillStyle = COLORS.amber;
+  ctx.beginPath(); ctx.arc(sunGeoS.x, sunGeoS.y, 4, 0, TAU); ctx.fill();
+  if(disp.labels) drawLabel(ctx, sunGeoS.x, sunGeoS.y, "Sun", outwardDir(sunGeoS.x,sunGeoS.y,cx,cy), {color:COLORS.amber, size:10});
+
+  // D marker
+  ctx.fillStyle = COLORS.purple;
+  ctx.beginPath(); ctx.arc(DS.x, DS.y, 4, 0, TAU); ctx.fill();
+  if(disp.labels) drawLabel(ctx, DS.x, DS.y, "D", outwardDir(DS.x,DS.y,cx,cy), {color:COLORS.purple, size:10});
+
+  // Earth marker
+  ctx.fillStyle = COLORS.cyan;
+  ctx.beginPath(); ctx.arc(earthS.x, earthS.y, 5.5, 0, TAU); ctx.fill();
+  if(disp.labels) drawLabel(ctx, earthS.x, earthS.y, "Earth", outwardDir(earthS.x,earthS.y,cx,cy), {color:COLORS.cyan, size:10});
+
+  // planet marker
+  drawGlow(ctx, glowSprite, PS.x, PS.y, 22);
+  ctx.fillStyle = COLORS.amber;
+  ctx.beginPath(); ctx.arc(PS.x, PS.y, 6, 0, TAU); ctx.fill();
+  if(disp.labels) drawLabel(ctx, PS.x, PS.y, "Mars", outwardDir(PS.x,PS.y,cx,cy), {color:COLORS.amber, size:10});
+}
+
+function drawHelioViewport(ctx, cell, m, disp){
+  drawViewportLabel(ctx, cell, "HELIOCENTRIC — Copernicus");
+  const extent = 1; // Mars's orbit (radius 1) is always the largest, since rE <= 0.9
+  const t = viewportTransform(cell, extent);
+  const cx = t.cx, cy = t.cy, scale = t.scale;
+  function toS(pt){ return { x:cx+pt.x*scale, y:cy-pt.y*scale }; }
+
+  const sunS = toS({x:0,y:0});
+  const earthHS = toS(m.Earth_h);
+  const marsHS = toS(m.Mars_h);
+
+  // Earth's orbit
+  ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.4); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(sunS.x, sunS.y, m.rE*scale, 0, TAU); ctx.stroke();
+
+  // Mars's orbit
+  ctx.strokeStyle = COLORS["border-strong"]; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(sunS.x, sunS.y, 1*scale, 0, TAU); ctx.stroke();
+
+  // line of sight — green, extended beyond the planet
+  if(disp.sight) drawExtendedDashed(ctx, earthHS, marsHS, COLORS.green, 0.7, 0.15);
+
+  // the commuted vector pair
+  if(disp.vectors){
+    drawArrow(ctx, sunS, marsHS, COLORS.amber, 0.95);   // Sun->Mars
+    drawArrow(ctx, earthHS, sunS, COLORS.cyan, 0.95);   // Earth->Sun
+  }
+
+  // Sun marker — larger, stronger glow
+  drawGlow(ctx, glowSprite, sunS.x, sunS.y, 42);
+  ctx.fillStyle = COLORS.amber;
+  ctx.beginPath(); ctx.arc(sunS.x, sunS.y, 8, 0, TAU); ctx.fill();
+  if(disp.labels) drawLabel(ctx, sunS.x, sunS.y, "Sun", outwardDir(sunS.x,sunS.y,cx,cy), {color:COLORS.amber, size:10});
+
+  // Earth marker
+  ctx.fillStyle = COLORS.cyan;
+  ctx.beginPath(); ctx.arc(earthHS.x, earthHS.y, 5.5, 0, TAU); ctx.fill();
+  if(disp.labels) drawLabel(ctx, earthHS.x, earthHS.y, "Earth", outwardDir(earthHS.x,earthHS.y,cx,cy), {color:COLORS.cyan, size:10});
+
+  // Mars marker
+  drawGlow(ctx, glowSprite, marsHS.x, marsHS.y, 22);
+  ctx.fillStyle = COLORS.amber;
+  ctx.beginPath(); ctx.arc(marsHS.x, marsHS.y, 6, 0, TAU); ctx.fill();
+  if(disp.labels) drawLabel(ctx, marsHS.x, marsHS.y, "Mars", outwardDir(marsHS.x,marsHS.y,cx,cy), {color:COLORS.amber, size:10});
+}
+
+function drawStrip(){
+  const canvas = els.stripCanvas;
+  const ctx = canvas.getContext("2d");
+  const w = state.stripW || canvas.clientWidth;
+  const h = state.stripH || canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if(w<=0 || h<=0) return;
+
+  const W = TAB_CONFIG[state.tab].windowDays;
+  const padL = 32, padR = 8, padT = 8, padB = 16;
+  const plotL = padL, plotR = w - padR, plotT = padT, plotB = h - padB;
+  const plotW = Math.max(1, plotR - plotL), plotH = Math.max(1, plotB - plotT);
+
+  const tMax = state.t, tMin = state.t - W;
+  function xOf(t){ return plotL + ((t - tMin) / (tMax - tMin || 1)) * plotW; }
+  function yOf(lambda){ return plotB - (lambda/360) * plotH; }
+
+  // gridlines (y)
+  ctx.lineWidth = 1;
+  ctx.font = "9px Inter, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  [0,90,180,270,360].forEach(function(v){
+    const y = yOf(v);
+    ctx.strokeStyle = hexAlpha(COLORS.border, 0.5);
+    ctx.beginPath(); ctx.moveTo(plotL, y); ctx.lineTo(plotR, y); ctx.stroke();
+    ctx.fillStyle = COLORS.muted;
+    ctx.fillText(String(v), plotL-4, y);
+  });
+
+  // gridlines (x)
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  const xDivs = 6;
+  for(let i=0;i<=xDivs;i++){
+    const t = tMin + (W*i/xDivs);
+    const x = xOf(t);
+    ctx.strokeStyle = hexAlpha(COLORS.border, 0.35);
+    ctx.beginPath(); ctx.moveTo(x, plotT); ctx.lineTo(x, plotB); ctx.stroke();
+    ctx.fillStyle = COLORS.muted;
+    ctx.fillText(Math.round(t) + "d", x, plotB+2);
+  }
+
+  // stripHistory is already monotonic-in-t and front-pruned to the window —
+  // iterate directly, no filter/sort/copy in the hot path.
+  const pts = state.stripHistory;
+
+  // retrograde shading: merge consecutive negative-dl samples into one episode
+  // per contiguous run, so a long retrograde stretch costs one fillRect, not one per pair.
+  let labeledFirst = false;
+  let epStart = null;
+  function flushEpisode(i0, i1){
+    const x1 = xOf(pts[i0].t), x2 = xOf(pts[i1].t);
+    ctx.fillStyle = hexAlpha(COLORS.magenta, 0.12);
+    ctx.fillRect(Math.min(x1,x2), plotT, Math.max(1, Math.abs(x2-x1)), plotH);
+    if(!labeledFirst){
+      ctx.fillStyle = hexAlpha(COLORS.magenta, 0.9);
+      ctx.font = "9px Inter, sans-serif";
+      ctx.textAlign = "left"; ctx.textBaseline = "top";
+      ctx.fillText("retrograde", Math.min(x1,x2)+2, plotT+2);
+      labeledFirst = true;
+    }
+  }
+  for(let i=1;i<pts.length;i++){
+    const dl = wrapDiff(pts[i].lambda - pts[i-1].lambda);
+    if(dl < 0){
+      if(epStart === null) epStart = i-1;
+    } else if(epStart !== null){
+      flushEpisode(epStart, i-1);
+      epStart = null;
+    }
+  }
+  if(epStart !== null) flushEpisode(epStart, pts.length-1);
+
+  // primary (amber) curve — geocentric longitude, broken at 0/360 wraps
+  if(pts.length > 1){
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = COLORS.amber;
+    ctx.beginPath();
+    let started = false;
+    for(let i=0;i<pts.length;i++){
+      const x = xOf(pts[i].t), y = yOf(pts[i].lambda);
+      if(i>0 && Math.abs(pts[i].lambda - pts[i-1].lambda) > 180) started = false;
+      if(!started){ ctx.moveTo(x,y); started = true; }
+      else { ctx.lineTo(x,y); }
+    }
+    ctx.stroke();
+  }
+
+  // secondary (cyan, dashed) curve — heliocentric longitude; mathematically identical
+  // to the geocentric one by construction, drawn from the same samples to prove the overlap.
+  if(state.tab === "compare" && pts.length > 1){
+    ctx.save();
+    ctx.setLineDash([5,3]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = COLORS.cyan;
+    ctx.beginPath();
+    let started2 = false;
+    for(let i=0;i<pts.length;i++){
+      const x = xOf(pts[i].t), y = yOf(pts[i].lambda);
+      if(i>0 && Math.abs(pts[i].lambda - pts[i-1].lambda) > 180) started2 = false;
+      if(!started2){ ctx.moveTo(x,y); started2 = true; }
+      else { ctx.lineTo(x,y); }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.strokeStyle = COLORS.border;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(plotL+0.5, plotT+0.5, plotW-1, plotH-1);
+}
+
+function updateReadouts(){
+  const m = state.currentModel;
+
+  const tR = Math.round(state.t);
+  if(state._lastT !== tR){ els.readoutT.textContent = tR; state._lastT = tR; }
+
+  const direct = state.dLambdaDt >= 0;
+  if(state._lastDirect !== direct){
+    els.motionBadge.textContent = direct ? "DIRECT" : "RETROGRADE";
+    els.motionBadge.className = "pill " + (direct ? "pill-direct" : "pill-retro");
+    state._lastDirect = direct;
+  }
+
+  if(state.tab === "compare"){
+    const g = m.lambda.toFixed(1), hlo = m.lambdaHelio.toFixed(1);
+    const dl = Math.abs(wrapDiff(m.lambdaHelio - m.lambda)).toFixed(2);
+    if(state._lastGeoStr !== g){ els.readoutLambdaGeo.textContent = g; state._lastGeoStr = g; }
+    if(state._lastHelioStr !== hlo){ els.readoutLambdaHelio.textContent = hlo; state._lastHelioStr = hlo; }
+    if(state._lastDeltaStr !== dl){ els.readoutDeltaLambda.textContent = dl; state._lastDeltaStr = dl; }
+  } else {
+    const lam = m.lambda.toFixed(1);
+    if(state._lastLambdaStr !== lam){ els.readoutLambda.textContent = lam; state._lastLambdaStr = lam; }
+    if(state.tab === "equant"){
+      const ddt = state.dLambdaDt.toFixed(2);
+      if(state._lastDdtStr !== ddt){ els.ddtReadout.querySelector("b").textContent = ddt; state._lastDdtStr = ddt; }
+    }
+  }
+}
+
+function render(){
+  if(!state.currentModel) return;
+  updateReadouts();
+  drawMain();
+  if(state.stripDirty){
+    drawStrip();
+    state.stripDirty = false;
+  }
+}
+
+/* =========================================================================
+   6. RESIZE HANDLING (dimensions cached on state.* — draw functions never
+      force a synchronous layout read in the per-frame hot path)
+   ========================================================================= */
+function setupCanvasResize(canvas, onSize){
+  const ctx = canvas.getContext("2d");
+  const ro = new ResizeObserver(function(){
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.max(1, Math.round(rect.width));
+    const ch = Math.max(1, Math.round(rect.height));
+    canvas.width = cw * dpr;
+    canvas.height = ch * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if(onSize) onSize(cw, ch);
+    render();
+  });
+  ro.observe(canvas);
+}
+
+/* =========================================================================
+   7. BOOTSTRAP
+   ========================================================================= */
+function init(){
+  cacheEls();
+  loadColors();
+  glowSprite = makeGlowSprite(COLORS.amber, 48);
+
+  wireTabs();
+  wireDisplayToggles();
+  wirePlayback();
+
+  setupCanvasResize(els.mainCanvas, function(w,h){ state.mainW = w; state.mainH = h; });
+  setupCanvasResize(els.stripCanvas, function(w,h){ state.stripW = w; state.stripH = h; state.stripDirty = true; });
+
+  switchTab(state.tab); // builds params/about cards, seeds history, renders once
+  updatePlayButton();
+}
+
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+
+})();
+</script>
+</body>
+</html>

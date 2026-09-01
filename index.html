@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PHYS 320 · Astronomy Visualizations</title>
+<style>
+  :root {
+    --background:#050607;
+    --rail:#171a1f;
+    --canvas:#0d1015;
+    --panel-deep:#151a20;
+    --panel:#202328;
+    --panel-raised:#292d32;
+    --border:#3b4046;
+    --border-strong:#4a5057;
+    --border-hover:#69717a;
+    --text:#e7e9eb;
+    --muted:#979ea6;
+    --cyan:#56c7d9;
+    --magenta:#ee65be;
+    --purple:#a99bff;
+    --amber:#ffcc66;
+    --green:#56dc72;
+    --on-accent:#0c181b;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--background);
+  }
+
+  body {
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  a { color: inherit; }
+
+  :focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+
+  /* Topbar */
+  .topbar {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    background: var(--rail);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .topbar .icon {
+    display: block;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 5px rgb(86 199 217 / 28%));
+  }
+
+  .topbar .brand {
+    font-weight: 700;
+    letter-spacing: .02em;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .topbar .spacer { flex: 1; }
+
+  .topbar .meta {
+    color: var(--muted);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 480px) {
+    .topbar .meta { display: none; }
+    .topbar .brand { white-space: normal; font-size: 12px; line-height: 1.2; }
+  }
+
+  /* Page background */
+  .page-bg {
+    background: radial-gradient(circle at 50% 30%, var(--panel-deep) 0%, var(--canvas) 55%, var(--background) 100%);
+    min-height: calc(100vh - 44px);
+  }
+
+  .content {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 28px 16px;
+  }
+
+  .eyebrow {
+    text-transform: uppercase;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    color: var(--muted);
+  }
+
+  /* Intro card */
+  .intro-card {
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    box-shadow: 0 5px 18px rgb(0 0 0 / 13%);
+    padding: 20px 22px;
+    margin-bottom: 34px;
+  }
+
+  .intro-card h1 {
+    margin: 6px 0 10px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    font-size: 22px;
+    color: var(--text);
+  }
+
+  .intro-card p {
+    margin: 0;
+    max-width: 68ch;
+    color: var(--muted);
+  }
+
+  /* Section label */
+  .section-label {
+    margin: 0 0 12px;
+  }
+
+  /* Card grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 12px;
+  }
+
+  .viz-card {
+    display: block;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    box-shadow: 0 5px 18px rgb(0 0 0 / 13%);
+    padding: 16px;
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color 120ms ease, transform 120ms ease;
+  }
+
+  .viz-card:hover,
+  .viz-card:focus-visible {
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+  }
+
+  .viz-card .row-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .glyph {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--cyan) 8%, var(--panel));
+    border: 1px solid color-mix(in srgb, var(--cyan) 30%, var(--border));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .viz-card .title {
+    font-weight: 700;
+    letter-spacing: .02em;
+    font-size: 14px;
+    flex: 1;
+  }
+
+  .badge {
+    text-transform: uppercase;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    border-radius: 999px;
+    padding: 2px 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .badge-cyan {
+    background: color-mix(in srgb, var(--cyan) 12%, var(--panel));
+    border: 1px solid color-mix(in srgb, var(--cyan) 35%, var(--border));
+    color: var(--cyan);
+  }
+
+  .viz-card .desc {
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .tag {
+    background: var(--panel-raised);
+    color: var(--muted);
+    font-size: 10px;
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+
+  .placeholder-card {
+    border-radius: 6px;
+    border: 1px dashed var(--border);
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--muted);
+    padding: 24px 16px;
+    min-height: 118px;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 40px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .footer .line { margin: 4px 0; }
+
+  .footer a {
+    color: var(--cyan);
+    text-decoration: none;
+  }
+
+  .footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+  <header class="topbar">
+    <svg class="icon" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="10" cy="10" r="8" stroke="var(--cyan)" stroke-width="1" stroke-opacity="0.45"/>
+      <circle cx="10" cy="10" r="2.6" fill="var(--cyan)"/>
+      <circle cx="17.2" cy="10" r="1.4" fill="var(--cyan)"/>
+    </svg>
+    <span class="brand">PHYS 320 · ASTRONOMY VISUALIZATIONS</span>
+    <span class="spacer"></span>
+    <span class="meta">NJIT · Fall 2026</span>
+  </header>
+
+  <div class="page-bg">
+    <div class="content">
+
+      <section class="intro-card">
+        <div class="eyebrow">Course companion</div>
+        <h1>Interactive Astronomy Visualizations</h1>
+        <p>
+          A growing set of interactive pages built for NJIT PHYS 320 (Fall 2026) to accompany
+          lecture material on the history and mechanics of astronomical models. Each visualization
+          opens as a standalone page that runs in any modern browser — no installation required, and
+          every page works fully offline once loaded.
+        </p>
+      </section>
+
+      <div class="eyebrow section-label">Visualizations</div>
+      <div class="grid">
+
+        <a class="viz-card" href="html/ptolemy_model.html">
+          <div class="row-top">
+            <span class="glyph" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="16" cy="17" r="10" stroke="var(--cyan)" stroke-width="1" opacity="0.7"/>
+                <circle cx="25" cy="11" r="4" stroke="var(--cyan)" stroke-width="1"/>
+                <circle cx="27.6" cy="13.5" r="1.3" fill="var(--cyan)"/>
+              </svg>
+            </span>
+            <span class="title">Ptolemy's Model</span>
+            <span class="badge badge-cyan">Interactive</span>
+          </div>
+          <p class="desc">
+            The three devices of Greek geocentric astronomy — eccentric, epicycle, and equant —
+            animated with Mars-like parameters. Includes a side-by-side comparison showing why the
+            geocentric and heliocentric models predict exactly the same apparent motion.
+          </p>
+          <div class="tags">
+            <span class="tag">Eccentric</span>
+            <span class="tag">Epicycle</span>
+            <span class="tag">Equant</span>
+            <span class="tag">Geo ⇄ Helio</span>
+          </div>
+        </a>
+
+        <div class="placeholder-card">More visualizations will appear here through the semester.</div>
+
+      </div>
+
+      <footer class="footer">
+        <div class="line">PHYS 320 · Astronomy · NJIT · Fall 2026 — Sijie Yu</div>
+        <div class="line">Spotted an error? Corrections are welcome — please open an issue on the <a href="https://github.com/sageyu123/phys320-astronomy-visualizations">GitHub repository</a>.</div>
+      </footer>
+
+    </div>
+  </div>
+
+</body>
+</html>
