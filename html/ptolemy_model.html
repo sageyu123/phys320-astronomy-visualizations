@@ -545,13 +545,23 @@ function modelFull(t, p){
 }
 
 // Tab 5 — exact vector equivalence of geocentric and heliocentric superior-planet models.
-// Heliocentric: Sun fixed at origin, Earth_h and Mars_h orbit it.
+// Heliocentric: Sun fixed at origin, Earth_h orbits it (circular -- Ptolemy's epicycle was
+// uniform), Mars_h orbits it via an eccentric deferent + equant (Cprime, Qprime) -- the SAME
+// equant machinery as the standalone Equant tab, reused here via rho(). At e=0 this reduces
+// algebraically to the plain circle Mars_h=(cos(wM t),sin(wM t)), identical to before.
 // Geocentric:   Earth fixed at origin, D (epicycle center) = Mars_h, planet = Mars_h - Earth_h.
 function modelCompare(t, p){
   const rE = p.rE;
+  const e = p.e;
   const wM = TAU / PERIOD_MARS_DEF;
   const wE = TAU / PERIOD_SUN;
-  const Mars_h = { x: Math.cos(wM*t), y: Math.sin(wM*t) };
+
+  const Cprime = { x: e, y: 0 };
+  const Qprime = { x: 2*e, y: 0 };
+  const equantPhi = wM * t;
+  const rr = rho(e, equantPhi);
+  const Mars_h = { x: Qprime.x + rr*Math.cos(equantPhi), y: Qprime.y + rr*Math.sin(equantPhi) };
+
   const Earth_h = { x: rE*Math.cos(wE*t), y: rE*Math.sin(wE*t) };
   const Sun_h = { x:0, y:0 };
   const D = Mars_h;
@@ -560,13 +570,14 @@ function modelCompare(t, p){
   const lambdaGeo = apparentLongitude({x:0,y:0}, P_geo);
   const lambdaHelio = apparentLongitude(Earth_h, Mars_h);
   return {
-    rE: rE,
+    rE: rE, e: e,
+    Cprime: Cprime, Qprime: Qprime, equantPhi: equantPhi,
     Mars_h: Mars_h, Earth_h: Earth_h, Sun_h: Sun_h,
     D: D, P_geo: P_geo, Sun_geo: Sun_geo,
     planet: P_geo, earth: {x:0,y:0},
     lambda: lambdaGeo, lambdaHelio: lambdaHelio,
     orbitY: Mars_h.y, // same value used for both panels -- beta_geo === beta_helio exactly
-    worldExtent: 1 + rE
+    worldExtent: 1 + e + rE
   };
 }
 
@@ -647,14 +658,16 @@ const TAB_CONFIG = {
     inclinationDeg: 1.85,
     computeModel: modelCompare,
     params: [
-      { key:"rE", label:'Earth orbit radius <span class="math">r<sub>E</sub>/a<sub>M</sub></span>', min:0.10, max:0.90, step:0.01, def:0.66 }
+      { key:"rE", label:'Earth orbit radius <span class="math">r<sub>E</sub>/a<sub>M</sub></span>', min:0.10, max:0.90, step:0.01, def:0.66 },
+      { key:"e", label:'Orbit eccentricity <span class="math">e</span>', min:0, max:0.25, step:0.01, def:0.10 }
     ],
     displayDefaults: { trace:true, markers:false, sight:true, labels:true, vectors:true },
     aboutTitle: "Two models, one sky",
     aboutHTML:
       '<p>Why did Ptolemy\'s model work for 1,400 years? Because for a superior planet it is the heliocentric model in disguise. The planet\'s apparent position is the vector <span class="math">Earth&rarr;Mars</span> = <span class="math">Earth&rarr;Sun</span> + <span class="math">Sun&rarr;Mars</span>.</p>' +
       '<p>Ptolemy\'s deferent vector (Earth to <span class="math">D</span>) is exactly the <span class="math">Sun&rarr;Mars</span> vector, and his epicycle vector (<span class="math">D</span> to the planet) is exactly the <span class="math">Earth&rarr;Sun</span> vector &mdash; the same two arrows, added in the opposite order. Vector addition commutes, so the direction from Earth to the planet is identical in both models at every instant &mdash; and direction was all Ptolemy could measure.</p>' +
-      '<p>Watch the epicycle arrow: it stays perfectly parallel to the Earth&rarr;Sun line, with the planet brightest and retrograde exactly at opposition &mdash; heliocentrism hiding inside the epicycle. Distinguishing the two took observations beyond angles: stellar parallax, the phases of Venus, and physical distances.</p>'
+      '<p>Watch the epicycle arrow: it stays perfectly parallel to the Earth&rarr;Sun line, with the planet brightest and retrograde exactly at opposition &mdash; heliocentrism hiding inside the epicycle. Distinguishing the two took observations beyond angles: stellar parallax, the phases of Venus, and physical distances.</p>' +
+      '<p>And where does the equant live in this picture? Raise the eccentricity <span class="math">e</span>: Ptolemy\'s off-center deferent and equant reappear unchanged inside the heliocentric panel &mdash; as Mars\'s own eccentric orbit around the Sun, with <span class="math">Q&prime;</span> the point about which Mars sweeps at a uniform rate: very nearly the empty focus of its elliptical orbit. The equant was never really about Earth &mdash; it is a circle-based approximation to Kepler\'s second law, found fourteen centuries early. The two magenta hands sweep in perfect lockstep because they are one construction, viewed from two vantage points.</p>'
   }
 };
 const TAB_ORDER = ["eccentric","epicycle","equant","full","compare"];
@@ -1385,15 +1398,19 @@ function drawViewportLabel(ctx, cell, text){
 
 function drawGeoViewport(ctx, cell, m, disp){
   drawViewportLabel(ctx, cell, "GEOCENTRIC — Ptolemy");
-  const extent = 1 + m.rE;
+  const extent = 1 + m.e + m.rE;
   const t = viewportTransform(cell, extent);
   const cx = t.cx, cy = t.cy, scale = t.scale;
   function toS(pt){ return { x:cx+pt.x*scale, y:cy-pt.y*scale }; }
 
+  const showEquant = m.e >= 0.005;
   const earthS = toS({x:0,y:0});
   const DS = toS(m.D);
   const PS = toS(m.P_geo);
   const sunGeoS = toS(m.Sun_geo);
+  const CgS = toS(m.Cprime);   // C_geo == Cprime's (x,y), read relative to Earth's local origin
+  const QgS = toS(m.Qprime);   // Q_geo == Qprime's (x,y), read relative to Earth's local origin
+  const deferentCenterS = showEquant ? CgS : earthS;
 
   // Sun's apparent orbit around Earth
   ctx.save();
@@ -1403,9 +1420,9 @@ function drawGeoViewport(ctx, cell, m, disp){
   ctx.beginPath(); ctx.arc(earthS.x, earthS.y, m.rE*scale, 0, TAU); ctx.stroke();
   ctx.restore();
 
-  // deferent
+  // deferent -- centered on Earth normally; on C_geo once eccentricity is visible
   ctx.strokeStyle = COLORS["border-strong"]; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(earthS.x, earthS.y, 1*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(deferentCenterS.x, deferentCenterS.y, 1*scale, 0, TAU); ctx.stroke();
 
   // epicycle
   ctx.strokeStyle = COLORS.purple; ctx.lineWidth = 1.5;
@@ -1421,6 +1438,25 @@ function drawGeoViewport(ctx, cell, m, disp){
   if(disp.vectors){
     drawArrow(ctx, earthS, DS, COLORS.amber, 0.95);   // Sun->Mars, drawn as Earth->D
     drawArrow(ctx, DS, PS, COLORS.cyan, 0.95);        // Earth->Sun, drawn as D->P
+  }
+
+  // equant hand + C/Q markers -- hidden until eccentricity is visible (matches the plain
+  // circular version exactly at e=0)
+  if(showEquant){
+    ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(QgS.x, QgS.y); ctx.lineTo(DS.x, DS.y); ctx.stroke();
+
+    ctx.strokeStyle = COLORS.muted; ctx.lineWidth = 1.5;
+    const hs = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(CgS.x-hs, CgS.y-hs); ctx.lineTo(CgS.x+hs, CgS.y+hs);
+    ctx.moveTo(CgS.x-hs, CgS.y+hs); ctx.lineTo(CgS.x+hs, CgS.y-hs);
+    ctx.stroke();
+    if(disp.labels) drawLabel(ctx, CgS.x, CgS.y, "C", outwardDir(CgS.x,CgS.y,cx,cy), {color:COLORS.muted, size:10});
+
+    ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(QgS.x, QgS.y, 5, 0, TAU); ctx.stroke();
+    if(disp.labels) drawLabel(ctx, QgS.x, QgS.y, "Q equant", outwardDir(QgS.x,QgS.y,cx,cy), {color:COLORS.magenta, size:10});
   }
 
   // Sun marker
@@ -1447,22 +1483,26 @@ function drawGeoViewport(ctx, cell, m, disp){
 
 function drawHelioViewport(ctx, cell, m, disp){
   drawViewportLabel(ctx, cell, "HELIOCENTRIC — Copernicus");
-  const extent = 1; // Mars's orbit (radius 1) is always the largest, since rE <= 0.9
+  const extent = Math.max(1 + m.e, m.rE); // Mars's orbit (radius 1, centered on Cprime) vs Earth's
   const t = viewportTransform(cell, extent);
   const cx = t.cx, cy = t.cy, scale = t.scale;
   function toS(pt){ return { x:cx+pt.x*scale, y:cy-pt.y*scale }; }
 
+  const showEquant = m.e >= 0.005;
   const sunS = toS({x:0,y:0});
   const earthHS = toS(m.Earth_h);
   const marsHS = toS(m.Mars_h);
+  const CpS = toS(m.Cprime);
+  const QpS = toS(m.Qprime);
+  const marsOrbitCenterS = showEquant ? CpS : sunS;
 
   // Earth's orbit
   ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.4); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(sunS.x, sunS.y, m.rE*scale, 0, TAU); ctx.stroke();
 
-  // Mars's orbit
+  // Mars's orbit -- centered on the Sun normally; on C' once eccentricity is visible
   ctx.strokeStyle = COLORS["border-strong"]; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(sunS.x, sunS.y, 1*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(marsOrbitCenterS.x, marsOrbitCenterS.y, 1*scale, 0, TAU); ctx.stroke();
 
   // line of sight — green, extended beyond the planet
   if(disp.sight) drawExtendedDashed(ctx, earthHS, marsHS, COLORS.green, 0.7, 0.15);
@@ -1471,6 +1511,24 @@ function drawHelioViewport(ctx, cell, m, disp){
   if(disp.vectors){
     drawArrow(ctx, sunS, marsHS, COLORS.amber, 0.95);   // Sun->Mars
     drawArrow(ctx, earthHS, sunS, COLORS.cyan, 0.95);   // Earth->Sun
+  }
+
+  // equant hand + C'/Q' markers -- hidden until eccentricity is visible
+  if(showEquant){
+    ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(QpS.x, QpS.y); ctx.lineTo(marsHS.x, marsHS.y); ctx.stroke();
+
+    ctx.strokeStyle = COLORS.muted; ctx.lineWidth = 1.5;
+    const hs = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(CpS.x-hs, CpS.y-hs); ctx.lineTo(CpS.x+hs, CpS.y+hs);
+    ctx.moveTo(CpS.x-hs, CpS.y+hs); ctx.lineTo(CpS.x+hs, CpS.y-hs);
+    ctx.stroke();
+    if(disp.labels) drawLabel(ctx, CpS.x, CpS.y, "C′", outwardDir(CpS.x,CpS.y,cx,cy), {color:COLORS.muted, size:10});
+
+    ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(QpS.x, QpS.y, 5, 0, TAU); ctx.stroke();
+    if(disp.labels) drawLabel(ctx, QpS.x, QpS.y, "Q′ (empty focus)", outwardDir(QpS.x,QpS.y,cx,cy), {color:COLORS.magenta, size:10});
   }
 
   // Sun marker — larger, stronger glow
