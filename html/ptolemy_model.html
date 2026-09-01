@@ -83,7 +83,11 @@
   .segmented button:disabled{ opacity:.45; cursor:default; }
 
   /* ---------- body / rail / workspace ---------- */
-  .body{ grid-row:2; display:grid; grid-template-columns:300px minmax(0,1fr); min-height:0; min-width:0; }
+  .body{
+    grid-row:2; display:grid;
+    grid-template-columns: var(--rail-w, 300px) 6px minmax(0,1fr);
+    min-height:0; min-width:0;
+  }
 
   .rail{
     background:var(--rail); border-right:1px solid var(--border);
@@ -93,9 +97,23 @@
 
   .workspace{
     min-width:0; min-height:0; padding:10px;
-    display:grid; grid-template-rows:minmax(0,1fr) 190px; gap:8px;
+    display:grid; grid-template-rows:minmax(0,1fr) 6px var(--strip-h, 190px); gap:0;
     background:radial-gradient(circle at 50% 45%, var(--panel-deep) 0%, var(--canvas) 60%, var(--background) 100%);
   }
+
+  /* ---------- movable splitters ---------- */
+  .splitter{ position:relative; background:transparent; z-index:2; }
+  .splitter::after{
+    content:""; position:absolute; background:var(--cyan); opacity:0; border-radius:2px;
+    transition:opacity .12s ease;
+  }
+  .splitter:hover::after, .splitter.dragging::after, .splitter:focus-visible::after{ opacity:.4; }
+  .v-splitter{ cursor:col-resize; }
+  .v-splitter::after{ top:0; bottom:0; left:2px; width:2px; }
+  .h-splitter{ cursor:row-resize; margin:8px 0; }
+  .h-splitter::after{ left:0; right:0; top:2px; height:2px; }
+  body.resizing-col, body.resizing-col *{ cursor:col-resize !important; user-select:none !important; }
+  body.resizing-row, body.resizing-row *{ cursor:row-resize !important; user-select:none !important; }
 
   .card{
     border-radius:6px; border:1px solid var(--border); background:var(--panel);
@@ -193,7 +211,8 @@
       display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start;
       overflow-y:visible;
     }
-    .workspace{ order:1; grid-template-rows:clamp(320px, 55vw, 420px) 160px; }
+    .workspace{ order:1; grid-template-rows:clamp(320px, 55vw, 420px) 160px; gap:8px; }
+    .splitter{ display:none; }
   }
   @media (max-width:560px){
     .rail{ grid-template-columns:1fr; }
@@ -275,6 +294,8 @@
 
     </div>
 
+    <div class="splitter v-splitter" id="vSplitter" tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize sidebar width"></div>
+
     <div class="workspace">
       <div class="panel" id="mainPanel">
         <div class="panel-header">
@@ -290,12 +311,18 @@
         <div class="panel-body"><canvas id="mainCanvas"></canvas></div>
       </div>
 
+      <div class="splitter h-splitter" id="hSplitter" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="Resize strip panel height"></div>
+
       <div class="panel" id="stripPanel">
         <div class="panel-header">
           <div class="panel-title">Apparent longitude from Earth &lambda;(t)</div>
           <div class="panel-readouts" id="stripLegend" style="display:none">
             <span><i class="swatch" style="background:var(--amber)"></i>&lambda; geocentric</span>
             <span><i class="swatch" style="background:var(--cyan)"></i>&lambda; heliocentric</span>
+          </div>
+          <div class="segmented" id="stripModeToggle" role="tablist" aria-label="Strip panel mode">
+            <button type="button" data-mode="plot" class="active" role="tab" aria-selected="true">&lambda;&ndash;t plot</button>
+            <button type="button" data-mode="atlas" role="tab" aria-selected="false">Sky atlas</button>
           </div>
         </div>
         <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
@@ -319,9 +346,9 @@ const PERIOD_SUN        = 365.25;  // days — solar / eccentric deferent
 const PERIOD_MARS_DEF   = 687;     // days — Mars-like deferent / equant
 const PERIOD_MARS_EPI   = 365.25;  // days — Mars-like epicycle
 
-const SUBSTEP = 0.5;              // fixed simulation sub-step, in days
-const MAX_STEPS_PER_FRAME = 60;   // caps worst-case catch-up per rendered frame
-const STRIP_SAMPLES = 900;        // target sample count spanning a full strip window
+const TRACE_DT = 0.5;              // fixed trace-sampling grid spacing, in days
+const GRID_CAP = 200;              // per-frame cap on grid crossings recorded (trace and strip, independently)
+const STRIP_SAMPLES = 900;         // target sample count spanning a full strip window
 
 function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 const COLORS = {};
@@ -351,6 +378,16 @@ function decimalsFromStep(step){
   return i<0 ? 0 : (s.length - i - 1);
 }
 function fmtNum(v, step){ return Number(v).toFixed(decimalsFromStep(step)); }
+
+/* deterministic PRNG (mulberry32) — used only to seed the atlas star field once */
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 /* pre-rendered radial glow sprite, drawn with drawImage instead of shadowBlur
    (shadowBlur forces a slow software compositing path on many GPUs) */
@@ -390,6 +427,22 @@ function apparentLongitude(earth, planet){
   return norm360(Math.atan2(planet.y - earth.y, planet.x - earth.x) * DEG);
 }
 
+// Ecliptic latitude for the "sky atlas" strip view only. i = orbital inclination (deg);
+// the eccentric (Sun) tab passes i=0 since the Sun defines the ecliptic by definition.
+// The inclination is applied to the PLANET'S OWN ORBIT contribution (m.orbitY -- the
+// deferent/Mars-orbit analog), NOT to the Earth-relative vector: tilting the Earth-relative
+// vector makes beta collapse to a pure function of lambda (no real loop can ever form,
+// since both would be built from the same atan2). orbitY evolves independently of lambda's
+// reversals during retrograde, so the (lambda,beta) track genuinely opens into a loop/Z-shape.
+// d (the in-plane Earth-planet distance) still provides the 1/d amplification at opposition.
+function computeBeta(m, inclinationDeg){
+  const xr = m.planet.x - m.earth.x;
+  const yr = m.planet.y - m.earth.y;
+  const d = Math.hypot(xr, yr);
+  const i = inclinationDeg * RAD;
+  return Math.atan2(Math.sin(i) * m.orbitY, d) * DEG;
+}
+
 function modelEccentric(t, p){
   const e = p.e;
   const w = TAU / PERIOD_SUN;
@@ -410,6 +463,7 @@ function modelEccentric(t, p){
     markers: markers,
     equantHand: null, equantPhi: null,
     lambda: apparentLongitude(earth, planet),
+    orbitY: 0, // i=0 for this tab anyway -- flat Sun track
     worldExtent: 1 + e,
     fastSlowLabels: { fast:{x:-1,y:0}, slow:{x:1,y:0} }
   };
@@ -432,6 +486,7 @@ function modelEpicycle(t, p){
     markers: [],
     equantHand: null, equantPhi: null,
     lambda: apparentLongitude(earth, planet),
+    orbitY: D.y, // deferent center's y -- the Mars-orbit (Sun->Mars) analog
     worldExtent: 1 + r
   };
 }
@@ -459,6 +514,7 @@ function modelEquant(t, p){
     markers: markers,
     equantHand: { from:Q, to:planet }, equantPhi: phi,
     lambda: apparentLongitude(earth, planet),
+    orbitY: planet.y - C.y, // planet rides the deferent itself; C.y=0 so this is just planet.y
     worldExtent: 1 + e
   };
 }
@@ -483,6 +539,7 @@ function modelFull(t, p){
     markers: [],
     equantHand: { from:Q, to:D }, equantPhi: phi,
     lambda: apparentLongitude(earth, planet),
+    orbitY: D.y - C.y, // epicycle center's y measured from C; C.y=0 so this is just D.y
     worldExtent: 1 + e + r
   };
 }
@@ -508,6 +565,7 @@ function modelCompare(t, p){
     D: D, P_geo: P_geo, Sun_geo: Sun_geo,
     planet: P_geo, earth: {x:0,y:0},
     lambda: lambdaGeo, lambdaHelio: lambdaHelio,
+    orbitY: Mars_h.y, // same value used for both panels -- beta_geo === beta_helio exactly
     worldExtent: 1 + rE
   };
 }
@@ -521,6 +579,7 @@ const TAB_CONFIG = {
     tint: "cyan",
     traceCap: 1200,
     windowDays: 4 * PERIOD_SUN,
+    inclinationDeg: 0, // the Sun defines the ecliptic -- its atlas track is a straight line
     computeModel: modelEccentric,
     params: [ { key:"e", label:'Eccentricity <span class="math">e</span>', min:0, max:0.40, step:0.01, def:0.20 } ],
     displayDefaults: { trace:false, markers:true, sight:true, labels:true },
@@ -535,6 +594,7 @@ const TAB_CONFIG = {
     tint: "purple",
     traceCap: 1200,
     windowDays: 1800,
+    inclinationDeg: 1.85,
     computeModel: modelEpicycle,
     params: [
       { key:"r", label:'Epicycle radius <span class="math">r/R</span>', min:0.10, max:0.90, step:0.01, def:0.66 },
@@ -552,6 +612,7 @@ const TAB_CONFIG = {
     tint: "magenta",
     traceCap: 1200,
     windowDays: 4 * PERIOD_MARS_DEF,
+    inclinationDeg: 1.85,
     computeModel: modelEquant,
     params: [ { key:"e", label:'Equant offset <span class="math">e</span>', min:0, max:0.40, step:0.01, def:0.20 } ],
     displayDefaults: { trace:false, markers:true, sight:true, labels:true },
@@ -566,6 +627,7 @@ const TAB_CONFIG = {
     tint: "amber",
     traceCap: 2000,
     windowDays: 1800,
+    inclinationDeg: 1.85,
     computeModel: modelFull,
     params: [
       { key:"e", label:'Eccentricity / equant offset <span class="math">e</span>', min:0, max:0.30, step:0.01, def:0.10 },
@@ -582,6 +644,7 @@ const TAB_CONFIG = {
     tint: "green",
     traceCap: 1200,
     windowDays: 1800,
+    inclinationDeg: 1.85,
     computeModel: modelCompare,
     params: [
       { key:"rE", label:'Earth orbit radius <span class="math">r<sub>E</sub>/a<sub>M</sub></span>', min:0.10, max:0.90, step:0.01, def:0.66 }
@@ -601,19 +664,18 @@ const TAB_ORDER = ["eccentric","epicycle","equant","full","compare"];
    ========================================================================= */
 const state = {
   tab: "eccentric",
-  t: 0,
+  t: 0,                // continuous display time, in days -- advances smoothly every frame
   playing: false,
-  speed: 25,          // days per second
-  pendingDays: 0,      // fixed-substep accumulator
+  speed: 25,            // days per second
   params: {},
   display: {},
-  trace: [],
-  stripHistory: [],   // {t, lambda} — kept monotonic in t, front-pruned to the window
-  lastStripSampleT: null,
-  lastLambda: null,
-  lastT: null,
-  dLambdaDt: 0,
-  currentModel: null,
+  stripMode: "plot",    // "plot" | "atlas" -- persists across tab switches
+  trace: [],            // {t,x,y} sampled on a fixed TRACE_DT grid, independent of frame rate
+  stripHistory: [],     // {t,lambda,beta} sampled on a fixed per-tab grid, independent of frame rate
+  nextTraceT: 0,        // next trace grid crossing to record
+  nextStripT: 0,        // next strip grid crossing to record
+  dLambdaDt: 0,         // computed from consecutive STRIP grid samples (uniform spacing)
+  currentModel: null,   // computeModel(tab, t, params) at the exact continuous t -- what gets drawn
   stripDirty: true,
   mainW: 0, mainH: 0, stripW: 0, stripH: 0,
   _lastT: null, _lastDirect: null, _lastLambdaStr: null, _lastDdtStr: null,
@@ -622,90 +684,106 @@ const state = {
 
 function computeModel(tab, t, params){ return TAB_CONFIG[tab].computeModel(t, params); }
 
-/* ---- fixed-substep simulation step: advances t, records trace + strip sample ---- */
-function simStep(deltaDays){
+/* ---- continuous display time: every frame's t is exact, nothing is quantized ---- */
+function advanceTime(deltaDays){
   state.t += deltaDays;
-  const m = computeModel(state.tab, state.t, state.params);
-  state.currentModel = m;
-
-  const cap = TAB_CONFIG[state.tab].traceCap;
-  state.trace.push({ x:m.planet.x, y:m.planet.y });
-  if(state.trace.length > cap) state.trace.splice(0, state.trace.length - cap);
-
-  if(state.lastLambda != null){
-    const dl = wrapDiff(m.lambda - state.lastLambda);
-    state.dLambdaDt = dl / deltaDays;
-  }
-  state.lastLambda = m.lambda;
-  state.lastT = state.t;
-
-  maybeAppendStripSample(m);
+  state.currentModel = computeModel(state.tab, state.t, state.params);
+  recordGridCrossings();
 }
 
-function maybeAppendStripSample(m){
-  const W = TAB_CONFIG[state.tab].windowDays;
-  const stripDt = W / STRIP_SAMPLES;
+/* ---- fixed-grid recording: trace and strip samples are taken at EXACT grid times
+   (state.nextTraceT / state.nextStripT), never at the (jittery, frame-rate-dependent)
+   state.t itself. This keeps sample spacing perfectly uniform regardless of frame rate
+   or playback speed, while the drawn position (state.currentModel) stays fully continuous. ---- */
+function recordGridCrossings(){
+  const cfg = TAB_CONFIG[state.tab];
+
+  let n = 0;
+  while(state.nextTraceT <= state.t && n < GRID_CAP){
+    const mt = computeModel(state.tab, state.nextTraceT, state.params);
+    state.trace.push({ t: state.nextTraceT, x: mt.planet.x, y: mt.planet.y });
+    if(state.trace.length > cfg.traceCap) state.trace.shift();
+    state.nextTraceT += TRACE_DT;
+    n++;
+  }
+  if(n === GRID_CAP){
+    // huge backlog (e.g. a very long paused/hidden stretch) -- drop it, don't spiral
+    state.nextTraceT = Math.ceil((state.t + 1e-9) / TRACE_DT) * TRACE_DT;
+  }
+
+  const stripDt = cfg.windowDays / STRIP_SAMPLES;
+  let m = 0;
+  while(state.nextStripT <= state.t && m < GRID_CAP){
+    const ms = computeModel(state.tab, state.nextStripT, state.params);
+    appendStripSample(state.nextStripT, ms, cfg, stripDt);
+    state.nextStripT += stripDt;
+    m++;
+  }
+  if(m === GRID_CAP){
+    state.nextStripT = Math.ceil((state.t + 1e-9) / stripDt) * stripDt;
+  }
+}
+
+function appendStripSample(t, m, cfg, stripDt){
+  const beta = computeBeta(m, cfg.inclinationDeg);
   const hist = state.stripHistory;
-  if(hist.length===0 || state.t >= state.lastStripSampleT + stripDt){
-    hist.push({ t: state.t, lambda: m.lambda });
-    state.lastStripSampleT = state.t;
-    state.stripDirty = true;
-    const tMin = state.t - W;
-    while(hist.length && hist[0].t < tMin) hist.shift();
+
+  // dLambdaDt from consecutive STRIP grid samples (uniform spacing), not per-frame diffs
+  if(hist.length){
+    const dl = wrapDiff(m.lambda - hist[hist.length-1].lambda);
+    state.dLambdaDt = dl / (t - hist[hist.length-1].t);
   }
+
+  hist.push({ t:t, lambda:m.lambda, beta:beta });
+  state.stripDirty = true;
+
+  const tMin = state.t - cfg.windowDays;
+  while(hist.length && hist[0].t < tMin) hist.shift();
 }
 
-// Rewind: never resimulate backward. Just move t back and pop any trace/strip
-// entries that are now "in the future" — keeps both buffers monotonic with no sort.
+// Rewind: never resimulate backward. Pop trace/strip entries now "in the future" and
+// reset both grid cursors to the next boundary strictly above the new t -- guarantees
+// no duplicate grid times when forward playback resumes.
 function rewindBy(days){
   state.t -= days;
-  const n = Math.round(days / SUBSTEP);
-  if(state.trace.length){
-    const removeN = Math.min(n, state.trace.length);
-    state.trace.splice(state.trace.length - removeN, removeN);
-  }
+
+  const trace = state.trace;
+  while(trace.length && trace[trace.length-1].t > state.t + 1e-9) trace.pop();
+
   const hist = state.stripHistory;
   while(hist.length && hist[hist.length-1].t > state.t + 1e-9) hist.pop();
-  state.lastStripSampleT = hist.length ? hist[hist.length-1].t : null;
 
-  const m = computeModel(state.tab, state.t, state.params);
-  state.currentModel = m;
-  state.lastLambda = m.lambda;
-  state.lastT = state.t;
+  state.nextTraceT = (Math.floor(state.t/TRACE_DT + 1e-9) + 1) * TRACE_DT;
+  const stripDt = TAB_CONFIG[state.tab].windowDays / STRIP_SAMPLES;
+  state.nextStripT = (Math.floor(state.t/stripDt + 1e-9) + 1) * stripDt;
+
+  state.currentModel = computeModel(state.tab, state.t, state.params);
   state.stripDirty = true;
-  state.pendingDays = 0;
 }
 
 function seedAtCurrentT(){
-  const m = computeModel(state.tab, state.t, state.params);
-  state.currentModel = m;
-  state.lastLambda = m.lambda;
-  state.lastT = state.t;
-  state.trace.push({ x:m.planet.x, y:m.planet.y });
-  maybeAppendStripSample(m);
-  state.stripDirty = true;
+  state.currentModel = computeModel(state.tab, state.t, state.params);
+  state.nextTraceT = state.t;
+  state.nextStripT = state.t;
+  recordGridCrossings(); // records exactly one trace + one strip point at state.t
 }
 
 function resetHistory(){
   state.trace = [];
   state.stripHistory = [];
-  state.lastStripSampleT = null;
-  state.lastLambda = null;
-  state.lastT = null;
   state.dLambdaDt = 0;
-  state.pendingDays = 0;
   state.stripDirty = true;
 }
 
 function fullClearAndSeed(){
   resetHistory();
-  seedAtCurrentT();
+  seedAtCurrentT(); // re-seeds both cursors at state.t (== 0 for the Reset button)
 }
 
 function stepForwardDays(days){
-  const n = Math.round(days / SUBSTEP);
-  for(let i=0;i<n;i++) simStep(SUBSTEP);
-  state.pendingDays = 0;
+  state.t += days;
+  state.currentModel = computeModel(state.tab, state.t, state.params);
+  recordGridCrossings();
   render();
 }
 function stepBackwardDays(days){
@@ -722,7 +800,7 @@ function cacheEls(){
    "paramsFields","displayCard","aboutCard","aboutTitle","aboutBody",
    "mainPanelTitle","readoutT","readoutLambda","ddtReadout","motionBadge",
    "lambdaReadout","compareReadouts","readoutLambdaGeo","readoutLambdaHelio","readoutDeltaLambda",
-   "toggleMarkers","toggleVectors","stripLegend",
+   "toggleMarkers","toggleVectors","stripLegend","stripModeToggle",
    "mainCanvas","stripCanvas"].forEach(function(id){ els[id] = document.getElementById(id); });
 }
 
@@ -807,6 +885,21 @@ function wireDisplayToggles(){
   });
 }
 
+function wireStripModeToggle(){
+  els.stripModeToggle.querySelectorAll("button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      state.stripMode = btn.dataset.mode;
+      els.stripModeToggle.querySelectorAll("button").forEach(function(b){
+        const active = b === btn;
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      state.stripDirty = true;
+      render();
+    });
+  });
+}
+
 function wireTabs(){
   els.tabBar.querySelectorAll("button").forEach(function(btn){
     btn.addEventListener("click", function(){ switchTab(btn.dataset.tab); });
@@ -831,11 +924,13 @@ function switchTab(tabId){
   els.mainPanelTitle.textContent = "Orbital diagram — " + cfg.label;
 
   const isCompare = tabId === "compare";
+  const isEquant = tabId === "equant";
   els.toggleMarkers.style.display = isCompare ? "none" : "";
   els.toggleVectors.style.display = isCompare ? "" : "none";
   els.stripLegend.style.display = isCompare ? "" : "none";
   els.lambdaReadout.style.display = isCompare ? "none" : "";
   els.compareReadouts.style.display = isCompare ? "" : "none";
+  els.ddtReadout.style.display = isEquant ? "" : "none"; // structural: was previously never un-hidden anywhere
 
   // force every readout to repaint at least once on the new tab
   state._lastT = null; state._lastDirect = null; state._lastLambdaStr = null; state._lastDdtStr = null;
@@ -855,17 +950,14 @@ function startLoop(){ if(rafId == null){ lastFrameTs = null; rafId = requestAnim
 function stopLoop(){ if(rafId != null){ cancelAnimationFrame(rafId); rafId = null; } }
 function loop(ts){
   if(lastFrameTs == null) lastFrameTs = ts;
-  const dtSec = Math.min((ts - lastFrameTs) / 1000, 0.25);
+  const dtSec = (ts - lastFrameTs) / 1000;
   lastFrameTs = ts;
 
-  state.pendingDays += state.speed * dtSec;
-  let steps = 0;
-  while(state.pendingDays >= SUBSTEP && steps < MAX_STEPS_PER_FRAME){
-    simStep(SUBSTEP);
-    state.pendingDays -= SUBSTEP;
-    steps++;
+  if(dtSec <= 0.25){
+    advanceTime(state.speed * dtSec);
   }
-  if(steps === MAX_STEPS_PER_FRAME) state.pendingDays = 0; // drop backlog, never spiral
+  // else: tab was hidden/suspended for a while -- skip advancing this frame only;
+  // the clock is already resynced above, so playback resumes cleanly next frame.
 
   render();
   rafId = requestAnimationFrame(loop);
@@ -901,6 +993,85 @@ function wirePlayback(){
     if(isNaN(v)) v = state.speed;
     syncSpeed(v);
   });
+}
+
+/* =========================================================================
+   MOVABLE SPLITTERS (desktop only -- hidden ≤900px via CSS)
+   ========================================================================= */
+let railWidth = 300;
+let stripPanelHeight = 190;
+
+function applyRailWidth(px){
+  railWidth = clamp(px, 230, 420);
+  document.querySelector(".body").style.setProperty("--rail-w", railWidth+"px");
+}
+function applyStripHeight(px){
+  stripPanelHeight = clamp(px, 120, 320);
+  document.querySelector(".workspace").style.setProperty("--strip-h", stripPanelHeight+"px");
+}
+
+function setupSplitter(el, opts){
+  let dragging = false, startPos = 0, startSize = 0;
+
+  function updateAria(){
+    el.setAttribute("aria-valuemin", String(opts.min));
+    el.setAttribute("aria-valuemax", String(opts.max));
+    el.setAttribute("aria-valuenow", String(Math.round(opts.getSize())));
+  }
+  updateAria();
+
+  el.addEventListener("pointerdown", function(ev){
+    dragging = true;
+    try{ el.setPointerCapture(ev.pointerId); }catch(e){ /* ignore */ }
+    startPos = opts.axis === "x" ? ev.clientX : ev.clientY;
+    startSize = opts.getSize();
+    el.classList.add("dragging");
+    document.body.classList.add(opts.axis === "x" ? "resizing-col" : "resizing-row");
+    ev.preventDefault();
+  });
+  el.addEventListener("pointermove", function(ev){
+    if(!dragging) return;
+    const pos = opts.axis === "x" ? ev.clientX : ev.clientY;
+    let delta = pos - startPos;
+    if(opts.invert) delta = -delta;
+    opts.setSize(clamp(startSize + delta, opts.min, opts.max));
+    updateAria();
+  });
+  function endDrag(ev){
+    if(!dragging) return;
+    dragging = false;
+    try{ el.releasePointerCapture(ev.pointerId); }catch(e){ /* ignore */ }
+    el.classList.remove("dragging");
+    document.body.classList.remove(opts.axis === "x" ? "resizing-col" : "resizing-row");
+  }
+  el.addEventListener("pointerup", endDrag);
+  el.addEventListener("pointercancel", endDrag);
+
+  el.addEventListener("keydown", function(ev){
+    const step = 10;
+    let dirKey = null;
+    if(opts.axis === "x"){
+      if(ev.key === "ArrowLeft") dirKey = -1;
+      else if(ev.key === "ArrowRight") dirKey = 1;
+    } else {
+      if(ev.key === "ArrowUp") dirKey = -1;
+      else if(ev.key === "ArrowDown") dirKey = 1;
+    }
+    if(dirKey === null) return;
+    ev.preventDefault();
+    const signedStep = opts.invert ? -dirKey*step : dirKey*step;
+    opts.setSize(clamp(opts.getSize() + signedStep, opts.min, opts.max));
+    updateAria();
+  });
+}
+
+function wireSplitters(){
+  const vSplitter = document.getElementById("vSplitter");
+  const hSplitter = document.getElementById("hSplitter");
+  // vertical splitter resizes the rail (before it, in DOM/visual order): drag right = wider
+  setupSplitter(vSplitter, { axis:"x", invert:false, min:230, max:420, getSize:function(){ return railWidth; }, setSize:applyRailWidth });
+  // horizontal splitter resizes the strip panel (after it): drag down = shorter strip
+  setupSplitter(hSplitter, { axis:"y", invert:true, min:120, max:320, getSize:function(){ return stripPanelHeight; }, setSize:applyStripHeight });
 }
 
 /* =========================================================================
@@ -1320,6 +1491,172 @@ function drawHelioViewport(ctx, cell, m, disp){
   if(disp.labels) drawLabel(ctx, marsHS.x, marsHS.y, "Mars", outwardDir(marsHS.x,marsHS.y,cx,cy), {color:COLORS.amber, size:10});
 }
 
+/* ---- Sky atlas: cached offscreen star field + gridlines/zodiac, redrawn as one
+   drawImage per strip refresh; only the trail + current position are per-draw. ---- */
+const ZODIAC_NAMES = ["Aries","Taurus","Gemini","Cancer","Leo","Virgo","Libra","Scorpius","Sagittarius","Capricornus","Aquarius","Pisces"];
+let atlasBg = null; // {canvas,cssW,cssH,dpr,plotL,plotR,plotT,plotB,plotW,plotH}
+
+function xOfLambdaAtlas(bg, lam){ return bg.plotL + (lam/360)*bg.plotW; }
+function yOfBetaAtlas(bg, beta){ return bg.plotT + (1 - (beta+6)/12)*bg.plotH; }
+
+function regenerateAtlasBackground(cssW, cssH){
+  const dpr = window.devicePixelRatio || 1;
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(cssW*dpr));
+  c.height = Math.max(1, Math.round(cssH*dpr));
+  const actx = c.getContext("2d");
+  actx.setTransform(dpr,0,0,dpr,0,0);
+
+  const padL=32, padR=8, padT=8, padB=26;
+  const plotL=padL, plotR=cssW-padR, plotT=padT, plotB=cssH-padB;
+  const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
+  const bg = { canvas:c, cssW:cssW, cssH:cssH, dpr:dpr, plotL:plotL, plotR:plotR, plotT:plotT, plotB:plotB, plotW:plotW, plotH:plotH };
+
+  actx.fillStyle = COLORS.canvas;
+  actx.fillRect(0,0,cssW,cssH);
+
+  // deterministic "illustrative" star field, seeded so it never flickers between redraws
+  const rand = mulberry32(1337);
+  actx.save();
+  actx.beginPath(); actx.rect(plotL,plotT,plotW,plotH); actx.clip();
+  const nStars=180, nBright=12;
+  for(let i=0;i<nStars;i++){
+    const x = plotL + rand()*plotW;
+    const y = plotT + rand()*plotH;
+    const bright = i < nBright;
+    const r = bright ? (1.6+rand()*0.6) : (0.5+rand()*1.1);
+    const a = bright ? (0.6+rand()*0.3) : (0.15+rand()*0.55);
+    actx.fillStyle = bright ? ("rgba(224,240,255,"+a+")") : hexAlpha(COLORS.text, a);
+    actx.beginPath(); actx.arc(x,y,r,0,TAU); actx.fill();
+  }
+  actx.restore();
+
+  // vertical 30-degree gridlines
+  actx.lineWidth = 1;
+  for(let k=0;k<=12;k++){
+    const x = xOfLambdaAtlas(bg, k*30);
+    actx.strokeStyle = hexAlpha(COLORS.border, 0.35);
+    actx.beginPath(); actx.moveTo(x,plotT); actx.lineTo(x,plotB); actx.stroke();
+  }
+
+  // zodiac names centered in each 30-degree cell
+  actx.font = "9px Inter, sans-serif";
+  actx.fillStyle = COLORS.muted;
+  actx.textAlign = "center"; actx.textBaseline = "top";
+  for(let k=0;k<12;k++){
+    const cxCell = xOfLambdaAtlas(bg, k*30+15);
+    actx.fillText(ZODIAC_NAMES[k], cxCell, plotB+3);
+  }
+
+  // caption
+  actx.font = "8px Inter, sans-serif";
+  actx.fillStyle = hexAlpha(COLORS.muted, 0.6);
+  actx.textAlign = "right"; actx.textBaseline = "top";
+  actx.fillText("star field illustrative", plotR, plotB+14);
+
+  // ecliptic line (beta = 0)
+  const yEcl = yOfBetaAtlas(bg, 0);
+  actx.strokeStyle = COLORS["border-strong"];
+  actx.lineWidth = 1;
+  actx.beginPath(); actx.moveTo(plotL,yEcl); actx.lineTo(plotR,yEcl); actx.stroke();
+  actx.font = "9px Inter, sans-serif";
+  actx.fillStyle = COLORS.muted;
+  actx.textAlign = "left"; actx.textBaseline = "bottom";
+  actx.fillText("ecliptic", plotL+3, yEcl-2);
+
+  // beta tick labels
+  actx.textAlign = "right"; actx.textBaseline = "middle";
+  [-5,0,5].forEach(function(v){
+    const y = yOfBetaAtlas(bg, v);
+    actx.fillStyle = COLORS.muted;
+    actx.fillText((v>0?"+":"")+v+"°", plotL-4, y);
+  });
+
+  actx.strokeStyle = COLORS.border;
+  actx.lineWidth = 1;
+  actx.strokeRect(plotL+0.5, plotT+0.5, plotW-1, plotH-1);
+
+  atlasBg = bg;
+}
+
+function ensureAtlasBackground(cssW, cssH){
+  const dpr = window.devicePixelRatio || 1;
+  if(atlasBg && atlasBg.cssW===cssW && atlasBg.cssH===cssH && atlasBg.dpr===dpr) return;
+  regenerateAtlasBackground(cssW, cssH);
+}
+
+function drawAtlasMode(ctx, w, h){
+  ensureAtlasBackground(w, h);
+  const bg = atlasBg;
+  ctx.drawImage(bg.canvas, 0, 0, bg.cssW, bg.cssH);
+
+  const pts = state.stripHistory;
+  const n = pts.length;
+  let labeledFirst = false;
+
+  if(n > 1){
+    for(let i=1;i<n;i++){
+      const p0=pts[i-1], p1=pts[i];
+      const jump = Math.abs(p1.lambda-p0.lambda) > 180;
+      const dl = wrapDiff(p1.lambda-p0.lambda);
+      const retro = dl < 0;
+      const color = retro ? COLORS.magenta : COLORS.amber;
+      const alpha = 0.15 + 0.80*(i/(n-1));
+      const x0=xOfLambdaAtlas(bg,p0.lambda), y0=yOfBetaAtlas(bg,p0.beta);
+      const x1=xOfLambdaAtlas(bg,p1.lambda), y1=yOfBetaAtlas(bg,p1.beta);
+
+      if(!jump){
+        ctx.strokeStyle = hexAlpha(color, alpha);
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+
+        if(retro && !labeledFirst){
+          ctx.fillStyle = hexAlpha(COLORS.magenta, 0.9);
+          ctx.font = "9px Inter, sans-serif";
+          ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+          ctx.fillText("retrograde", Math.min(x0,x1)+3, Math.min(y0,y1)-3);
+          labeledFirst = true;
+        }
+      }
+
+      if(i % 3 === 0){
+        ctx.fillStyle = hexAlpha(color, alpha);
+        ctx.beginPath(); ctx.arc(x1,y1,1.6,0,TAU); ctx.fill();
+      }
+    }
+    const p0 = pts[0];
+    ctx.fillStyle = hexAlpha(COLORS.amber, 0.15);
+    ctx.beginPath(); ctx.arc(xOfLambdaAtlas(bg,p0.lambda), yOfBetaAtlas(bg,p0.beta), 1.6, 0, TAU); ctx.fill();
+
+    // heliocentric overlay on the compare tab: identical beta values by construction,
+    // drawn from the SAME samples (amber dots already above) as a thin dashed cyan line.
+    if(state.tab === "compare"){
+      ctx.save();
+      ctx.setLineDash([4,3]);
+      ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.8);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      let started = false;
+      for(let i=0;i<n;i++){
+        if(i>0 && Math.abs(pts[i].lambda-pts[i-1].lambda)>180) started=false;
+        const x=xOfLambdaAtlas(bg,pts[i].lambda), y=yOfBetaAtlas(bg,pts[i].beta);
+        if(!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  const cm = state.currentModel;
+  if(cm){
+    const beta = computeBeta(cm, TAB_CONFIG[state.tab].inclinationDeg);
+    const x = xOfLambdaAtlas(bg, cm.lambda), y = yOfBetaAtlas(bg, beta);
+    drawGlow(ctx, glowSprite, x, y, 18);
+    ctx.fillStyle = COLORS.amber;
+    ctx.beginPath(); ctx.arc(x,y,3,0,TAU); ctx.fill();
+  }
+}
+
 function drawStrip(){
   const canvas = els.stripCanvas;
   const ctx = canvas.getContext("2d");
@@ -1327,7 +1664,11 @@ function drawStrip(){
   const h = state.stripH || canvas.clientHeight;
   ctx.clearRect(0,0,w,h);
   if(w<=0 || h<=0) return;
+  if(state.stripMode === "atlas") drawAtlasMode(ctx, w, h);
+  else drawPlotMode(ctx, w, h);
+}
 
+function drawPlotMode(ctx, w, h){
   const W = TAB_CONFIG[state.tab].windowDays;
   const padL = 32, padR = 8, padT = 8, padB = 16;
   const plotL = padL, plotR = w - padR, plotT = padT, plotB = h - padB;
@@ -1501,7 +1842,9 @@ function init(){
 
   wireTabs();
   wireDisplayToggles();
+  wireStripModeToggle();
   wirePlayback();
+  wireSplitters();
 
   setupCanvasResize(els.mainCanvas, function(w,h){ state.mainW = w; state.mainH = h; });
   setupCanvasResize(els.stripCanvas, function(w,h){ state.stripW = w; state.stripH = h; state.stripDirty = true; });
