@@ -172,6 +172,13 @@
   }
   .unit{ flex:0 0 auto; font-size:11px; color:var(--muted); }
 
+  select{
+    width:100%; min-height:28px; background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; color:var(--text);
+    padding:4px 7px; font:inherit;
+  }
+  input:disabled, select:disabled{ opacity:.45; cursor:default; }
+
   /* ---------- toggles (display card) ---------- */
   .toggle{
     display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -443,6 +450,59 @@ function computeBeta(m, inclinationDeg){
   return Math.atan2(Math.sin(i) * m.orbitY, d) * DEG;
 }
 
+/* =========================================================================
+   PLANET PRESETS (authoritative table; do not alter values)
+   ========================================================================= */
+const PLANETS = {
+  mercury: { key:"mercury", name:"Mercury", Tsid:87.97,  a:0.387, ecc:0.206, incl:7.00, S:115.9, superior:false },
+  venus:   { key:"venus",   name:"Venus",   Tsid:224.70, a:0.723, ecc:0.007, incl:3.39, S:583.9, superior:false },
+  mars:    { key:"mars",    name:"Mars",    Tsid:686.98, a:1.524, ecc:0.093, incl:1.85, S:779.9, superior:true },
+  jupiter: { key:"jupiter", name:"Jupiter", Tsid:4332.6, a:5.203, ecc:0.048, incl:1.30, S:398.9, superior:true },
+  saturn:  { key:"saturn",  name:"Saturn",  Tsid:10759,  a:9.537, ecc:0.054, incl:2.49, S:378.1, superior:true }
+};
+const PLANET_ORDER_EPICYCLE = ["mercury","venus","mars","jupiter","saturn"];
+const PLANET_ORDER_FULL = ["mars","jupiter","saturn"];
+const PLANET_ORDER_COMPARE = ["mercury","venus","mars","jupiter","saturn"];
+
+const RE_LABEL_SUPERIOR = 'Earth orbit radius <span class="math">r<sub>E</sub>/a<sub>p</sub></span>';
+const RE_LABEL_INFERIOR = 'Planet orbit radius <span class="math">a<sub>p</sub>/a<sub>E</sub></span>';
+
+function computeWindowDays(S){ return clamp(Math.round(2.4*S), 800, 2000); }
+
+// Epicycle tab: superior -> deferent=planet's own orbit (Tsid), epicycle=Earth's orbit;
+//               inferior -> deferent=Earth's-orbit analog (365.25d), epicycle=planet's own orbit.
+function deriveEpicyclePreset(planet){
+  const r = planet.superior ? (1/planet.a) : planet.a;
+  const ratio = planet.superior ? (planet.Tsid/PERIOD_SUN) : (PERIOD_SUN/planet.Tsid);
+  return {
+    windowDays: computeWindowDays(planet.S),
+    incl: planet.incl,
+    params: { r:r, ratio:ratio, Tsid:planet.Tsid, superior:planet.superior, planetName:planet.name }
+  };
+}
+
+// Full-model tab: superior planets only.
+function deriveFullPreset(planet){
+  return {
+    windowDays: computeWindowDays(planet.S),
+    incl: planet.incl,
+    params: { r: 1/planet.a, e: planet.ecc, Tsid: planet.Tsid, planetName: planet.name }
+  };
+}
+
+// Compare tab: rE slider = whichever orbit is the SMALLER one, normalized to the larger (=1).
+// e (eccentricity) only applies to the planet's own eccentric+equant orbit; forced 0 (and
+// disabled in the UI) for inferior planets, where Earth's orbit is the plain uniform circle.
+function deriveComparePreset(planet){
+  const rE = planet.superior ? (1/planet.a) : planet.a;
+  const e = planet.superior ? planet.ecc : 0;
+  return {
+    windowDays: computeWindowDays(planet.S),
+    incl: planet.incl,
+    params: { rE:rE, e:e, Tsid:planet.Tsid, superior:planet.superior, planetName:planet.name }
+  };
+}
+
 function modelEccentric(t, p){
   const e = p.e;
   const w = TAU / PERIOD_SUN;
@@ -471,7 +531,9 @@ function modelEccentric(t, p){
 
 function modelEpicycle(t, p){
   const r = p.r, ratio = p.ratio;
-  const wd = TAU / PERIOD_MARS_DEF;
+  const superior = p.superior !== false; // default true for backward compatibility
+  const Tdef = superior ? p.Tsid : PERIOD_SUN;
+  const wd = TAU / Tdef;
   const we = ratio * wd;
   const thetaD = wd * t;
   const thetaE = we * t;
@@ -480,13 +542,15 @@ function modelEpicycle(t, p){
   const planet = { x:D.x + r*Math.cos(thetaE), y:D.y + r*Math.sin(thetaE) };
   return {
     earth: earth, C: earth, Q: null, D: D,
-    planet: planet, planetLabel: "Mars",
+    planet: planet, planetLabel: p.planetName || "Mars",
     deferent: { center: earth, r: 1 },
     epicycle: { center: D, r: r },
     markers: [],
     equantHand: null, equantPhi: null,
     lambda: apparentLongitude(earth, planet),
-    orbitY: D.y, // deferent center's y -- the Mars-orbit (Sun->Mars) analog
+    // ATLAS orbitY rule: superior -> the deferent part (D.y); inferior -> the epicycle
+    // part ((planet-D).y), i.e. the planet's OWN orbit contribution in each construction.
+    orbitY: superior ? D.y : (planet.y - D.y),
     worldExtent: 1 + r
   };
 }
@@ -521,8 +585,9 @@ function modelEquant(t, p){
 
 function modelFull(t, p){
   const e = p.e, r = p.r;
-  const wd = TAU / PERIOD_MARS_DEF;
-  const we = TAU / PERIOD_MARS_EPI;
+  const Tdef = p.Tsid || PERIOD_MARS_DEF;
+  const wd = TAU / Tdef;
+  const we = TAU / PERIOD_SUN;
   const phi = wd * t;
   const earth = { x:-e, y:0 };
   const C = { x:0, y:0 };
@@ -533,36 +598,46 @@ function modelFull(t, p){
   const planet = { x:D.x + r*Math.cos(thetaE), y:D.y + r*Math.sin(thetaE) };
   return {
     earth: earth, C: C, Q: Q, D: D,
-    planet: planet, planetLabel: "Mars",
+    planet: planet, planetLabel: p.planetName || "Mars",
     deferent: { center: C, r: 1 },
     epicycle: { center: D, r: r },
     markers: [],
     equantHand: { from:Q, to:D }, equantPhi: phi,
     lambda: apparentLongitude(earth, planet),
-    orbitY: D.y - C.y, // epicycle center's y measured from C; C.y=0 so this is just D.y
+    orbitY: D.y - C.y, // superior only on this tab -- deferent part; C.y=0 so just D.y
     worldExtent: 1 + e + r
   };
 }
 
-// Tab 5 — exact vector equivalence of geocentric and heliocentric superior-planet models.
-// Heliocentric: Sun fixed at origin, Earth_h orbits it (circular -- Ptolemy's epicycle was
-// uniform), Mars_h orbits it via an eccentric deferent + equant (Cprime, Qprime) -- the SAME
-// equant machinery as the standalone Equant tab, reused here via rho(). At e=0 this reduces
-// algebraically to the plain circle Mars_h=(cos(wM t),sin(wM t)), identical to before.
-// Geocentric:   Earth fixed at origin, D (epicycle center) = Mars_h, planet = Mars_h - Earth_h.
+// Tab 5 — exact vector equivalence of geocentric and heliocentric planet models, generalized
+// to any of the 5 preset planets. Heliocentric: Sun fixed at origin; Earth_h always a plain
+// uniform circle (Ptolemy's epicycle was uniform); planet_h via an eccentric deferent + equant
+// (Cprime, Qprime) -- the SAME equant machinery as the standalone Equant tab, reused via rho().
+// Unified normalization: the LARGER of the two orbits is always sized 1 (planetScale=1 for
+// superior planets, earthScale=1 for inferior ones); the other is scaled down by rE. At e=0
+// this reduces algebraically to a plain circle, identical to the pre-preset version.
+// Geocentric: Earth fixed at origin, D (epicycle center) = planet_h, planet = planet_h - Earth_h.
 function modelCompare(t, p){
   const rE = p.rE;
   const e = p.e;
-  const wM = TAU / PERIOD_MARS_DEF;
+  const superior = p.superior !== false;
+  const wPlanet = TAU / (p.Tsid || PERIOD_MARS_DEF);
   const wE = TAU / PERIOD_SUN;
 
-  const Cprime = { x: e, y: 0 };
-  const Qprime = { x: 2*e, y: 0 };
-  const equantPhi = wM * t;
-  const rr = rho(e, equantPhi);
-  const Mars_h = { x: Qprime.x + rr*Math.cos(equantPhi), y: Qprime.y + rr*Math.sin(equantPhi) };
+  const planetScale = superior ? 1 : rE;
+  const earthScale = superior ? rE : 1;
 
-  const Earth_h = { x: rE*Math.cos(wE*t), y: rE*Math.sin(wE*t) };
+  const CprimeRaw = { x: e, y: 0 };
+  const QprimeRaw = { x: 2*e, y: 0 };
+  const equantPhi = wPlanet * t;
+  const rr = rho(e, equantPhi);
+  const rawPlanet = { x: QprimeRaw.x + rr*Math.cos(equantPhi), y: QprimeRaw.y + rr*Math.sin(equantPhi) };
+
+  const Mars_h = { x: planetScale*rawPlanet.x, y: planetScale*rawPlanet.y };
+  const Cprime = { x: planetScale*CprimeRaw.x, y: planetScale*CprimeRaw.y };
+  const Qprime = { x: planetScale*QprimeRaw.x, y: planetScale*QprimeRaw.y };
+
+  const Earth_h = { x: earthScale*Math.cos(wE*t), y: earthScale*Math.sin(wE*t) };
   const Sun_h = { x:0, y:0 };
   const D = Mars_h;
   const P_geo = { x: Mars_h.x - Earth_h.x, y: Mars_h.y - Earth_h.y };
@@ -570,14 +645,16 @@ function modelCompare(t, p){
   const lambdaGeo = apparentLongitude({x:0,y:0}, P_geo);
   const lambdaHelio = apparentLongitude(Earth_h, Mars_h);
   return {
-    rE: rE, e: e,
+    rE: rE, e: e, superior: superior,
+    planetScale: planetScale, earthScale: earthScale,
     Cprime: Cprime, Qprime: Qprime, equantPhi: equantPhi,
     Mars_h: Mars_h, Earth_h: Earth_h, Sun_h: Sun_h,
     D: D, P_geo: P_geo, Sun_geo: Sun_geo,
     planet: P_geo, earth: {x:0,y:0},
+    planetLabel: p.planetName || "Mars",
     lambda: lambdaGeo, lambdaHelio: lambdaHelio,
-    orbitY: Mars_h.y, // same value used for both panels -- beta_geo === beta_helio exactly
-    worldExtent: 1 + e + rE
+    orbitY: Mars_h.y, // planet_h.y always -- same value used for both panels (covers both cases)
+    worldExtent: planetScale*(1+e) + earthScale
   };
 }
 
@@ -606,17 +683,19 @@ const TAB_CONFIG = {
     traceCap: 1200,
     windowDays: 1800,
     inclinationDeg: 1.85,
+    planets: PLANET_ORDER_EPICYCLE,
+    defaultPlanet: "mars",
     computeModel: modelEpicycle,
     params: [
-      { key:"r", label:'Epicycle radius <span class="math">r/R</span>', min:0.10, max:0.90, step:0.01, def:0.66 },
-      { key:"ratio", label:'Speed ratio <span class="math">&omega;<sub>e</sub>/&omega;<sub>d</sub></span>', min:1.0, max:4.0, step:0.05, def:1.88 }
+      { key:"r", label:'Epicycle radius <span class="math">r/R</span>', min:0.05, max:0.90, step:0.01, def:0.66 },
+      { key:"ratio", label:'Speed ratio <span class="math">&omega;<sub>e</sub>/&omega;<sub>d</sub></span>', min:1.0, max:30.0, step:0.001, def:1.881 }
     ],
     displayDefaults: { trace:true, markers:false, sight:true, labels:true },
     aboutTitle: "The Epicycle — a circle riding a circle",
     aboutHTML:
       '<p>Planets sometimes halt against the stars, move backward for weeks (<em>retrograde</em>), then resume &mdash; and they are brightest in mid-retrograde.</p>' +
       '<p>In this device the planet rides a small circle (the epicycle) whose center <span class="math">D</span> rides a large circle (the deferent) around Earth. Near the epicycle\'s inner point the planet\'s epicyclic motion outruns the deferent\'s, so from Earth it appears to reverse &mdash; precisely when it is closest, hence brightest.</p>' +
-      '<p>The geometry is due to Apollonius (&sim;200 BCE). Defaults here are Mars-like: <span class="math">r/R</span> &asymp; 0.66 with periods 687&nbsp;d (deferent) and 365&nbsp;d (epicycle) &mdash; Earth\'s own orbit hidden inside the geocentric model.</p>'
+      '<p>The geometry is due to Apollonius (&sim;200 BCE). Defaults here are Mars-like: <span class="math">r/R</span> &asymp; 0.66 with periods 687&nbsp;d (deferent) and 365&nbsp;d (epicycle) &mdash; Earth\'s own orbit hidden inside the geocentric model. Use the Planet selector to load the other classical planets &mdash; for Mercury and Venus the disguise inverts: the deferent is Earth\'s orbit and the epicycle is the planet\'s own.</p>'
   },
   equant: {
     label: "Equant",
@@ -639,10 +718,12 @@ const TAB_CONFIG = {
     traceCap: 2000,
     windowDays: 1800,
     inclinationDeg: 1.85,
+    planets: PLANET_ORDER_FULL,
+    defaultPlanet: "mars",
     computeModel: modelFull,
     params: [
-      { key:"e", label:'Eccentricity / equant offset <span class="math">e</span>', min:0, max:0.30, step:0.01, def:0.10 },
-      { key:"r", label:'Epicycle radius <span class="math">r/R</span>', min:0.10, max:0.90, step:0.01, def:0.66 }
+      { key:"e", label:'Eccentricity / equant offset <span class="math">e</span>', min:0, max:0.30, step:0.01, def:0.093 },
+      { key:"r", label:'Epicycle radius <span class="math">r/R</span>', min:0.05, max:0.90, step:0.01, def:0.66 }
     ],
     displayDefaults: { trace:true, markers:false, sight:true, labels:true },
     aboutTitle: "The full Ptolemaic planet",
@@ -656,10 +737,12 @@ const TAB_CONFIG = {
     traceCap: 1200,
     windowDays: 1800,
     inclinationDeg: 1.85,
+    planets: PLANET_ORDER_COMPARE,
+    defaultPlanet: "mars",
     computeModel: modelCompare,
     params: [
-      { key:"rE", label:'Earth orbit radius <span class="math">r<sub>E</sub>/a<sub>M</sub></span>', min:0.10, max:0.90, step:0.01, def:0.66 },
-      { key:"e", label:'Orbit eccentricity <span class="math">e</span>', min:0, max:0.25, step:0.01, def:0.10 }
+      { key:"rE", label: RE_LABEL_SUPERIOR, min:0.10, max:0.90, step:0.01, def:0.66 },
+      { key:"e", label:'Orbit eccentricity <span class="math">e</span>', min:0, max:0.25, step:0.01, def:0.093 }
     ],
     displayDefaults: { trace:true, markers:false, sight:true, labels:true, vectors:true },
     aboutTitle: "Two models, one sky",
@@ -667,7 +750,8 @@ const TAB_CONFIG = {
       '<p>Why did Ptolemy\'s model work for 1,400 years? Because for a superior planet it is the heliocentric model in disguise. The planet\'s apparent position is the vector <span class="math">Earth&rarr;Mars</span> = <span class="math">Earth&rarr;Sun</span> + <span class="math">Sun&rarr;Mars</span>.</p>' +
       '<p>Ptolemy\'s deferent vector (Earth to <span class="math">D</span>) is exactly the <span class="math">Sun&rarr;Mars</span> vector, and his epicycle vector (<span class="math">D</span> to the planet) is exactly the <span class="math">Earth&rarr;Sun</span> vector &mdash; the same two arrows, added in the opposite order. Vector addition commutes, so the direction from Earth to the planet is identical in both models at every instant &mdash; and direction was all Ptolemy could measure.</p>' +
       '<p>Watch the epicycle arrow: it stays perfectly parallel to the Earth&rarr;Sun line, with the planet brightest and retrograde exactly at opposition &mdash; heliocentrism hiding inside the epicycle. Distinguishing the two took observations beyond angles: stellar parallax, the phases of Venus, and physical distances.</p>' +
-      '<p>And where does the equant live in this picture? Raise the eccentricity <span class="math">e</span>: Ptolemy\'s off-center deferent and equant reappear unchanged inside the heliocentric panel &mdash; as Mars\'s own eccentric orbit around the Sun, with <span class="math">Q&prime;</span> the point about which Mars sweeps at a uniform rate: very nearly the empty focus of its elliptical orbit. The equant was never really about Earth &mdash; it is a circle-based approximation to Kepler\'s second law, found fourteen centuries early. The two magenta hands sweep in perfect lockstep because they are one construction, viewed from two vantage points.</p>'
+      '<p>And where does the equant live in this picture? Raise the eccentricity <span class="math">e</span>: Ptolemy\'s off-center deferent and equant reappear unchanged inside the heliocentric panel &mdash; as the planet\'s own eccentric orbit around the Sun, with <span class="math">Q&prime;</span> the point about which it sweeps at a uniform rate: very nearly the empty focus of its elliptical orbit. The equant was never really about Earth &mdash; it is a circle-based approximation to Kepler\'s second law, found fourteen centuries early. The two magenta hands sweep in perfect lockstep because they are one construction, viewed from two vantage points.</p>' +
+      '<p>For Mercury and Venus the two arrows swap roles &mdash; the deferent is Earth\'s orbit and the epicycle is the planet\'s own &mdash; which is why Ptolemy found their epicycle centers forever chained to the Sun\'s direction.</p>'
   }
 };
 const TAB_ORDER = ["eccentric","epicycle","equant","full","compare"];
@@ -683,6 +767,10 @@ const state = {
   params: {},
   display: {},
   stripMode: "plot",    // "plot" | "atlas" -- persists across tab switches
+  selectedPlanet: null, // planet key, or "custom", for tabs with a Planet selector; else null
+  windowDays: 1800,     // dynamic: from the selected planet's preset, or the tab's static default
+  inclinationDeg: 0,    // dynamic: ditto
+  betaBand: 6,          // atlas beta half-range in degrees (11 for Venus, 6 otherwise)
   trace: [],            // {t,x,y} sampled on a fixed TRACE_DT grid, independent of frame rate
   stripHistory: [],     // {t,lambda,beta} sampled on a fixed per-tab grid, independent of frame rate
   nextTraceT: 0,        // next trace grid crossing to record
@@ -724,11 +812,11 @@ function recordGridCrossings(){
     state.nextTraceT = Math.ceil((state.t + 1e-9) / TRACE_DT) * TRACE_DT;
   }
 
-  const stripDt = cfg.windowDays / STRIP_SAMPLES;
+  const stripDt = state.windowDays / STRIP_SAMPLES;
   let m = 0;
   while(state.nextStripT <= state.t && m < GRID_CAP){
     const ms = computeModel(state.tab, state.nextStripT, state.params);
-    appendStripSample(state.nextStripT, ms, cfg, stripDt);
+    appendStripSample(state.nextStripT, ms, stripDt);
     state.nextStripT += stripDt;
     m++;
   }
@@ -737,8 +825,8 @@ function recordGridCrossings(){
   }
 }
 
-function appendStripSample(t, m, cfg, stripDt){
-  const beta = computeBeta(m, cfg.inclinationDeg);
+function appendStripSample(t, m, stripDt){
+  const beta = computeBeta(m, state.inclinationDeg);
   const hist = state.stripHistory;
 
   // dLambdaDt from consecutive STRIP grid samples (uniform spacing), not per-frame diffs
@@ -750,7 +838,7 @@ function appendStripSample(t, m, cfg, stripDt){
   hist.push({ t:t, lambda:m.lambda, beta:beta });
   state.stripDirty = true;
 
-  const tMin = state.t - cfg.windowDays;
+  const tMin = state.t - state.windowDays;
   while(hist.length && hist[0].t < tMin) hist.shift();
 }
 
@@ -767,7 +855,7 @@ function rewindBy(days){
   while(hist.length && hist[hist.length-1].t > state.t + 1e-9) hist.pop();
 
   state.nextTraceT = (Math.floor(state.t/TRACE_DT + 1e-9) + 1) * TRACE_DT;
-  const stripDt = TAB_CONFIG[state.tab].windowDays / STRIP_SAMPLES;
+  const stripDt = state.windowDays / STRIP_SAMPLES;
   state.nextStripT = (Math.floor(state.t/stripDt + 1e-9) + 1) * stripDt;
 
   state.currentModel = computeModel(state.tab, state.t, state.params);
@@ -817,10 +905,20 @@ function cacheEls(){
    "mainCanvas","stripCanvas"].forEach(function(id){ els[id] = document.getElementById(id); });
 }
 
+let paramControls = {}; // key -> {range, num, label, step, min, max} for the CURRENT tab's sliders
+
 function buildParamsCard(){
   const container = els.paramsFields;
   container.innerHTML = "";
+  paramControls = {};
+  els.planetSelect = null;
+  els.eccNote = null;
   const cfg = TAB_CONFIG[state.tab];
+
+  if(cfg.planets){
+    buildPlanetSelect(container, cfg);
+  }
+
   cfg.params.forEach(function(p){
     const field = document.createElement("div");
     field.className = "field";
@@ -843,6 +941,7 @@ function buildParamsCard(){
 
     function commit(v){
       state.params[p.key] = v;
+      markCustom();
       fullClearAndSeed();
       render();
     }
@@ -867,8 +966,134 @@ function buildParamsCard(){
 
     row.appendChild(range); row.appendChild(num);
     field.appendChild(label); field.appendChild(row);
+    paramControls[p.key] = { range:range, num:num, label:label, step:p.step, min:p.min, max:p.max };
     container.appendChild(field);
+
+    // compare tab: muted note + disable when eccentricity is forced 0 for inferior planets
+    if(state.tab === "compare" && p.key === "e"){
+      const note = document.createElement("div");
+      note.className = "unit";
+      note.id = "eccNote";
+      note.style.marginTop = "4px";
+      note.style.display = "none";
+      note.textContent = "eccentric + equant shown for superior planets";
+      field.appendChild(note);
+      els.eccNote = note;
+    }
   });
+
+  if(cfg.planets){
+    applyPlanetPreset(cfg.defaultPlanet || "mars", { skipClear:true });
+  }
+}
+
+function buildPlanetSelect(container, cfg){
+  const field = document.createElement("div");
+  field.className = "field";
+  const label = document.createElement("label");
+  label.className = "field-label";
+  label.textContent = "Planet";
+  const select = document.createElement("select");
+
+  cfg.planets.forEach(function(key){
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = PLANETS[key].name;
+    select.appendChild(opt);
+  });
+  const customOpt = document.createElement("option");
+  customOpt.value = "custom";
+  customOpt.textContent = "Custom";
+  select.appendChild(customOpt);
+
+  select.addEventListener("change", function(){
+    const key = select.value;
+    if(key === "custom"){
+      state.selectedPlanet = "custom"; // choosing Custom directly does nothing else
+      updateMainPanelTitle();
+    } else {
+      applyPlanetPreset(key);
+    }
+  });
+
+  field.appendChild(label);
+  field.appendChild(select);
+  container.appendChild(field);
+  els.planetSelect = select;
+}
+
+// Loads a planet's preset into the current tab's sliders/params. Called both for genuine
+// planet switches (clears history, re-renders) and once at tab-build time to seed the
+// default planet (skipClear -- switchTab()'s own fullClearAndSeed()+render() handle that).
+function applyPlanetPreset(planetKey, opts){
+  opts = opts || {};
+  const planet = PLANETS[planetKey];
+  if(!planet) return;
+
+  let derived;
+  if(state.tab === "epicycle") derived = deriveEpicyclePreset(planet);
+  else if(state.tab === "full") derived = deriveFullPreset(planet);
+  else if(state.tab === "compare") derived = deriveComparePreset(planet);
+  else return;
+
+  state.selectedPlanet = planetKey;
+  state.windowDays = derived.windowDays;
+  state.inclinationDeg = derived.incl;
+  state.betaBand = (planetKey === "venus") ? 11 : 6;
+
+  Object.assign(state.params, derived.params);
+
+  Object.keys(paramControls).forEach(function(key){
+    if(!(key in state.params)) return;
+    const pc = paramControls[key];
+    const v = state.params[key];
+    pc.range.value = v;
+    pc.num.value = fmtNum(v, pc.step);
+  });
+
+  if(els.planetSelect) els.planetSelect.value = planetKey;
+
+  if(state.tab === "compare"){
+    const pcE = paramControls.e;
+    if(pcE){
+      const disabled = !planet.superior;
+      pcE.range.disabled = disabled;
+      pcE.num.disabled = disabled;
+      if(els.eccNote) els.eccNote.style.display = disabled ? "" : "none";
+    }
+    const pcRE = paramControls.rE;
+    if(pcRE) pcRE.label.innerHTML = planet.superior ? RE_LABEL_SUPERIOR : RE_LABEL_INFERIOR;
+  }
+
+  updateMainPanelTitle();
+
+  if(!opts.skipClear){
+    fullClearAndSeed();
+    render();
+  }
+}
+
+// Auto-flips the Planet selector to "Custom" the instant a user edits any slider away
+// from the active preset -- fires only from genuine user interaction, never from
+// applyPlanetPreset's own programmatic .value assignments (which dispatch no input events).
+function markCustom(){
+  const cfg = TAB_CONFIG[state.tab];
+  if(!cfg.planets) return;
+  if(state.selectedPlanet !== "custom"){
+    state.selectedPlanet = "custom";
+    if(els.planetSelect) els.planetSelect.value = "custom";
+    updateMainPanelTitle();
+  }
+}
+
+function updateMainPanelTitle(){
+  const cfg = TAB_CONFIG[state.tab];
+  let suffix = "";
+  if(cfg.planets){
+    if(state.selectedPlanet === "custom") suffix = " (Custom)";
+    else if(state.selectedPlanet && PLANETS[state.selectedPlanet]) suffix = " (" + PLANETS[state.selectedPlanet].name + ")";
+  }
+  els.mainPanelTitle.textContent = "Orbital diagram — " + cfg.label + suffix;
 }
 
 function buildAboutCard(){
@@ -925,6 +1150,15 @@ function switchTab(tabId){
   state.params = {};
   cfg.params.forEach(function(p){ state.params[p.key] = p.def; });
 
+  if(!cfg.planets){
+    // tabs without a Planet selector keep their static per-tab defaults;
+    // planet-enabled tabs get these from applyPlanetPreset() inside buildParamsCard() below
+    state.selectedPlanet = null;
+    state.windowDays = cfg.windowDays;
+    state.inclinationDeg = cfg.inclinationDeg;
+    state.betaBand = 6;
+  }
+
   applyDisplayDefaults();
   buildParamsCard();
   buildAboutCard();
@@ -934,7 +1168,7 @@ function switchTab(tabId){
     b.classList.toggle("active", active);
     b.setAttribute("aria-selected", active ? "true" : "false");
   });
-  els.mainPanelTitle.textContent = "Orbital diagram — " + cfg.label;
+  updateMainPanelTitle();
 
   const isCompare = tabId === "compare";
   const isEquant = tabId === "equant";
@@ -1398,7 +1632,7 @@ function drawViewportLabel(ctx, cell, text){
 
 function drawGeoViewport(ctx, cell, m, disp){
   drawViewportLabel(ctx, cell, "GEOCENTRIC — Ptolemy");
-  const extent = 1 + m.e + m.rE;
+  const extent = m.planetScale*(1+m.e) + m.earthScale;
   const t = viewportTransform(cell, extent);
   const cx = t.cx, cy = t.cy, scale = t.scale;
   function toS(pt){ return { x:cx+pt.x*scale, y:cy-pt.y*scale }; }
@@ -1412,21 +1646,22 @@ function drawGeoViewport(ctx, cell, m, disp){
   const QgS = toS(m.Qprime);   // Q_geo == Qprime's (x,y), read relative to Earth's local origin
   const deferentCenterS = showEquant ? CgS : earthS;
 
-  // Sun's apparent orbit around Earth
+  // Sun's apparent orbit around Earth -- radius = Earth's own orbit contribution
   ctx.save();
   ctx.setLineDash([3,3]);
   ctx.strokeStyle = hexAlpha(COLORS.amber, 0.5);
   ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(earthS.x, earthS.y, m.rE*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(earthS.x, earthS.y, m.earthScale*scale, 0, TAU); ctx.stroke();
   ctx.restore();
 
-  // deferent -- centered on Earth normally; on C_geo once eccentricity is visible
+  // deferent -- centered on Earth normally; on C_geo once eccentricity is visible;
+  // radius = the planet's own equant-construction contribution
   ctx.strokeStyle = COLORS["border-strong"]; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(deferentCenterS.x, deferentCenterS.y, 1*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(deferentCenterS.x, deferentCenterS.y, m.planetScale*scale, 0, TAU); ctx.stroke();
 
-  // epicycle
+  // epicycle -- radius = Earth's own orbit contribution (same magnitude as Sun's apparent orbit)
   ctx.strokeStyle = COLORS.purple; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(DS.x, DS.y, m.rE*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(DS.x, DS.y, m.earthScale*scale, 0, TAU); ctx.stroke();
 
   // line of sight — green, extended beyond the planet
   if(disp.sight) drawExtendedDashed(ctx, earthS, PS, COLORS.green, 0.7, 0.15);
@@ -1478,12 +1713,12 @@ function drawGeoViewport(ctx, cell, m, disp){
   drawGlow(ctx, glowSprite, PS.x, PS.y, 22);
   ctx.fillStyle = COLORS.amber;
   ctx.beginPath(); ctx.arc(PS.x, PS.y, 6, 0, TAU); ctx.fill();
-  if(disp.labels) drawLabel(ctx, PS.x, PS.y, "Mars", outwardDir(PS.x,PS.y,cx,cy), {color:COLORS.amber, size:10});
+  if(disp.labels) drawLabel(ctx, PS.x, PS.y, m.planetLabel, outwardDir(PS.x,PS.y,cx,cy), {color:COLORS.amber, size:10});
 }
 
 function drawHelioViewport(ctx, cell, m, disp){
   drawViewportLabel(ctx, cell, "HELIOCENTRIC — Copernicus");
-  const extent = Math.max(1 + m.e, m.rE); // Mars's orbit (radius 1, centered on Cprime) vs Earth's
+  const extent = Math.max(m.earthScale, m.planetScale*(1+m.e));
   const t = viewportTransform(cell, extent);
   const cx = t.cx, cy = t.cy, scale = t.scale;
   function toS(pt){ return { x:cx+pt.x*scale, y:cy-pt.y*scale }; }
@@ -1498,11 +1733,11 @@ function drawHelioViewport(ctx, cell, m, disp){
 
   // Earth's orbit
   ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.4); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(sunS.x, sunS.y, m.rE*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(sunS.x, sunS.y, m.earthScale*scale, 0, TAU); ctx.stroke();
 
-  // Mars's orbit -- centered on the Sun normally; on C' once eccentricity is visible
+  // planet's orbit -- centered on the Sun normally; on C' once eccentricity is visible
   ctx.strokeStyle = COLORS["border-strong"]; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(marsOrbitCenterS.x, marsOrbitCenterS.y, 1*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(marsOrbitCenterS.x, marsOrbitCenterS.y, m.planetScale*scale, 0, TAU); ctx.stroke();
 
   // line of sight — green, extended beyond the planet
   if(disp.sight) drawExtendedDashed(ctx, earthHS, marsHS, COLORS.green, 0.7, 0.15);
@@ -1542,11 +1777,11 @@ function drawHelioViewport(ctx, cell, m, disp){
   ctx.beginPath(); ctx.arc(earthHS.x, earthHS.y, 5.5, 0, TAU); ctx.fill();
   if(disp.labels) drawLabel(ctx, earthHS.x, earthHS.y, "Earth", outwardDir(earthHS.x,earthHS.y,cx,cy), {color:COLORS.cyan, size:10});
 
-  // Mars marker
+  // planet marker
   drawGlow(ctx, glowSprite, marsHS.x, marsHS.y, 22);
   ctx.fillStyle = COLORS.amber;
   ctx.beginPath(); ctx.arc(marsHS.x, marsHS.y, 6, 0, TAU); ctx.fill();
-  if(disp.labels) drawLabel(ctx, marsHS.x, marsHS.y, "Mars", outwardDir(marsHS.x,marsHS.y,cx,cy), {color:COLORS.amber, size:10});
+  if(disp.labels) drawLabel(ctx, marsHS.x, marsHS.y, m.planetLabel, outwardDir(marsHS.x,marsHS.y,cx,cy), {color:COLORS.amber, size:10});
 }
 
 /* ---- Sky atlas: cached offscreen star field + gridlines/zodiac, redrawn as one
@@ -1557,9 +1792,9 @@ const ZODIAC_SYMBOLS = ["♈","♉","♊","♋","♌","♍","♎","♏","♐","�
 let atlasBg = null; // {canvas,cssW,cssH,dpr,plotL,plotR,plotT,plotB,plotW,plotH}
 
 function xOfLambdaAtlas(bg, lam){ return bg.plotL + (lam/360)*bg.plotW; }
-function yOfBetaAtlas(bg, beta){ return bg.plotT + (1 - (beta+6)/12)*bg.plotH; }
+function yOfBetaAtlas(bg, beta){ return bg.plotT + (1 - (beta+bg.betaBand)/(2*bg.betaBand))*bg.plotH; }
 
-function regenerateAtlasBackground(cssW, cssH){
+function regenerateAtlasBackground(cssW, cssH, betaBand){
   const dpr = window.devicePixelRatio || 1;
   const c = document.createElement("canvas");
   c.width = Math.max(1, Math.round(cssW*dpr));
@@ -1570,7 +1805,7 @@ function regenerateAtlasBackground(cssW, cssH){
   const padL=32, padR=8, padT=8, padB=26;
   const plotL=padL, plotR=cssW-padR, plotT=padT, plotB=cssH-padB;
   const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
-  const bg = { canvas:c, cssW:cssW, cssH:cssH, dpr:dpr, plotL:plotL, plotR:plotR, plotT:plotT, plotB:plotB, plotW:plotW, plotH:plotH };
+  const bg = { canvas:c, cssW:cssW, cssH:cssH, dpr:dpr, betaBand:betaBand, plotL:plotL, plotR:plotR, plotT:plotT, plotB:plotB, plotW:plotW, plotH:plotH };
 
   actx.fillStyle = COLORS.canvas;
   actx.fillRect(0,0,cssW,cssH);
@@ -1624,9 +1859,10 @@ function regenerateAtlasBackground(cssW, cssH){
   actx.textAlign = "left"; actx.textBaseline = "bottom";
   actx.fillText("ecliptic", plotL+3, yEcl-2);
 
-  // beta tick labels
+  // beta tick labels -- adapt to the band (e.g. 0/+-5 for a 6deg band, 0/+-10 for an 11deg band)
+  const tickStep = betaBand >= 10 ? 10 : 5;
   actx.textAlign = "right"; actx.textBaseline = "middle";
-  [-5,0,5].forEach(function(v){
+  [-tickStep,0,tickStep].forEach(function(v){
     const y = yOfBetaAtlas(bg, v);
     actx.fillStyle = COLORS.muted;
     actx.fillText((v>0?"+":"")+v+"°", plotL-4, y);
@@ -1641,8 +1877,9 @@ function regenerateAtlasBackground(cssW, cssH){
 
 function ensureAtlasBackground(cssW, cssH){
   const dpr = window.devicePixelRatio || 1;
-  if(atlasBg && atlasBg.cssW===cssW && atlasBg.cssH===cssH && atlasBg.dpr===dpr) return;
-  regenerateAtlasBackground(cssW, cssH);
+  const band = state.betaBand;
+  if(atlasBg && atlasBg.cssW===cssW && atlasBg.cssH===cssH && atlasBg.dpr===dpr && atlasBg.betaBand===band) return;
+  regenerateAtlasBackground(cssW, cssH, band);
 }
 
 function drawAtlasMode(ctx, w, h){
@@ -1656,7 +1893,7 @@ function drawAtlasMode(ctx, w, h){
   /* dot cadence anchored to absolute sample time, NOT array index — the window
      slides (front-pruning shifts indices every append), so index-based selection
      makes the dots crawl along a stationary trajectory */
-  const dotDt = 3 * (TAB_CONFIG[state.tab].windowDays / 900);
+  const dotDt = 3 * (state.windowDays / 900);
 
   if(n > 1){
     for(let i=1;i<n;i++){
@@ -1713,7 +1950,7 @@ function drawAtlasMode(ctx, w, h){
 
   const cm = state.currentModel;
   if(cm){
-    const beta = computeBeta(cm, TAB_CONFIG[state.tab].inclinationDeg);
+    const beta = computeBeta(cm, state.inclinationDeg);
     const x = xOfLambdaAtlas(bg, cm.lambda), y = yOfBetaAtlas(bg, beta);
     drawGlow(ctx, glowSprite, x, y, 18);
     ctx.fillStyle = COLORS.amber;
@@ -1733,7 +1970,7 @@ function drawStrip(){
 }
 
 function drawPlotMode(ctx, w, h){
-  const W = TAB_CONFIG[state.tab].windowDays;
+  const W = state.windowDays;
   const padL = 32, padR = 8, padT = 8, padB = 16;
   const plotL = padL, plotR = w - padR, plotT = padT, plotB = h - padB;
   const plotW = Math.max(1, plotR - plotL), plotH = Math.max(1, plotB - plotT);
