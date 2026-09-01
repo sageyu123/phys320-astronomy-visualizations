@@ -1494,6 +1494,8 @@ function drawHelioViewport(ctx, cell, m, disp){
 /* ---- Sky atlas: cached offscreen star field + gridlines/zodiac, redrawn as one
    drawImage per strip refresh; only the trail + current position are per-draw. ---- */
 const ZODIAC_NAMES = ["Aries","Taurus","Gemini","Cancer","Leo","Virgo","Libra","Scorpius","Sagittarius","Capricornus","Aquarius","Pisces"];
+/* U+FE0E forces text (not emoji) presentation of the sign glyphs */
+const ZODIAC_SYMBOLS = ["♈","♉","♊","♋","♌","♍","♎","♏","♐","♑","♒","♓"].map(function(s){ return s + "︎"; });
 let atlasBg = null; // {canvas,cssW,cssH,dpr,plotL,plotR,plotT,plotB,plotW,plotH}
 
 function xOfLambdaAtlas(bg, lam){ return bg.plotL + (lam/360)*bg.plotW; }
@@ -1545,7 +1547,7 @@ function regenerateAtlasBackground(cssW, cssH){
   actx.textAlign = "center"; actx.textBaseline = "top";
   for(let k=0;k<12;k++){
     const cxCell = xOfLambdaAtlas(bg, k*30+15);
-    actx.fillText(ZODIAC_NAMES[k], cxCell, plotB+3);
+    actx.fillText(ZODIAC_SYMBOLS[k] + " " + ZODIAC_NAMES[k], cxCell, plotB+3);
   }
 
   // caption
@@ -1593,6 +1595,10 @@ function drawAtlasMode(ctx, w, h){
   const pts = state.stripHistory;
   const n = pts.length;
   let labeledFirst = false;
+  /* dot cadence anchored to absolute sample time, NOT array index — the window
+     slides (front-pruning shifts indices every append), so index-based selection
+     makes the dots crawl along a stationary trajectory */
+  const dotDt = 3 * (TAB_CONFIG[state.tab].windowDays / 900);
 
   if(n > 1){
     for(let i=1;i<n;i++){
@@ -1619,7 +1625,7 @@ function drawAtlasMode(ctx, w, h){
         }
       }
 
-      if(i % 3 === 0){
+      if(Math.floor(p1.t/dotDt) !== Math.floor(p0.t/dotDt)){
         ctx.fillStyle = hexAlpha(color, alpha);
         ctx.beginPath(); ctx.arc(x1,y1,1.6,0,TAU); ctx.fill();
       }
