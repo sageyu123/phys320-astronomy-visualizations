@@ -23,6 +23,7 @@
     --purple:#a99bff;
     --amber:#ffcc66;
     --green:#56dc72;
+    --coral:#ff7f66;
     --on-accent:#0c181b;
     --control-hover:#343a41;
     --cyan-wash: rgb(86 199 217/10%);
@@ -267,6 +268,7 @@
   .tint-magenta{ background:color-mix(in srgb, var(--magenta) 7%, var(--panel)); border-color:color-mix(in srgb, var(--magenta) 30%, var(--border)); }
   .tint-amber{ background:color-mix(in srgb, var(--amber) 7%, var(--panel)); border-color:color-mix(in srgb, var(--amber) 30%, var(--border)); }
   .tint-green{ background:color-mix(in srgb, var(--green) 7%, var(--panel)); border-color:color-mix(in srgb, var(--green) 30%, var(--border)); }
+  .tint-coral{ background:color-mix(in srgb, var(--coral) 7%, var(--panel)); border-color:color-mix(in srgb, var(--coral) 30%, var(--border)); }
 
   :focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
 
@@ -326,7 +328,8 @@
     </div>
     <div class="tabbar">
       <div class="segmented" id="tabBar" role="tablist" aria-label="Teaching stage">
-        <button type="button" data-tab="grids" class="active" role="tab" aria-selected="true">Two grids</button>
+        <button type="button" data-tab="origin" class="active" role="tab" aria-selected="true">Origin &#9800;</button>
+        <button type="button" data-tab="grids" role="tab" aria-selected="false">Two grids</button>
         <button type="button" data-tab="latitude" role="tab" aria-selected="false">Latitude</button>
         <button type="button" data-tab="diurnal" role="tab" aria-selected="false">Diurnal motion</button>
         <button type="button" data-tab="hlst" role="tab" aria-selected="false">h &middot; &alpha; &middot; LST</button>
@@ -351,7 +354,7 @@
           <div class="field-row">
             <input type="range" id="speedRange" min="0.1" max="6" step="0.1" value="1.0">
             <input type="number" id="speedNum" class="num-input" min="0.1" max="6" step="0.1" value="1.0">
-            <span class="unit">h/s</span>
+            <span class="unit" id="speedUnit">h/s</span>
           </div>
         </div>
       </div>
@@ -423,23 +426,54 @@
         </div>
       </div>
 
-      <div class="card" id="displayCard">
-        <div class="eyebrow">Display</div>
-        <button type="button" class="toggle" data-key="hGrid" aria-pressed="true"><span>Horizontal grid</span><span class="dot"></span></button>
-        <button type="button" class="toggle" data-key="eGrid" aria-pressed="true"><span>Equatorial grid</span><span class="dot"></span></button>
-        <button type="button" class="toggle" data-key="meridian" aria-pressed="true"><span>Meridian</span><span class="dot"></span></button>
-        <button type="button" class="toggle" data-key="diurnal" aria-pressed="true"><span>Diurnal circle</span><span class="dot"></span></button>
-        <button type="button" class="toggle" data-key="arcs" aria-pressed="true"><span>Coordinate arcs</span><span class="dot"></span></button>
+      <div class="card" id="dateCard" style="display:none">
+        <div class="eyebrow">Date</div>
+        <div class="field">
+          <label class="field-label" for="doyRange">Day of year</label>
+          <div class="field-row">
+            <input type="range" id="doyRange" min="0" max="365" step="0.5" value="79">
+            <input type="number" id="doyNum" class="num-input" min="0" max="365" step="0.5" value="79">
+          </div>
+          <div class="unit" id="doyCalendarReadout" style="margin-top:6px">Mar 20</div>
+          <div class="unit" style="margin-top:2px">mean Sun, circular orbit (uniform <span class="math">&lambda;</span>&#9737;)</div>
+        </div>
         <div class="field sectors-field">
-          <label class="field-label">Sectors</label>
-          <div class="segmented sectors-segmented" id="sectorsControl" role="tablist" aria-label="Coordinate sectors">
-            <button type="button" data-pair="none" data-tip="sectorsControl" class="active" role="tab" aria-selected="true">None</button>
-            <button type="button" data-pair="azel" data-key="azel" data-tip="sectorsControl" role="tab" aria-selected="false">Az &middot; El</button>
-            <button type="button" data-pair="radec" data-key="radec" data-tip="sectorsControl" role="tab" aria-selected="false"><span class="math">&alpha;</span> &middot; <span class="math">&delta;</span></button>
+          <label class="field-label">Cardinal dates</label>
+          <div class="segmented sectors-segmented" id="cardinalControl" role="tablist" aria-label="Cardinal dates">
+            <button type="button" data-lambda="0" role="tab">Mar 20</button>
+            <button type="button" data-lambda="90" role="tab">Jun 21</button>
+            <button type="button" data-lambda="180" role="tab">Sep 22</button>
+            <button type="button" data-lambda="270" role="tab">Dec 21</button>
           </div>
         </div>
-        <button type="button" class="toggle" data-key="triangle" aria-pressed="false"><span>Astronomical triangle</span><span class="dot"></span></button>
-        <button type="button" class="toggle" data-key="labels" aria-pressed="true"><span>Labels</span><span class="dot"></span></button>
+      </div>
+
+      <div class="card" id="displayCard">
+        <div class="eyebrow">Display</div>
+        <div id="displayTogglesNormal">
+          <button type="button" class="toggle" data-key="hGrid" aria-pressed="true"><span>Horizontal grid</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="eGrid" aria-pressed="true"><span>Equatorial grid</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="meridian" aria-pressed="true"><span>Meridian</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="diurnal" aria-pressed="true"><span>Diurnal circle</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="arcs" aria-pressed="true"><span>Coordinate arcs</span><span class="dot"></span></button>
+          <div class="field sectors-field">
+            <label class="field-label">Sectors</label>
+            <div class="segmented sectors-segmented" id="sectorsControl" role="tablist" aria-label="Coordinate sectors">
+              <button type="button" data-pair="none" data-tip="sectorsControl" class="active" role="tab" aria-selected="true">None</button>
+              <button type="button" data-pair="azel" data-key="azel" data-tip="sectorsControl" role="tab" aria-selected="false">Az &middot; El</button>
+              <button type="button" data-pair="radec" data-key="radec" data-tip="sectorsControl" role="tab" aria-selected="false"><span class="math">&alpha;</span> &middot; <span class="math">&delta;</span></button>
+            </div>
+          </div>
+          <button type="button" class="toggle" data-key="triangle" aria-pressed="false"><span>Astronomical triangle</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="labels" aria-pressed="true"><span>Labels</span><span class="dot"></span></button>
+        </div>
+        <div id="displayTogglesOrigin" style="display:none">
+          <button type="button" class="toggle" data-key="ghosts" aria-pressed="true"><span>Ghost Earths</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="zodiac" aria-pressed="true"><span>Zodiac</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="sunArcs" aria-pressed="true"><span>Sun arcs</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="eqGrid" aria-pressed="true"><span>Equatorial grid</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="labels" aria-pressed="true"><span>Labels</span><span class="dot"></span></button>
+        </div>
       </div>
 
       <div class="card formulas-card collapsed" id="formulasCard">
@@ -480,6 +514,17 @@
             <span>LST = h + <span class="math">&alpha;</span> &rarr; <b id="hlstLST" class="tabular">&mdash;</b>h = <b id="hlstH" class="tabular">&mdash;</b>h + <b id="hlstAlpha" class="tabular">&mdash;</b>h</span>
             <span class="unit" id="hlstCulminateNote">culminates when LST = &alpha;</span>
           </div>
+          <div class="panel-readouts" id="readoutsOrigin" style="display:none">
+            <span><b id="originDateLabel" class="tabular">&mdash;</b> (day <b id="originDayNum" class="tabular">&mdash;</b>)</span>
+            <span>&middot;</span>
+            <span><span class="math">&lambda;</span>&#9737; = <b id="originLambda" class="tabular">&mdash;</b>&deg;</span>
+            <span>&middot;</span>
+            <span><span class="math">&alpha;</span>&#9737; = <b id="originAlpha" class="tabular">&mdash;</b>h</span>
+            <span>&middot;</span>
+            <span><span class="math">&delta;</span>&#9737; = <b id="originDelta" class="tabular">&mdash;</b>&deg;</span>
+            <span>&middot;</span>
+            <span>N <b id="originSeasonN" class="tabular">&mdash;</b> / S <b id="originSeasonS" class="tabular">&mdash;</b></span>
+          </div>
           <div class="panel-header-right">
             <button type="button" class="btn icon-btn" id="btnResetView" title="Reset camera view">&#8962;</button>
           </div>
@@ -503,6 +548,7 @@
           <div class="panel-readouts" id="stripLegend">
             <span id="legendAllsky"><i class="swatch" style="background:var(--cyan)"></i>horizontal &nbsp; <i class="swatch" style="background:var(--amber)"></i>equatorial</span>
             <span id="legendRadec" style="display:none"><i class="swatch" style="background:var(--cyan)"></i>horizon &nbsp; <i class="swatch" style="background:var(--amber)"></i>diurnal path</span>
+            <span id="legendOrigin" style="display:none"><i class="swatch" style="background:var(--coral)"></i>ecliptic &nbsp; <i class="swatch" style="background:var(--amber)"></i>Sun</span>
           </div>
           <div class="segmented" id="stripModeToggle" role="tablist" aria-label="Strip panel mode">
             <button type="button" data-mode="allsky" class="active" role="tab" aria-selected="true">All-sky view</button>
@@ -534,6 +580,7 @@ import * as THREE from 'three';
 import { Line2 } from '../vendor/addons/lines/Line2.js';
 import { LineGeometry } from '../vendor/addons/lines/LineGeometry.js';
 import { LineMaterial } from '../vendor/addons/lines/LineMaterial.js';
+import { createOriginStage } from './altaz_origin_stage.js';
 
 /* =========================================================================
    1. CONSTANTS / DESIGN TOKENS
@@ -552,6 +599,7 @@ function wrap180(d){ // normalize an angle difference to (-180,180]
   return d;
 }
 function wrap24(h){ h = h % 24; if(h<0) h += 24; return h; }
+function wrapYear(d){ d = d % 365.25; if(d<0) d += 365.25; return d; } // Origin tab's day-of-year
 function wrap12(h){ // hour angle convention: (-12,12]
   h = ((h + 12) % 24 + 24) % 24 - 12;
   if(h <= -12) h += 24;
@@ -583,7 +631,7 @@ const COLORI = {};   // numeric 0xRRGGBB, for three.js materials
 function loadColors(){
   ["background","rail","canvas","panel-deep","panel","panel-raised","border",
    "border-strong","border-hover","text","muted","cyan","magenta","purple",
-   "amber","green","on-accent"].forEach(function(n){
+   "amber","green","coral","on-accent"].forEach(function(n){
     const v = cssVar("--"+n);
     COLORS[n] = v;
     COLORI[n] = hexToInt(v);
@@ -747,8 +795,29 @@ const STARS = {
 /* =========================================================================
    4. TAB CONFIG — defaults, display state, and About text per teaching stage
    ========================================================================= */
-const TAB_ORDER = ["grids","latitude","diurnal","hlst","triangle"];
+const TAB_ORDER = ["origin","grids","latitude","diurnal","hlst","triangle"];
 const TAB_CONFIG = {
+  origin: {
+    label: "Origin ♈", // set via .textContent (mainPanelTitle) -- literal glyph, not an HTML entity
+    tint: "coral",
+    // dome state (unused while this tab is active -- the main canvas renders
+    // the origin stage instead -- but every field below must still exist:
+    // switchTab() unconditionally seeds state.* from these before branching
+    // on the tab id) -- harmless placeholder values, same shape as "grids".
+    phi: 40.7, lst: 6, star: "vega",
+    playing: false, speed: 1.0,
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    sectorPair: "none",
+    gridAlpha: { h:1, e:1 },
+    badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:true,
+    // origin-stage-specific defaults
+    day: 79,          // Mar 20 -- the March equinox, where lambda=0 exactly
+    speedDays: 20,     // days/s default playback speed
+    aboutTitle: "Where ♈ comes from", // set via .textContent -- literal glyph, not an HTML entity
+    aboutHTML:
+      '<p>Right ascension needs a zero point on the celestial equator, and nothing on the equator is special &mdash; except where the Sun\'s yearly path crosses it. Earth\'s axis keeps a fixed direction in space as Earth orbits, so Earth\'s equatorial plane and its orbital plane (the ecliptic) are tilted 23.4&deg; to each other and intersect along one fixed line. Seen from Earth that line marks two points on the sky: the Sun sits at one of them around March 20, crossing the equator northward &mdash; the vernal equinox &#9800; &mdash; and at the other around September 22. So &#9800; is a direction, not a place: the direction from Earth to the Sun at the moment of the March equinox. Right ascension is measured eastward from it along the equator; declination from the equator itself. Watch the arrow toward &#9800; stay parallel through the year while the Sun slides along the ecliptic, and read the Sun\'s coordinates: 0h / 0&deg; in March, 6h / +23.4&deg; in June, 12h / 0&deg; in September, 18h / &minus;23.4&deg; in December.</p>' +
+      '<p>The zodiac ring shows the twelve signs, 30&deg; each counted eastward from &#9800; &mdash; the Sun appears in the sign on the far side of the Sun from Earth. The zero point drifts slowly westward through the constellations (precession, one turn in 26,000 years), which is why catalogue coordinates carry an epoch such as J2000.</p>'
+  },
   grids: {
     label: "Two grids",
     tint: "cyan",
@@ -836,11 +905,13 @@ const TAB_CONFIG = {
    5. STATE
    ========================================================================= */
 const state = {
-  tab: "grids",
+  tab: "origin",
   phi: 40.7, locationKey: "newark",
   lst: 6,                    // hours, continuous display value
   starKey: "vega", ra: 18.615, dec: 38.78,
-  playing: false, speed: 1.0,
+  playing: false, speed: 1.0,      // speed = hours/s, used by the LST-based tabs
+  day: 79, speedDays: 20,          // day = day-of-year, speedDays = days/s -- Origin tab only
+  originDisplay: { ghosts:true, zodiac:true, sunArcs:true, eqGrid:true, labels:true }, // Origin tab's own Display-card state
   display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
   sectorPair: "radec",        // "none" | "azel" | "radec" -- which pair of coordinate-sector fans is shown
   gridAlpha: { h:1, e:1 },
@@ -897,9 +968,11 @@ function recomputeDerived(){
    TRIANGLE sections below.
    ========================================================================= */
 let renderer, scene, camera, glCanvas;
+let originStage = null; // lazily constructed on first activation of the "origin" tab -- see ensureOriginStage()
 let hGridGroup, meridianGroup, equatorialGroup, diurnalGroup;
 let meridianUpper, meridianLower; // {line,material,baseOpacity,baseLinewidth} wrappers, for applyHighlight()
 let meridianLabel; // the "meridian" text sprite -- hidden on the triangle tab (collides with its Az label there); see applyDisplayVisibility()
+let ncpLabel; // the "NCP" text sprite (child of polarAxisPart) -- nudged outward by avoidNcpZenithOverlap() when it reads too close to "Z" on screen
 let starSphere, starGlow, starLabel, starLabelText = null;
 let starHourCircle; // the star's own hour circle (great circle through both poles at native RA = alpha) — Task B
 const matRefs = { hGrid: [], eGrid: [] }; // {material, base} — opacity scaled by state.gridAlpha
@@ -1258,6 +1331,35 @@ function initThreeScene(){
   wireCameraControls();
 }
 
+/* =========================================================================
+   ORIGIN STAGE ("Origin &#9800;" tab) -- lazily constructed on first
+   activation, sharing this page's own THREE/Line2/LineGeometry/LineMaterial
+   classes and its single WebGLRenderer/canvas (see switchTab()'s isOrigin
+   branch for enter/leave wiring, and renderThree() for the render-path
+   branch). makeTextSprite is passed through verbatim (its behaviour already
+   matches the module's requirement exactly); applySpriteScale is NOT passed
+   through as-is -- the page's own applySpriteScale(sprite) closes over a
+   single module-level `camera`/`state.mainH`, which has no meaning for a
+   stage that owns TWO cameras/viewports at once, so a small wrapper with the
+   widened (sprite, camera, viewportHeightPx) signature is passed instead
+   (same formula, just parameterized -- see altaz_origin_stage.js's header
+   comment for the exact contract). ---- */
+function originApplySpriteScale(sprite, cam, viewportHeightPx){
+  if(!cam || !viewportHeightPx) return;
+  const k = 2*Math.tan((cam.fov/2)*RAD) / viewportHeightPx;
+  const h = sprite.userData.pixelHeight * k;
+  sprite.scale.set(h*sprite.userData.aspect, h, 1);
+}
+function ensureOriginStage(){
+  if(originStage || !state.webglOK) return;
+  originStage = createOriginStage({
+    THREE:THREE, Line2:Line2, LineGeometry:LineGeometry, LineMaterial:LineMaterial,
+    renderer:renderer, makeTextSprite:makeTextSprite, applySpriteScale:originApplySpriteScale
+  });
+  const rect = glCanvas.getBoundingClientRect();
+  originStage.resize(Math.round(rect.width), Math.round(rect.height));
+}
+
 function buildStaticScene(){
   // ground
   const groundGeo = new THREE.PlaneGeometry(6,6);
@@ -1406,7 +1508,7 @@ function buildEquatorialGroup(){
   const scpDot = new THREE.Mesh(new THREE.SphereGeometry(0.014,10,8), new THREE.MeshBasicMaterial({ color:COLORI.magenta }));
   scpDot.position.set(0,-1,0);
   polarAxisPart.add(ncpDot, scpDot);
-  const ncpLabel = makeTextSprite("NCP", COLORS.magenta, { pixelHeight:16 });
+  ncpLabel = makeTextSprite("NCP", COLORS.magenta, { pixelHeight:16 });
   ncpLabel.position.set(0,1.117,0);
   const scpLabel = makeTextSprite("SCP", COLORS.magenta, { pixelHeight:16 });
   scpLabel.position.set(0,-1.117,0);
@@ -1628,13 +1730,22 @@ function wireCameraControls(){
   if(!state.webglOK) return;
   let dragging = false, lastX=0, lastY=0, panMode=false;
   glCanvas.style.touchAction = "none";
+  // Every handler below early-returns while the "origin" tab is active: the
+  // origin stage's OWN attachPointer(glCanvas) listens on this same shared
+  // canvas element (see switchTab()'s isOrigin branch), and both sets of
+  // listeners would otherwise fire on the same pointer events -- this is
+  // this dome's half of "the page's camera controls are detached" (the
+  // stage's own attachPointer/detachPointer are real add/removeEventListener
+  // calls; the dome's own controls have no such mechanism, so they are
+  // instead made inert for as long as a different tab owns the canvas).
   glCanvas.addEventListener("pointerdown", function(ev){
+    if(state.tab === "origin") return;
     dragging = true; lastX = ev.clientX; lastY = ev.clientY;
     panMode = !!ev.shiftKey;
     try{ glCanvas.setPointerCapture(ev.pointerId); }catch(e){}
   });
   glCanvas.addEventListener("pointermove", function(ev){
-    if(!dragging) return;
+    if(!dragging || state.tab === "origin") return;
     const dx = ev.clientX - lastX, dy = ev.clientY - lastY;
     lastX = ev.clientX; lastY = ev.clientY;
     state.cam.isDefault = false; // manual interaction -- stop auto-refitting on resize
@@ -1656,17 +1767,66 @@ function wireCameraControls(){
   glCanvas.addEventListener("pointerup", endDrag);
   glCanvas.addEventListener("pointercancel", endDrag);
   glCanvas.addEventListener("wheel", function(ev){
+    if(state.tab === "origin") return;
     ev.preventDefault();
     state.cam.isDefault = false;
     state.cam.radius = clamp(state.cam.radius * Math.pow(1.0016, ev.deltaY), CAM_ZOOM_MIN, CAM_ZOOM_MAX);
     applyCameraFromState();
     requestRender();
   }, { passive:false });
-  document.getElementById("btnResetView").addEventListener("click", resetCameraView);
+  document.getElementById("btnResetView").addEventListener("click", function(){
+    if(state.tab === "origin"){ if(originStage) originStage.resetView(); return; }
+    resetCameraView();
+  });
+}
+
+/* On the "Two grids" tab's default view (camera phi 38deg), the NCP label
+   (which moves with phi/lst -- it's a child of the re-oriented
+   equatorialGroup) can land right next to the always-fixed "Z" zenith
+   label. Recomputed every frame (idempotent -- always resets to the base
+   offset first, so it never compounds) rather than special-cased to one
+   tab/camera, so it self-corrects at ANY phi/lst/camera combination where
+   the two happen to coincide on screen. */
+const NCP_ZENITH_MIN_PX = 44;
+const NCP_LABEL_BASE_Y = 1.117, NCP_LABEL_PUSH_Y = 1.117 + 0.12;
+const _ncpWorldScratch = new THREE.Vector3();
+const _zenWorldScratch = new THREE.Vector3(0, 1.117, 0); // Z's label position is fixed in world space (see buildStaticScene)
+const _ncpProjScratch = new THREE.Vector3();
+const _zenProjScratch = new THREE.Vector3();
+function avoidNcpZenithOverlap(){
+  if(!ncpLabel || !camera || !state.mainW || !state.mainH) return;
+  ncpLabel.position.y = NCP_LABEL_BASE_Y; // reset before measuring -- never compounds
+  ncpLabel.getWorldPosition(_ncpWorldScratch);
+  _ncpProjScratch.copy(_ncpWorldScratch).project(camera);
+  _zenProjScratch.copy(_zenWorldScratch).project(camera);
+  const sxN = (_ncpProjScratch.x*0.5+0.5)*state.mainW, syN = (1-(_ncpProjScratch.y*0.5+0.5))*state.mainH;
+  const sxZ = (_zenProjScratch.x*0.5+0.5)*state.mainW, syZ = (1-(_zenProjScratch.y*0.5+0.5))*state.mainH;
+  if(Math.hypot(sxN-sxZ, syN-syZ) < NCP_ZENITH_MIN_PX) ncpLabel.position.y = NCP_LABEL_PUSH_Y;
 }
 
 function renderThree(){
   if(!state.webglOK || !renderer) return;
+  if(state.tab === "origin"){ if(originStage) originStage.render(); return; }
+  // The origin stage's own render() leaves the SHARED renderer's scissor
+  // test enabled and its viewport/scissor rect set to one of its own two
+  // sub-viewports (it never restores full-canvas state when done, since it
+  // has no reason to know this renderer is shared) -- left uncorrected,
+  // the dome's render below would be clipped to that leftover rect (which
+  // can even be entirely off whatever the dome draws, rendering it fully
+  // blank). Reset both explicitly before every dome frame so this is
+  // correct regardless of whether/where the origin tab was last visited.
+  // Read the canvas's CURRENT size directly (getBoundingClientRect(), not
+  // state.mainW/mainH) -- on the very first render of a fresh page load
+  // (e.g. a `?tab=grids` deep link, which switches straight from the
+  // default "origin" tab to "grids" within the same synchronous init()
+  // call) the GL ResizeObserver has not fired yet, so state.mainW/mainH
+  // are still their initial 0; falling back to a 1x1 viewport in that case
+  // rendered the dome fully invisible until the next resize. The DOM
+  // layout is authoritative immediately, with no such race.
+  renderer.setScissorTest(false);
+  const _rect = glCanvas.getBoundingClientRect();
+  renderer.setViewport(0, 0, Math.max(1, Math.round(_rect.width)), Math.max(1, Math.round(_rect.height)));
+  avoidNcpZenithOverlap();
   renderer.render(scene, camera);
 }
 
@@ -2317,7 +2477,9 @@ function drawStrip(){
   const w = state.stripW || canvas.clientWidth;
   const h = state.stripH || canvas.clientHeight;
   ctx.clearRect(0,0,w,h);
-  if(w<=0 || h<=0 || !state.derived) return; // defensive: derived quantities not yet computed
+  if(w<=0 || h<=0) return; // defensive
+  if(state.tab === "origin"){ drawOriginMap(ctx,w,h); return; } // forced RA/Dec-style map, no observer/horizon
+  if(!state.derived) return; // defensive: derived quantities not yet computed
   if(state.stripMode === "radec") drawRadecMap(ctx,w,h);
   else drawAllSky(ctx,w,h);
 }
@@ -2551,20 +2713,121 @@ function drawRadecMap(ctx, w, h){
   ctx.strokeRect(plotL+0.5,plotT+0.5,plotW-1,plotH-1);
 }
 
+/* Sun position (RA,Dec) from ecliptic longitude, same closed-form circular-
+   orbit/mean-Sun formula altaz_origin_stage.js uses internally -- duplicated
+   here (not exported by that module) since the strip panel's own "RA/Dec
+   map, no observer" origin-tab view draws the ecliptic curve directly. */
+const ORIGIN_EPS_DEG = 23.44, ORIGIN_EPS = ORIGIN_EPS_DEG*RAD;
+function originSunRaDec(lambdaDeg){
+  const l = lambdaDeg*RAD;
+  const sinDelta = clamp(Math.sin(ORIGIN_EPS)*Math.sin(l), -1, 1);
+  const decDeg = Math.asin(sinDelta)*DEG;
+  const alphaDeg = norm360(Math.atan2(Math.cos(ORIGIN_EPS)*Math.sin(l), Math.cos(l))*DEG);
+  return { raH: alphaDeg/15, decDeg: decDeg };
+}
+const ORIGIN_ZODIAC_GLYPHS = ["♈︎","♉︎","♊︎","♋︎","♌︎","♍︎","♎︎","♏︎","♐︎","♑︎","♒︎","♓︎"];
+
+/* =========================================================================
+   10b. ORIGIN-TAB STRIP MAP -- forced RA/Dec-style rectangular chart (no
+   stripMode toggle, no observer/horizon curve): the ecliptic
+   delta = asin(sin(eps) sin(lambda)), the Sun's current position, the
+   equinox/solstice reference points, and the zodiac ring's 12 sign glyphs.
+   ========================================================================= */
+function drawOriginMap(ctx, w, h){
+  const padL=34, padR=10, padT=10, padB=20;
+  const plotL=padL, plotR=w-padR, plotT=padT, plotB=h-padB;
+  const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
+  function xOf(alphaH){ return plotL + (24-alphaH)/24*plotW; } // alpha increases to the LEFT, matching drawRadecMap
+  function yOf(delta){ return plotB - (delta+90)/180*plotH; }
+
+  ctx.fillStyle = COLORS.canvas; ctx.fillRect(0,0,w,h);
+
+  // gridlines every 2h / 30deg (same convention as the RA/Dec map)
+  ctx.lineWidth=1;
+  for(let k=0;k<=12;k++){
+    const x = xOf(k*2);
+    ctx.strokeStyle = hexAlpha(COLORS.border,0.35);
+    ctx.beginPath(); ctx.moveTo(x,plotT); ctx.lineTo(x,plotB); ctx.stroke();
+  }
+  for(let d=-90; d<=90; d+=30){
+    const y = yOf(d);
+    ctx.strokeStyle = hexAlpha(COLORS.border,0.35);
+    ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
+  }
+  // celestial equator reference (delta=0)
+  ctx.strokeStyle = hexAlpha(COLORS.amber,0.35); ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(plotL,yOf(0)); ctx.lineTo(plotR,yOf(0)); ctx.stroke();
+
+  // the ecliptic: delta = asin(sin(eps) sin(lambda)), parameterized by
+  // lambda -> (alpha,delta); alpha(lambda) sweeps 0->360 monotonically as
+  // lambda does, so this traces one continuous curve with no seam to break
+  ctx.beginPath();
+  const N = 240;
+  for(let i=0;i<=N;i++){
+    const eq = originSunRaDec((i/N)*360);
+    const x = xOf(eq.raH), y = yOf(eq.decDeg);
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle = hexAlpha(COLORS.coral, 0.9); ctx.lineWidth=1.5; ctx.stroke();
+
+  // zodiac sign glyphs at the 12 sign centers, along the ecliptic curve
+  if(state.originDisplay.zodiac){
+    ctx.font = "10px Inter, sans-serif";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillStyle = hexAlpha(COLORS.muted, 0.7);
+    for(let k=0;k<12;k++){
+      const eq = originSunRaDec(k*30+15);
+      const x = xOf(eq.raH), y = yOf(eq.decDeg);
+      ctx.fillText(ORIGIN_ZODIAC_GLYPHS[k], x, y-10);
+    }
+  }
+
+  // Aries (0h/0deg) / Libra (12h/0deg)
+  ctx.font="12px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillStyle = COLORS.purple;
+  ctx.fillText("♈", xOf(0), yOf(0));
+  ctx.fillStyle = COLORS.muted;
+  ctx.fillText("♎", xOf(12), yOf(0));
+
+  // solstice points (6h/+23.4deg, 18h/-23.4deg) with tiny labels
+  ctx.fillStyle = COLORS.muted;
+  [ {raH:6, dec:23.4, label:"Jun solstice"}, {raH:18, dec:-23.4, label:"Dec solstice"} ].forEach(function(p){
+    const x = xOf(p.raH), y = yOf(p.dec);
+    ctx.beginPath(); ctx.arc(x,y,2.5,0,TAU); ctx.fill();
+    ctx.font="8px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="bottom";
+    ctx.fillText(p.label, x+4, y-3);
+  });
+
+  // the Sun, with glow, at the current (alpha, delta)
+  if(originStage){
+    const s = originStage.getState();
+    const sx = xOf(s.raHours), sy = yOf(s.decDeg);
+    drawGlow(ctx, glowSprite, sx, sy, 20);
+    ctx.fillStyle = COLORS.amber;
+    ctx.beginPath(); ctx.arc(sx,sy,3.5,0,TAU); ctx.fill();
+  }
+
+  ctx.strokeStyle = COLORS.border; ctx.lineWidth=1;
+  ctx.strokeRect(plotL+0.5,plotT+0.5,plotW-1,plotH-1);
+}
+
 /* =========================================================================
    11. CONTROLS WIRING
    ========================================================================= */
 const els = {};
 function cacheEls(){
-  ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum",
-   "locationField","locationSelect","phiRange","phiNum","lstRange","lstNum",
-   "starSelect","raRange","raNum","decRange","decNum",
-   "mainPanelTitle","readoutsDefault","readoutsHlst",
+  ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum","speedUnit",
+   "observerCard","locationField","locationSelect","phiRange","phiNum","lstRange","lstNum",
+   "starCard","starSelect","raRange","raNum","decRange","decNum",
+   "dateCard","doyRange","doyNum","doyCalendarReadout","cardinalControl",
+   "displayTogglesNormal","displayTogglesOrigin",
+   "mainPanelTitle","readoutsDefault","readoutsHlst","readoutsOrigin",
    "readoutA","readoutAlt","readoutRA","readoutDec","readoutH",
    "poleReadout","readoutPoleAlt","badgeWrap","riseBadge","diurnalExtra","readoutTransitEl","readoutH0",
    "hlstLST","hlstH","hlstAlpha","hlstCulminateNote",
+   "originDateLabel","originDayNum","originLambda","originAlpha","originDelta","originSeasonN","originSeasonS",
    "aboutCard","aboutTitle","aboutBody","formulasCard","formulasHead","formulasBody",
-   "stripModeToggle","legendAllsky","legendRadec","dialHoverZone"
+   "stripModeToggle","legendAllsky","legendRadec","legendOrigin","dialHoverZone"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
 }
 
@@ -2575,24 +2838,31 @@ function locationKeyForPhi(phi){
 
 /* generic slider+number two-way sync, matching the reference page's pattern */
 function wireSliderNumber(rangeEl, numEl, opts){
+  // min/max/step may each be a plain number (every existing caller) OR a
+  // zero-arg function returning the CURRENT bound (the Speed control needs
+  // this: its bounds/step depend on which tab is active -- see wirePlayback()).
+  function resolve(v){ return (typeof v === "function") ? v() : v; }
+  function getMin(){ return resolve(opts.min); }
+  function getMax(){ return resolve(opts.max); }
+  function getStep(){ return resolve(opts.step); }
   function commit(v){
-    v = clamp(v, opts.min, opts.max);
+    v = clamp(v, getMin(), getMax());
     opts.onCommit(v);
   }
   rangeEl.addEventListener("input", function(){
     const v = parseFloat(rangeEl.value);
-    numEl.value = fmtNum(v, opts.step);
+    numEl.value = fmtNum(v, getStep());
     commit(v);
   });
   numEl.addEventListener("input", function(){
     const v = parseFloat(numEl.value);
-    if(!isNaN(v)){ rangeEl.value = clamp(v, opts.min, opts.max); commit(v); }
+    if(!isNaN(v)){ rangeEl.value = clamp(v, getMin(), getMax()); commit(v); }
   });
   numEl.addEventListener("blur", function(){
     let v = parseFloat(numEl.value);
     if(isNaN(v)) v = opts.fallback();
-    v = clamp(v, opts.min, opts.max);
-    numEl.value = fmtNum(v, opts.step);
+    v = clamp(v, getMin(), getMax());
+    numEl.value = fmtNum(v, getStep());
     rangeEl.value = v;
     commit(v);
   });
@@ -2615,18 +2885,51 @@ function onObserverOrStarChanged(){
   fullUpdate();
 }
 
+/* Origin tab's own "fullUpdate()": pushes state.day into the stage, refreshes
+   the Date card's calendar readout + the header readouts + the formulas
+   card, and marks the strip dirty -- called by every control that changes
+   state.day (the DOY slider/number, the cardinal-date buttons, the +-1 day
+   step buttons, the play loop) and by switchTab() on entering the tab. */
+function onOriginDateChanged(){
+  if(!originStage) return;
+  originStage.setDate(state.day);
+  els.doyCalendarReadout.textContent = originStage.getState().dateLabel;
+  updateReadouts();
+  updateFormulas();
+  state.stripDirty = true;
+  requestRender();
+}
+
 function wirePlayback(){
   els.btnStepBack.addEventListener("click", function(){
+    if(state.tab === "origin"){
+      state.day = wrapYear(state.day - 1);
+      setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
+      onOriginDateChanged();
+      return;
+    }
     state.lst = wrap24(state.lst - 1/6); // 10 minutes
     setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
     fullUpdate();
   });
   els.btnStepFwd.addEventListener("click", function(){
+    if(state.tab === "origin"){
+      state.day = wrapYear(state.day + 1);
+      setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
+      onOriginDateChanged();
+      return;
+    }
     state.lst = wrap24(state.lst + 1/6);
     setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
     fullUpdate();
   });
   els.btnReset.addEventListener("click", function(){
+    if(state.tab === "origin"){
+      state.day = TAB_CONFIG.origin.day;
+      setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
+      onOriginDateChanged();
+      return;
+    }
     state.lst = TAB_CONFIG[state.tab].lst;
     setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
     fullUpdate();
@@ -2636,10 +2939,101 @@ function wirePlayback(){
     updatePlayButton();
     if(state.playing) startLoop(); else stopLoop();
   });
+  // Speed control: bounds/step/bound-field all depend on the active tab (h/s
+  // 0.1-6 for the LST-based tabs vs days/s 1-60 for the Origin tab) -- see
+  // wireSliderNumber()'s function-valued min/max/step support above.
   wireSliderNumber(els.speedRange, els.speedNum, {
-    min:0.1, max:6, step:0.1, fallback:function(){ return state.speed; },
-    onCommit:function(v){ state.speed = v; }
+    min:function(){ return state.tab === "origin" ? 1 : 0.1; },
+    max:function(){ return state.tab === "origin" ? 60 : 6; },
+    step:function(){ return state.tab === "origin" ? 1 : 0.1; },
+    fallback:function(){ return state.tab === "origin" ? state.speedDays : state.speed; },
+    onCommit:function(v){ if(state.tab === "origin") state.speedDays = v; else state.speed = v; }
   });
+}
+
+function wireOriginDate(){
+  wireSliderNumber(els.doyRange, els.doyNum, {
+    min:0, max:365, step:0.5, fallback:function(){ return state.day; },
+    onCommit:function(v){ state.day = v; onOriginDateChanged(); }
+  });
+  els.cardinalControl.querySelectorAll("button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      // sets the EXACT cardinal longitude (0/90/180/270 deg), not the
+      // approximate calendar day -- inverse of the stage's own
+      // meanSunLongitudeDeg(d) = 360*(d-79)/365.25, so lambda=0 lands
+      // exactly on d=79 and the others land a few tenths of a day off
+      // their calendar label (documented in altaz_origin_stage.js's header).
+      const lambdaDeg = parseFloat(btn.dataset.lambda);
+      state.day = 79 + lambdaDeg*365.25/360;
+      setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
+      onOriginDateChanged();
+    });
+  });
+}
+
+/* Origin tab's own Display-card toggles (Ghost Earths/Zodiac/Sun arcs/
+   Equatorial grid/Labels) -- these call the stage's setOptions(), not the
+   dome's applyDisplayVisibility()/updateDynamicArcs(). Tooltip show/hide
+   reuses the page's shared #sharedTip element and the same positioning
+   convention as wireDisplayToggles()'s tips (duplicated rather than shared,
+   matching this page's existing precedent of a second independent tip
+   wiring for the h-alpha-LST dial -- see wireDialTooltip()). */
+const ORIGIN_TOGGLE_TIPS = {
+  ghosts: "Earth at the two solstices and two equinoxes &mdash; note the axis points the same way in all four.",
+  zodiac: 'The twelve signs, 30&deg; each counted eastward from &#9800;; the Sun appears in the highlighted sign.',
+  sunArcs: 'The Sun\'s right ascension <span class="math">&alpha;</span>&#9737; (from &#9800; along the equator), declination <span class="math">&delta;</span>&#9737; (from the equator), and ecliptic longitude <span class="math">&lambda;</span>&#9737; (from &#9800; along the ecliptic).',
+  eqGrid: "Declination circles and hour circles of the equatorial system.",
+  labels: "Names for the poles, equinoxes, solstices and the Sun's angles."
+};
+function wireOriginToggles(){
+  const tip = document.getElementById("sharedTip");
+  const coarsePointer = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  let showTimer = null;
+  function hideTip(){
+    if(showTimer != null){ clearTimeout(showTimer); showTimer = null; }
+    tip.classList.remove("visible");
+    tip.hidden = true;
+  }
+  function positionTip(btn){
+    const r = btn.getBoundingClientRect();
+    const stacked = window.innerWidth <= 900;
+    tip.classList.toggle("tip-below", stacked);
+    if(stacked){
+      tip.style.left = clamp(r.left, 8, window.innerWidth - 248) + "px";
+      tip.style.top = (r.bottom + 8) + "px";
+    } else {
+      tip.style.left = (r.right + 10) + "px";
+      tip.style.top = (r.top + r.height/2) + "px";
+    }
+  }
+  function showTip(btn){
+    tip.innerHTML = ORIGIN_TOGGLE_TIPS[btn.dataset.key] || "";
+    tip.hidden = false;
+    positionTip(btn);
+    btn.setAttribute("aria-describedby", "sharedTip");
+    requestAnimationFrame(function(){ tip.classList.add("visible"); });
+  }
+  function scheduleShowTip(btn){
+    if(coarsePointer) return;
+    if(showTimer != null) clearTimeout(showTimer);
+    showTimer = setTimeout(function(){ showTimer = null; showTip(btn); }, 120);
+  }
+  els.displayTogglesOrigin.querySelectorAll(".toggle").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      const key = btn.dataset.key;
+      state.originDisplay[key] = !state.originDisplay[key];
+      btn.setAttribute("aria-pressed", state.originDisplay[key] ? "true" : "false");
+      if(originStage) originStage.setOptions(state.originDisplay);
+      state.stripDirty = true;
+      requestRender();
+    });
+    btn.addEventListener("pointerenter", function(ev){ if(ev.pointerType === "touch") return; scheduleShowTip(btn); });
+    btn.addEventListener("pointerleave", function(){ hideTip(); btn.removeAttribute("aria-describedby"); });
+    btn.addEventListener("focus", function(){ scheduleShowTip(btn); });
+    btn.addEventListener("blur", function(){ hideTip(); btn.removeAttribute("aria-describedby"); });
+    btn.addEventListener("keydown", function(ev){ if(ev.key === "Escape") btn.blur(); });
+  });
+  window.addEventListener("resize", function(){ if(!tip.hidden) hideTip(); });
 }
 
 function wireObserver(){
@@ -2751,7 +3145,7 @@ function wireDisplayToggles(){
     btn.removeAttribute("aria-describedby");
   }
 
-  document.querySelectorAll(".toggle").forEach(function(btn){
+  document.querySelectorAll("#displayTogglesNormal .toggle").forEach(function(btn){
     btn.addEventListener("click", function(){
       const key = btn.dataset.key;
       state.display[key] = !state.display[key];
@@ -2891,9 +3285,15 @@ function updatePlayButton(){
 }
 
 function switchTab(tabId){
+  const wasOrigin = state.tab === "origin";
+  const isOrigin = tabId === "origin";
   state.tab = tabId;
   const cfg = TAB_CONFIG[tabId];
 
+  // Dome state: unconditionally reseeded from every tab's config (including
+  // "origin"'s harmless placeholder values -- see TAB_CONFIG.origin's own
+  // comment) so a later switch back to any dome tab always starts clean
+  // regardless of what the origin tab did to these fields meanwhile.
   state.phi = cfg.phi;
   state.locationKey = locationKeyForPhi(cfg.phi);
   state.lst = cfg.lst;
@@ -2902,6 +3302,7 @@ function switchTab(tabId){
   state.ra = st.ra; state.dec = st.dec;
   state.playing = cfg.playing;
   state.speed = cfg.speed;
+  state.speedDays = cfg.speedDays || 20;
   state.display = Object.assign({}, cfg.display);
   state.sectorPair = cfg.sectorPair;
   state.gridAlpha = Object.assign({}, cfg.gridAlpha);
@@ -2912,11 +3313,33 @@ function switchTab(tabId){
   els.starSelect.value = state.starKey;
   setSliderNumber(els.raRange, els.raNum, state.ra, 0.01);
   setSliderNumber(els.decRange, els.decNum, state.dec, 0.1);
-  setSliderNumber(els.speedRange, els.speedNum, state.speed, 0.1);
 
-  document.querySelectorAll(".toggle").forEach(function(btn){
+  // Speed control: relabeled + rebounded per tab (h/s 0.1-6 vs days/s 1-60)
+  if(isOrigin){
+    els.speedUnit.textContent = "days/s";
+    els.speedRange.min = "1"; els.speedRange.max = "60"; els.speedRange.step = "1";
+    els.speedNum.min = "1"; els.speedNum.max = "60"; els.speedNum.step = "1";
+    setSliderNumber(els.speedRange, els.speedNum, state.speedDays, 1);
+    els.btnStepBack.innerHTML = "&lang; &minus;1 day"; els.btnStepBack.title = "Step back 1 day";
+    els.btnStepFwd.innerHTML = "+1 day &rang;"; els.btnStepFwd.title = "Step forward 1 day";
+    els.btnReset.title = "Reset date to Mar 20";
+  } else {
+    els.speedUnit.textContent = "h/s";
+    els.speedRange.min = "0.1"; els.speedRange.max = "6"; els.speedRange.step = "0.1";
+    els.speedNum.min = "0.1"; els.speedNum.max = "6"; els.speedNum.step = "0.1";
+    setSliderNumber(els.speedRange, els.speedNum, state.speed, 0.1);
+    els.btnStepBack.innerHTML = "&lang; &minus;10m"; els.btnStepBack.title = "Step back 10 minutes";
+    els.btnStepFwd.innerHTML = "+10m &rang;"; els.btnStepFwd.title = "Step forward 10 minutes";
+    els.btnReset.title = "Reset LST to this stage's default";
+  }
+
+  document.querySelectorAll("#displayTogglesNormal .toggle").forEach(function(btn){
     const key = btn.dataset.key;
     btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
+  });
+  els.displayTogglesOrigin.querySelectorAll(".toggle").forEach(function(btn){
+    const key = btn.dataset.key;
+    btn.setAttribute("aria-pressed", state.originDisplay[key] ? "true" : "false");
   });
 
   document.querySelectorAll("#sectorsControl button").forEach(function(b){
@@ -2931,7 +3354,7 @@ function switchTab(tabId){
     b.setAttribute("aria-selected", active ? "true" : "false");
   });
 
-  els.mainPanelTitle.textContent = "Celestial sphere — " + cfg.label;
+  els.mainPanelTitle.textContent = isOrigin ? cfg.label : ("Celestial sphere — " + cfg.label);
   els.aboutCard.className = "card about tint-" + cfg.tint;
   els.aboutTitle.textContent = cfg.aboutTitle;
   els.aboutBody.innerHTML = cfg.aboutHTML;
@@ -2940,14 +3363,44 @@ function switchTab(tabId){
 
   els.poleReadout.style.display = cfg.poleReadout ? "" : "none";
   els.badgeWrap.style.display = (cfg.badge === "diurnal") ? "" : "none";
-  els.readoutsDefault.style.display = cfg.hlstReadout ? "none" : "";
+  els.readoutsDefault.style.display = (cfg.hlstReadout || isOrigin) ? "none" : "";
   els.readoutsHlst.style.display = cfg.hlstReadout ? "" : "none";
+  els.readoutsOrigin.style.display = isOrigin ? "" : "none";
   els.locationField.classList.toggle("field-highlight", !!cfg.locationHighlight);
+
+  // Rail cards: Observer/Star hidden on the Origin tab, Date shown only there;
+  // Display card shows one of two independent toggle sets.
+  els.observerCard.style.display = isOrigin ? "none" : "";
+  els.starCard.style.display = isOrigin ? "none" : "";
+  els.dateCard.style.display = isOrigin ? "" : "none";
+  els.displayTogglesNormal.style.display = isOrigin ? "none" : "";
+  els.displayTogglesOrigin.style.display = isOrigin ? "" : "none";
+
+  // Strip panel: the Origin tab forces its own RA/Dec-style ecliptic map, no
+  // stripMode toggle / all-sky option.
+  els.stripModeToggle.style.display = isOrigin ? "none" : "";
+  els.legendAllsky.style.display = (!isOrigin && state.stripMode === "allsky") ? "" : "none";
+  els.legendRadec.style.display = (!isOrigin && state.stripMode === "radec") ? "" : "none";
+  els.legendOrigin.style.display = isOrigin ? "" : "none";
 
   updatePlayButton();
   if(state.playing) startLoop(); else stopLoop();
 
-  resetCameraView(); // each tab opens at its own default vantage (global, or TAB_CONFIG's override)
+  if(isOrigin){
+    ensureOriginStage();
+    if(originStage){
+      originStage.setVisible(true);
+      originStage.attachPointer(glCanvas);
+      state.day = cfg.day;
+      setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
+      originStage.setOptions(state.originDisplay);
+      onOriginDateChanged(); // setDate + readouts + formulas + strip dirty + requestRender
+      originStage.resetView(); // each entry re-homes both of the stage's cameras; renders once
+    }
+  } else {
+    if(wasOrigin && originStage){ originStage.setVisible(false); originStage.detachPointer(); }
+    resetCameraView(); // each dome tab opens at its own default vantage (global, or TAB_CONFIG's override)
+  }
   onObserverOrStarChanged();
   applyDisplayVisibility();
   applyGridAlpha();
@@ -2962,7 +3415,20 @@ function switchTab(tabId){
 /* =========================================================================
    12. READOUTS + FORMULAS CARD (live substituted numbers)
    ========================================================================= */
+function updateOriginReadouts(){
+  if(!originStage) return;
+  const s = originStage.getState();
+  els.originDateLabel.textContent = s.dateLabel;
+  els.originDayNum.textContent = Math.round(s.day);
+  els.originLambda.textContent = s.lambdaDeg.toFixed(1);
+  els.originAlpha.textContent = s.raHours.toFixed(2);
+  els.originDelta.textContent = fmtSigned(s.decDeg,1);
+  els.originSeasonN.textContent = s.seasonN;
+  els.originSeasonS.textContent = s.seasonS;
+}
+
 function updateReadouts(){
+  if(state.tab === "origin"){ updateOriginReadouts(); return; }
   const d = state.derived;
   els.readoutA.textContent   = isNaN(d.A_deg) ? "—" : d.A_deg.toFixed(1);
   els.readoutAlt.textContent = d.a_deg.toFixed(1);
@@ -2989,7 +3455,42 @@ function updateReadouts(){
   }
 }
 
+/* sin delta = sin eps sin lambda; tan alpha = cos eps tan lambda (alpha in
+   the same quadrant as lambda -- i.e. via atan2, not a bare arctan, which
+   is singular at lambda=90/270 where cos(lambda)=0) */
+function updateOriginFormulas(){
+  if(!originStage) return;
+  const s = originStage.getState();
+  const lambdaDeg = s.lambdaDeg;
+  const sinDelta = Math.sin(ORIGIN_EPS)*Math.sin(lambdaDeg*RAD);
+
+  const line1 =
+    '<div class="formula-line">' +
+      '<div class="formula-def"><span class="math">sin &delta;</span>&#9737; = <span class="math">sin &epsilon; sin &lambda;</span>&#9737;</div>' +
+      '<div class="formula-sub">sin ' + ORIGIN_EPS_DEG.toFixed(2) + '&deg; sin ' + fmtNum(lambdaDeg,0.1) + '&deg; = <b>' + sinDelta.toFixed(3) + '</b> &rarr; <span class="math">&delta;</span>&#9737; = <b>' + fmtSigned(s.decDeg,1) + '&deg;</b></div>' +
+    '</div>';
+
+  let line2;
+  const cosLambda = Math.cos(lambdaDeg*RAD);
+  if(Math.abs(cosLambda) < 1e-6){
+    line2 =
+      '<div class="formula-line">' +
+        '<div class="formula-def"><span class="math">tan &alpha;</span>&#9737; = <span class="math">cos &epsilon; tan &lambda;</span>&#9737; (<span class="math">&alpha;</span>&#9737; in the same quadrant as <span class="math">&lambda;</span>&#9737;)</div>' +
+        '<div class="formula-sub">undefined here (cos &lambda;&#9737; &asymp; 0, a solstice) &mdash; <span class="math">&alpha;</span>&#9737; = <b>' + s.raHours.toFixed(2) + 'h</b> directly (a quarter/three-quarter turn from &#9800;)</div>' +
+      '</div>';
+  } else {
+    const tanAlpha = Math.cos(ORIGIN_EPS)*Math.tan(lambdaDeg*RAD);
+    line2 =
+      '<div class="formula-line">' +
+        '<div class="formula-def"><span class="math">tan &alpha;</span>&#9737; = <span class="math">cos &epsilon; tan &lambda;</span>&#9737; (<span class="math">&alpha;</span>&#9737; in the same quadrant as <span class="math">&lambda;</span>&#9737;)</div>' +
+        '<div class="formula-sub">cos ' + ORIGIN_EPS_DEG.toFixed(2) + '&deg; tan ' + fmtNum(lambdaDeg,0.1) + '&deg; = <b>' + tanAlpha.toFixed(3) + '</b> &rarr; <span class="math">&alpha;</span>&#9737; = <b>' + s.raHours.toFixed(2) + 'h</b></div>' +
+      '</div>';
+  }
+  els.formulasBody.innerHTML = line1 + line2;
+}
+
 function updateFormulas(){
+  if(state.tab === "origin"){ updateOriginFormulas(); return; }
   const d = state.derived;
   const phi = state.phi, dec = state.dec, hDeg = d.H_deg;
   const sinA_ = Math.sin(phi*RAD)*Math.sin(dec*RAD) + Math.cos(phi*RAD)*Math.cos(dec*RAD)*Math.cos(hDeg*RAD);
@@ -3048,31 +3549,40 @@ function resizeOverlayCanvas(w, h){
    record the pending size; the canvases stretch via CSS in the meantime
    (soft/blurry, briefly), and finishSplitterResize() performs this exact
    path once, on drag end. */
+/* Shared by the ResizeObserver below AND one synchronous call from init()
+   right after the canvas exists (see init()'s comment) -- without that
+   synchronous call, state.mainW/mainH stay at their initial 0 for however
+   long it takes the (asynchronous) ResizeObserver to fire its first
+   callback, which is unpredictably later than the FIRST render a fresh
+   page load can trigger (a `?tab=` deep link switches tabs, and so
+   renders, synchronously inside init() itself). */
+function doGLResize(){
+  const rect = glCanvas.getBoundingClientRect();
+  const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
+  if(state.splitterDragging){
+    state.pendingMainW = w; state.pendingMainH = h;
+    return;
+  }
+  state.mainW = w; state.mainH = h;
+  if(state.webglOK && renderer){
+    renderer.setSize(w, h, false);
+    camera.aspect = w / (h || 1);
+    camera.updateProjectionMatrix();
+  }
+  updateSpriteScales(); // label pixel sizes depend on camera.fov + CSS height, both fixed except on resize
+  updateFatLineResolution(w, h); // Line2/LineMaterial screen-space width needs the CSS-pixel resolution
+  if(state.cam.isDefault){
+    // panel size/aspect changed while still at the default view -- re-fit rather than
+    // leaving a manually-untouched camera looking wrong after e.g. a window resize
+    state.cam.radius = computeDefaultRadius();
+    applyCameraFromState();
+  }
+  resizeOverlayCanvas(w, h);
+  if(originStage) originStage.resize(w, h); // stage.resize() renders once itself when it (and its own visible flag) is live
+  requestRender();
+}
 function setupGLResize(){
-  const ro = new ResizeObserver(function(){
-    const rect = glCanvas.getBoundingClientRect();
-    const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
-    if(state.splitterDragging){
-      state.pendingMainW = w; state.pendingMainH = h;
-      return;
-    }
-    state.mainW = w; state.mainH = h;
-    if(state.webglOK && renderer){
-      renderer.setSize(w, h, false);
-      camera.aspect = w / (h || 1);
-      camera.updateProjectionMatrix();
-    }
-    updateSpriteScales(); // label pixel sizes depend on camera.fov + CSS height, both fixed except on resize
-    updateFatLineResolution(w, h); // Line2/LineMaterial screen-space width needs the CSS-pixel resolution
-    if(state.cam.isDefault){
-      // panel size/aspect changed while still at the default view -- re-fit rather than
-      // leaving a manually-untouched camera looking wrong after e.g. a window resize
-      state.cam.radius = computeDefaultRadius();
-      applyCameraFromState();
-    }
-    resizeOverlayCanvas(w, h);
-    requestRender();
-  });
+  const ro = new ResizeObserver(doGLResize);
   ro.observe(glCanvas);
 }
 function setupStripResize(){
@@ -3117,6 +3627,7 @@ function finishSplitterResize(){
       applyCameraFromState();
     }
     resizeOverlayCanvas(w, h);
+    if(originStage) originStage.resize(w, h);
   }
   const stripCanvas = document.getElementById("stripCanvas");
   if(stripCanvas){
@@ -3293,9 +3804,15 @@ function loop(ts){
   const dtSec = (ts - lastFrameTs) / 1000;
   lastFrameTs = ts;
   if(dtSec > 0 && dtSec <= 0.25){
-    state.lst = wrap24(state.lst + state.speed*dtSec);
-    setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
-    fullUpdate(); // marks state.needsRender/stripDirty; requestRender() no-ops while playing
+    if(state.tab === "origin"){
+      state.day = wrapYear(state.day + state.speedDays*dtSec);
+      setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
+      onOriginDateChanged(); // marks state.stripDirty/requestRender(); requestRender() no-ops while playing
+    } else {
+      state.lst = wrap24(state.lst + state.speed*dtSec);
+      setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
+      fullUpdate(); // marks state.needsRender/stripDirty; requestRender() no-ops while playing
+    }
   }
   render(); // the play loop IS the render tick while state.playing is true
   rafId = requestAnimationFrame(loop);
@@ -3318,9 +3835,11 @@ function init(){
 
   wireTabs();
   wireDisplayToggles();
+  wireOriginToggles();
   wireDialTooltip();
   wireStripModeToggle();
   wirePlayback();
+  wireOriginDate();
   wireObserver();
   wireStar();
   wireFormulasCollapse();
@@ -3328,6 +3847,14 @@ function init(){
 
   setupGLResize();
   setupStripResize();
+  // Seed state.mainW/mainH (+ renderer size, camera.aspect, ...) synchronously
+  // right now rather than waiting for the ResizeObserver's own first
+  // (asynchronous) callback -- switchTab() below can render the dome
+  // synchronously within this very call (a `?tab=` deep link switches
+  // straight from the default "origin" tab to a dome tab before init()
+  // returns), and without this, that first render would use the stale
+  // initial state.mainW/mainH=0 / camera.aspect=1 from construction.
+  doGLResize();
 
   switchTab(state.tab); // seeds all controls/about/formulas and renders once
 
