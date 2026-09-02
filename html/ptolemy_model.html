@@ -256,6 +256,18 @@
     .panel-readouts{ font-size:10px; gap:6px; }
     .panel-header{ padding:0 8px; }
   }
+
+  /* ---------- embed mode (?embed=1): orbital diagram only, no chrome ---------- */
+  body.embed .topbar,
+  body.embed .rail,
+  body.embed .splitter,
+  body.embed #stripPanel,
+  body.embed .panel-header,
+  body.embed .drag-hint{ display:none; }
+  body.embed #app{ grid-template-rows:1fr; }
+  body.embed .body{ grid-template-columns:1fr; }
+  body.embed .workspace{ padding:0; grid-template-rows:1fr; }
+  body.embed #mainPanel{ width:100vw; height:100vh; border:none; border-radius:0; box-shadow:none; }
 </style>
 </head>
 <body>
@@ -2347,6 +2359,10 @@ function setupCanvasResize(canvas, onSize){
    7. BOOTSTRAP
    ========================================================================= */
 function init(){
+  // ?embed=1 strips all chrome (topbar/rail/strip panel/splitters/panel header)
+  // so the orbital diagram fills the viewport -- for embedding the page in an iframe/slide
+  if(new URLSearchParams(location.search).get("embed")) document.body.classList.add("embed");
+
   cacheEls();
   loadColors();
   glowSprite = makeGlowSprite(COLORS.amber, 48);

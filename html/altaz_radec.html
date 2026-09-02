@@ -142,6 +142,8 @@
   .canvas-stack{ position:absolute; inset:0; }
   .canvas-stack canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   #overlayCanvas{ pointer-events:none; }
+  .dial-hover-zone{ position:absolute; pointer-events:none; border-radius:50%; }
+  .dial-hover-zone.active{ pointer-events:auto; cursor:help; }
   .drag-hint{
     position:absolute; left:10px; bottom:8px; font-size:10px; color:var(--muted);
     opacity:.7; pointer-events:none; white-space:nowrap; z-index:3;
@@ -211,6 +213,11 @@
   .toggle .dot{ width:8px; height:8px; border-radius:50%; background:var(--border-strong); flex:0 0 auto; }
   .toggle[aria-pressed="true"]{ background:var(--cyan); color:var(--on-accent); border-color:var(--cyan); font-weight:600; }
   .toggle[aria-pressed="true"] .dot{ background:var(--on-accent); }
+
+  /* ---------- sectors segmented control (Display card) ---------- */
+  .sectors-field{ margin-bottom:6px; }
+  .sectors-segmented{ width:100%; }
+  .sectors-segmented button{ flex:1 1 0; padding:0 6px; }
 
   /* ---------- shared tooltip (Display card toggles) ---------- */
   .tip{
@@ -423,7 +430,14 @@
         <button type="button" class="toggle" data-key="meridian" aria-pressed="true"><span>Meridian</span><span class="dot"></span></button>
         <button type="button" class="toggle" data-key="diurnal" aria-pressed="true"><span>Diurnal circle</span><span class="dot"></span></button>
         <button type="button" class="toggle" data-key="arcs" aria-pressed="true"><span>Coordinate arcs</span><span class="dot"></span></button>
-        <button type="button" class="toggle" data-key="sectors" aria-pressed="true"><span>Coordinate sectors</span><span class="dot"></span></button>
+        <div class="field sectors-field">
+          <label class="field-label">Sectors</label>
+          <div class="segmented sectors-segmented" id="sectorsControl" role="tablist" aria-label="Coordinate sectors">
+            <button type="button" data-pair="none" data-tip="sectorsControl" class="active" role="tab" aria-selected="true">None</button>
+            <button type="button" data-pair="azel" data-key="azel" data-tip="sectorsControl" role="tab" aria-selected="false">Az &middot; El</button>
+            <button type="button" data-pair="radec" data-key="radec" data-tip="sectorsControl" role="tab" aria-selected="false"><span class="math">&alpha;</span> &middot; <span class="math">&delta;</span></button>
+          </div>
+        </div>
         <button type="button" class="toggle" data-key="triangle" aria-pressed="false"><span>Astronomical triangle</span><span class="dot"></span></button>
         <button type="button" class="toggle" data-key="labels" aria-pressed="true"><span>Labels</span><span class="dot"></span></button>
       </div>
@@ -474,6 +488,7 @@
           <div class="canvas-stack">
             <canvas id="glCanvas"></canvas>
             <canvas id="overlayCanvas"></canvas>
+            <div id="dialHoverZone" class="dial-hover-zone" aria-hidden="true"></div>
           </div>
           <div class="drag-hint">Drag to rotate &middot; Scroll to zoom &middot; &#8962; reset</div>
           <div class="webgl-fallback" id="webglFallback" hidden>WebGL is required for the 3D dome. Try a modern desktop browser (Chrome, Firefox, Edge, Safari).</div>
@@ -739,7 +754,8 @@ const TAB_CONFIG = {
     tint: "cyan",
     phi: 40.7, lst: 15.0, star: "vega", // El~49 deg, Az~74 deg (up in the east, all arcs short & clear)
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, sectors:true, triangle:false, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    sectorPair: "radec",
     gridAlpha: { h:1, e:1 },
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "Two grids on one sphere",
@@ -753,7 +769,8 @@ const TAB_CONFIG = {
     // LST works, and 8h separates the "S"/coordinate-arc labels from a screen-space overlap
     // that lst=6 produced at the default camera vantage
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, sectors:false, triangle:false, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    sectorPair: "none",
     gridAlpha: { h:1, e:1 },
     badge: "none", poleReadout:true, locationHighlight:true, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "One tilt explains everything",
@@ -765,7 +782,8 @@ const TAB_CONFIG = {
     tint: "magenta",
     phi: 40.7, lst: 5.0, star: "sirius", // h~-1.75h, just before transit -- play shows it culminate then set
     playing: true, speed: 1.0,
-    display: { hGrid:false, eGrid:true, meridian:true, diurnal:true, arcs:true, sectors:false, triangle:false, labels:true },
+    display: { hGrid:false, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    sectorPair: "none",
     gridAlpha: { h:1, e:1 },
     badge: "diurnal", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "The sky turns about the pole",
@@ -777,12 +795,14 @@ const TAB_CONFIG = {
     tint: "green",
     phi: 40.7, lst: 21.0, star: "vega",
     playing: false, speed: 0.5,
-    display: { hGrid:false, eGrid:true, meridian:true, diurnal:false, arcs:false, sectors:false, triangle:false, labels:true },
+    display: { hGrid:false, eGrid:true, meridian:true, diurnal:false, arcs:false, triangle:false, labels:true },
+    sectorPair: "none",
     gridAlpha: { h:1, e:0.5 },
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:true, formulasExpanded:false,
     aboutTitle: "Hour angle, right ascension, sidereal time",
     aboutHTML:
-      '<p>Three angles live on the celestial equator. Right ascension <span class="math">&alpha;</span> belongs to the star: measured eastward from the vernal equinox &#9800; to the star\'s hour circle, it never changes. The hour angle h belongs to you: measured westward from your meridian to that same hour circle, it grows steadily as the sky turns — it is the star\'s time since culmination (negative before it). Local sidereal time LST is the hour angle of &#9800; itself — equivalently, the right ascension that is on your meridian right now. Lay the arcs end to end and the bookkeeping is LST = h + <span class="math">&alpha;</span>. So a star culminates when LST = <span class="math">&alpha;</span>, and knowing the sidereal time tells you at once which stars are up: those with <span class="math">&alpha;</span> within a few hours of LST.</p>'
+      '<p>Three angles live on the celestial equator. Right ascension <span class="math">&alpha;</span> belongs to the star: measured eastward from the vernal equinox &#9800; to the star\'s hour circle, it never changes. The hour angle h belongs to you: measured westward from your meridian to that same hour circle, it grows steadily as the sky turns — it is the star\'s time since culmination (negative before it). Local sidereal time LST is the hour angle of &#9800; itself — equivalently, the right ascension that is on your meridian right now. Lay the arcs end to end and the bookkeeping is LST = h + <span class="math">&alpha;</span>. So a star culminates when LST = <span class="math">&alpha;</span>, and knowing the sidereal time tells you at once which stars are up: those with <span class="math">&alpha;</span> within a few hours of LST.</p>' +
+      '<p>The dial at the lower right is the same bookkeeping seen from above the north celestial pole: the meridian is pinned at the top, the right-ascension ticks turn with the sky, and the arcs <span class="math">h</span> (meridian to star) and then <span class="math">&alpha;</span> (star to &#9800;) add up to LST.</p>'
   },
   triangle: {
     label: "Astronomical triangle",
@@ -793,7 +813,8 @@ const TAB_CONFIG = {
     // numeric check against computeDerived().
     phi: 40.7, lst: 18.5, star: "arcturus",
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, meridian:true, diurnal:false, arcs:true, sectors:false, triangle:true, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:false, arcs:true, triangle:true, labels:true },
+    sectorPair: "none",
     // viewpoint above the SW horizon (camera azimuth 225 deg) looking back toward
     // the NE, elevation 20 deg -- spreads Z (top), P (north, El 40.7) and S (WSW,
     // El~32) across the frame instead of viewing the triangle edge-on; see report
@@ -816,7 +837,8 @@ const state = {
   lst: 6,                    // hours, continuous display value
   starKey: "vega", ra: 18.615, dec: 38.78,
   playing: false, speed: 1.0,
-  display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, sectors:true, triangle:false, labels:true },
+  display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+  sectorPair: "radec",        // "none" | "azel" | "radec" -- which pair of coordinate-sector fans is shown
   gridAlpha: { h:1, e:1 },
   stripMode: "allsky",        // "allsky" | "radec"
   derived: null,              // computeDerived(...) result for the current instant
@@ -873,7 +895,8 @@ function recomputeDerived(){
 let renderer, scene, camera, glCanvas;
 let hGridGroup, meridianGroup, equatorialGroup, diurnalGroup;
 let meridianUpper, meridianLower; // {line,material,baseOpacity,baseLinewidth} wrappers, for applyHighlight()
-let starTorus, starSphere, starGlow, starLabel, starLabelText = null;
+let meridianLabel; // the "meridian" text sprite -- hidden on the triangle tab (collides with its Az label there); see applyDisplayVisibility()
+let starSphere, starGlow, starLabel, starLabelText = null;
 let starHourCircle; // the star's own hour circle (great circle through both poles at native RA = alpha) — Task B
 const matRefs = { hGrid: [], eGrid: [] }; // {material, base} — opacity scaled by state.gridAlpha
 
@@ -904,6 +927,10 @@ function applyDisplayVisibility(){
   }
   if(diurnalGroup) diurnalGroup.visible = !!state.display.diurnal || hk === "diurnal";
   if(meridianGroup) meridianGroup.visible = !!state.display.meridian || hk === "meridian";
+  // the "meridian" text label collides with the triangle tab's Az-angle label
+  // at that tab's default camera vantage -- hide just the label there; the
+  // meridian line itself (also in meridianGroup) stays, per the line above
+  if(meridianLabel) meridianLabel.visible = state.tab !== "triangle";
   requestRender();
 }
 
@@ -933,14 +960,16 @@ function setHighlightedOpacity(material, base, group, hk, baseLinewidth){
     material.linewidth = baseLinewidth * ((hk && group === hk) ? 1.4 : 1);
   }
 }
-/* Coordinate-sector fans (Task 3) belong to TWO highlight groups at once: their
-   own "sectors" toggle, AND the "arcs" toggle (hovering Coordinate arcs should
-   reinforce the fans too, since they illustrate the same four angles) — hence
-   a dedicated helper rather than the single-group highlightOpacity() above. */
-function sectorHighlightOpacity(base, hk){
+/* Coordinate-sector fans show ONE pair at a time (state.sectorPair: "none" |
+   "azel" | "radec", chosen via the Sectors segmented control). Hovering the
+   "Az · El"/"α · δ" option previews that pair (brightened if it's already the
+   active selection, a dimmer preview otherwise via highlightKey "azel"/
+   "radec"); hovering the "Coordinate arcs" toggle also reinforces whichever
+   pair is currently selected, same as the other arc layers. */
+function sectorPairOpacity(base, pairName, hk){
   if(!hk) return base;
-  if(hk === "sectors") return state.display.sectors ? Math.min(1, base*1.6) : base*0.5;
-  if(hk === "arcs")    return state.display.arcs    ? Math.min(1, base*1.6) : base*0.5;
+  if(hk === pairName) return state.sectorPair === pairName ? Math.min(1, base*1.6) : base*0.5;
+  if(hk === "arcs" && state.sectorPair === pairName) return Math.min(1, base*1.6);
   return base*0.35;
 }
 function applyHighlight(){
@@ -965,9 +994,10 @@ function applyHighlight(){
   });
   [arrowAz, arrowAlt, arrowDec, arrowH, arrowRA].forEach(function(mesh){ setHighlightedOpacity(mesh.material, 1, "arcs", hk); });
 
-  [sectorAz, sectorEl, sectorDec, sectorAlpha].forEach(function(s){
-    s.material.opacity = sectorHighlightOpacity(s.baseOpacity, hk);
-  });
+  sectorAz.material.opacity    = sectorPairOpacity(sectorAz.baseOpacity, "azel", hk);
+  sectorEl.material.opacity    = sectorPairOpacity(sectorEl.baseOpacity, "azel", hk);
+  sectorDec.material.opacity   = sectorPairOpacity(sectorDec.baseOpacity, "radec", hk);
+  sectorAlpha.material.opacity = sectorPairOpacity(sectorAlpha.baseOpacity, "radec", hk);
 
   [sideZP, sidePS, sideZS].forEach(function(o){
     setHighlightedOpacity(o.material, o.baseOpacity, "triangle", hk, o.baseLinewidth);
@@ -1294,12 +1324,15 @@ function buildStaticScene(){
   meridianGroup.add(meridianUpper.line, meridianLower.line);
 
   // "meridian" label just above the south point (th=165, 15 deg up from the
-  // horizon along the meridian), nudged radially outward off the sphere
+  // horizon along the meridian), nudged radially outward off the sphere.
+  // Kept as its own module-scope reference (meridianLabel) so its visibility
+  // can be toggled independently of the rest of meridianGroup -- see
+  // applyDisplayVisibility() (it collides with the triangle tab's Az label).
   {
     const p = meridianPoint(165);
-    const lab = makeTextSprite("meridian", COLORS.purple, { pixelHeight:16 });
-    lab.position.copy(p.clone().multiplyScalar(1.15));
-    meridianGroup.add(lab);
+    meridianLabel = makeTextSprite("meridian", COLORS.purple, { pixelHeight:16 });
+    meridianLabel.position.copy(p.clone().multiplyScalar(1.15));
+    meridianGroup.add(meridianLabel);
   }
 }
 
@@ -1381,12 +1414,10 @@ function buildEquatorialGroup(){
   diurnalGroup = new THREE.Group();
   scene.add(diurnalGroup);
 
-  // star marker: torus + small sphere + glow sprite + name label
-  const torusGeo = new THREE.TorusGeometry(0.035, 0.006, 10, 48);
-  starTorus = new THREE.Mesh(torusGeo, new THREE.MeshBasicMaterial({ color:COLORI.amber }));
-  starSphere = new THREE.Mesh(new THREE.SphereGeometry(0.016,12,10), new THREE.MeshBasicMaterial({ color:COLORI.amber }));
+  // star marker: small filled dot + glow sprite + name label (no ring)
+  starSphere = new THREE.Mesh(new THREE.SphereGeometry(0.012,12,10), new THREE.MeshBasicMaterial({ color:COLORI.amber }));
   starGlow = makeGlowSpriteThree(COLORS.amber, 0.22);
-  starPart.add(starTorus, starSphere, starGlow);
+  starPart.add(starSphere, starGlow);
   updateStarInGroup();
 
   updateEquatorialOrientation();
@@ -1430,13 +1461,10 @@ function updateEquatorialOrientation(){
    and diurnal-circle geometry. Called when the star selection or ra/dec change —
    NOT every frame. */
 function updateStarInGroup(){
-  if(!starTorus) return;
+  if(!starSphere) return;
   const p = nativePointFromRA(state.ra*15, state.dec);
-  starTorus.position.copy(p);
   starSphere.position.copy(p);
   starGlow.position.copy(p);
-  // orient the torus to face outward (lie tangent to the sphere at p)
-  starTorus.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), p.clone().normalize());
 
   const name = currentStarName();
   if(name !== starLabelText){
@@ -1639,8 +1667,10 @@ let sectorAz, sectorEl, sectorDec, sectorAlpha; // coordinate-sector fans (Task 
 let hlstAlpha, hlstH, hlstLst;
 let hlstAlphaArrow, hlstHArrow, hlstLstArrow;
 let hlstAlphaLabel, hlstHLabel, hlstLstLabel;
-// scaled ~1.45x (from 0.012/0.044) so the arrowheads match the now-thicker 4px fat-line arcs
-const coneGeoShared = new THREE.ConeGeometry(0.012*1.45, 0.044*1.45, 8);
+// scaled ~1.45x (from 0.012/0.044) so the arrowheads match the now-thicker 4px
+// fat-line arcs, then scaled by a further 0.7x (polish pass) so the heads read
+// as accents rather than dominating the thin arcs
+const coneGeoShared = new THREE.ConeGeometry(0.012*1.45*0.7, 0.044*1.45*0.7, 8);
 
 function makeDynamicLine(colorInt, opacity, dashed, capacity){
   const cap = capacity || (ARC_N+1);
@@ -1701,7 +1731,7 @@ function placeArrowAtEnd(cone, pts){
   const tip = pts[n-1], prev = pts[n-2];
   const dir = new THREE.Vector3().subVectors(tip, prev);
   if(dir.lengthSq() < 1e-12) dir.set(0,1,0); else dir.normalize();
-  const halfH = 0.022;
+  const halfH = 0.022*0.7; // matches coneGeoShared's own 0.7x polish-pass shrink
   cone.position.copy(tip).addScaledVector(dir, -halfH);
   cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
   cone.visible = true;
@@ -1803,9 +1833,12 @@ function updateDynamicArcs(){
   // "|| highlightKey===..." previews an OFF layer at hover/focus time (Task C)
   const arcsRelevant = state.tab !== "hlst"; // Az/El/delta/h/alpha arcs don't exist on the hlst tab (its own stepped arcs take over)
   const showArcs = arcsRelevant && (!!state.display.arcs || hk === "arcs");
-  // sectors belong to their OWN toggle, but also preview alongside a hovered "arcs" toggle (Task 3)
-  const showSectors = arcsRelevant && (!!state.display.sectors || hk === "sectors" || hk === "arcs");
-  const computeArcs = showArcs || showSectors; // sectors reuse the exact same sampled arc points
+  // sectors show ONE pair at a time (state.sectorPair); hovering that pair's own
+  // segmented-control option, or the "Coordinate arcs" toggle while that pair is
+  // selected, previews/reinforces it too
+  const showSectorsAzEl  = arcsRelevant && (state.sectorPair === "azel"  || hk === "azel"  || (hk === "arcs" && state.sectorPair === "azel"));
+  const showSectorsRadec = arcsRelevant && (state.sectorPair === "radec" || hk === "radec" || (hk === "arcs" && state.sectorPair === "radec"));
+  const computeArcs = showArcs || showSectorsAzEl || showSectorsRadec; // sectors reuse the exact same sampled arc points
   const showHlst = state.tab === "hlst";
   const showLabels = !!state.display.labels || hk === "labels";
 
@@ -1815,21 +1848,21 @@ function updateDynamicArcs(){
     setLinePoints(arcAz, pts); arcAz.line.visible = showArcs; arrowAz.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowAz, pts);
     labelAtMid(labelAObj, pts); labelAObj.visible = showArcs && showLabels;
-    updateSectorFan(sectorAz, pts); sectorAz.mesh.visible = showSectors;
+    updateSectorFan(sectorAz, pts); sectorAz.mesh.visible = showSectorsAzEl;
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec(d.A_deg, (i/ARC_N)*d.a_deg)));
     setLinePoints(arcAlt, pts); arcAlt.line.visible = showArcs; arrowAlt.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowAlt, pts);
     labelAtMid(labelAltObj, pts); labelAltObj.visible = showArcs && showLabels;
-    updateSectorFan(sectorEl, pts); sectorEl.mesh.visible = showSectors;
+    updateSectorFan(sectorEl, pts); sectorEl.mesh.visible = showSectorsAzEl;
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(eqToVec(d.H_deg, (i/ARC_N)*state.dec, state.phi)));
     setLinePoints(arcDec, pts); arcDec.line.visible = showArcs; arrowDec.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowDec, pts);
     labelAtMid(labelDecObj, pts); labelDecObj.visible = showArcs && showLabels;
-    updateSectorFan(sectorDec, pts); sectorDec.mesh.visible = showSectors;
+    updateSectorFan(sectorDec, pts); sectorDec.mesh.visible = showSectorsRadec;
 
     // h: dashed, on the small circle delta=-4 (a parallel just below the equator)
     // so it never shares pixels with the alpha arc drawn ON the equator itself
@@ -1852,7 +1885,7 @@ function updateDynamicArcs(){
     setLinePoints(arcRA, pts); arcRA.line.visible = showArcs; arrowRA.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowRA, pts);
     labelAtMid(labelRAObj, pts); labelRAObj.visible = showArcs && showLabels;
-    updateSectorFan(sectorAlpha, pts); sectorAlpha.mesh.visible = showSectors;
+    updateSectorFan(sectorAlpha, pts); sectorAlpha.mesh.visible = showSectorsRadec;
 
     starHourCircle.line.visible = showArcs;
   } else {
@@ -2054,20 +2087,42 @@ function updateTriangle(){
       exactly on the equinox tick, since (top->star)+(star->equinox) =
       h + alpha = LST by construction — verified in the report (check #9/#10).
    ========================================================================= */
+function dialGeometry(w, h){
+  const R = 0.16*Math.min(w,h);
+  const margin = 16;
+  return { R:R, cx: w-R-margin, cy: h-R-margin };
+}
+
+/* Positions/activates the transparent hover-only hit zone (#dialHoverZone) that
+   sits over the dial circle -- the overlay canvas itself stays pointer-events:none
+   throughout (so it never blocks camera-drag on the WebGL canvas underneath);
+   this small dedicated element is the one thing on the page with pointer-events
+   re-enabled, and only while the dial itself is on screen (the "hlst" tab). */
+function setDialHoverZone(geom){
+  const el = els.dialHoverZone;
+  if(!el) return;
+  if(!geom){ el.classList.remove("active"); return; }
+  el.style.left = (geom.cx - geom.R) + "px";
+  el.style.top = (geom.cy - geom.R) + "px";
+  el.style.width = (geom.R*2) + "px";
+  el.style.height = (geom.R*2) + "px";
+  el.classList.add("active");
+}
+
 function drawOverlay(){
   const canvas = document.getElementById("overlayCanvas");
   const ctx = canvas.getContext("2d");
   const w = state.overlayW || canvas.clientWidth;
   const h = state.overlayH || canvas.clientHeight;
   ctx.clearRect(0,0,w,h);
-  if(!w || !h || state.tab !== "hlst") return;
-  drawHlstDial(ctx, w, h);
+  if(!w || !h || state.tab !== "hlst"){ setDialHoverZone(null); return; }
+  const geom = dialGeometry(w, h);
+  drawHlstDial(ctx, w, h, geom);
+  setDialHoverZone(geom);
 }
 
-function drawHlstDial(ctx, w, h){
-  const R = 0.16*Math.min(w,h);
-  const margin = 16;
-  const cx = w - R - margin, cy = h - R - margin;
+function drawHlstDial(ctx, w, h, geom){
+  const R = geom.R, cx = geom.cx, cy = geom.cy;
   function pt(theta, r){ return { x: cx + r*Math.sin(theta), y: cy - r*Math.cos(theta) }; }
 
   ctx.save();
@@ -2094,10 +2149,21 @@ function drawHlstDial(ctx, w, h){
   ctx.strokeStyle = COLORS.text; ctx.lineWidth = 1.4;
   const m1 = pt(0, R*0.80), m2 = pt(0, R*1.0);
   ctx.beginPath(); ctx.moveTo(m1.x,m1.y); ctx.lineTo(m2.x,m2.y); ctx.stroke();
+  const meridianLabelY = cy - R*1.02 - 2;
   ctx.fillStyle = COLORS.text;
   ctx.font = "9px Inter, sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-  ctx.fillText("meridian", cx, cy - R*1.02 - 2);
+  ctx.fillText("meridian", cx, meridianLabelY);
+
+  // two-line title stacked above the "meridian" caption
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  const titleY2 = meridianLabelY - 12, titleY1 = titleY2 - 13;
+  ctx.font = "600 12px Inter, sans-serif";
+  ctx.fillStyle = COLORS.text;
+  ctx.fillText("LST dial", cx, titleY1);
+  ctx.font = "10px Inter, sans-serif";
+  ctx.fillStyle = COLORS.muted;
+  ctx.fillText("seen from above NCP", cx, titleY2);
 
   function arcPath(th0, th1, radius){
     const n = 48;
@@ -2109,16 +2175,27 @@ function drawHlstDial(ctx, w, h){
     }
     ctx.stroke();
   }
-  // h: top -> star (signed sweep). alpha: continuing clockwise, star -> equinox
-  // (theta_equinox - theta_star == alpha*15 exactly, always positive, regardless of h's sign).
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = COLORS.magenta; arcPath(0, thetaStar, R*0.72);
-  ctx.strokeStyle = COLORS.amber;   arcPath(thetaStar, thetaStar + norm360((thetaEquinox-thetaStar)*DEG)*RAD, R*0.72);
-  ctx.lineWidth = 1.4;
-  ctx.strokeStyle = COLORS.cyan;    arcPath(0, thetaEquinox, R*0.92);
+  // Three nested radii -- LST outermost, h middle, alpha innermost -- so all
+  // three stay visible at once instead of h/alpha sharing a radius and one
+  // masking the other. All still measured clockwise from the meridian mark
+  // at the top, as before: h sweeps top -> star (signed); alpha continues
+  // clockwise from star -> equinox (theta_equinox - theta_star == alpha*15
+  // exactly, always positive, regardless of h's sign); LST sweeps top -> equinox.
+  const R_LST = R*0.92, R_H = R*0.72, R_ALPHA = R*0.54;
+  ctx.setLineDash([]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = COLORS.cyan;    arcPath(0, thetaEquinox, R_LST);
 
-  const starP = pt(thetaStar, R*0.72);
-  const eqP = pt(thetaEquinox, R*0.72);
+  ctx.lineWidth = 3;
+  ctx.setLineDash([6,4]);
+  ctx.strokeStyle = COLORS.magenta; arcPath(0, thetaStar, R_H);
+  ctx.setLineDash([]);
+
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = COLORS.amber;   arcPath(thetaStar, thetaStar + norm360((thetaEquinox-thetaStar)*DEG)*RAD, R_ALPHA);
+
+  const starP = pt(thetaStar, R_H);
+  const eqP = pt(thetaEquinox, R_ALPHA);
   ctx.fillStyle = COLORS.amber;
   ctx.beginPath(); ctx.arc(starP.x,starP.y,3.2,0,TAU); ctx.fill();
   ctx.font = "10px Inter, sans-serif";
@@ -2133,8 +2210,11 @@ function drawHlstDial(ctx, w, h){
   ctx.font = "10.5px Inter, sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "top";
   ctx.fillStyle = COLORS.muted;
+  const eqY = Math.min(h-24, cy+R+8);
   const line = "LST = h + α  →  " + lst.toFixed(2) + "h = " + hHours.toFixed(2) + "h + " + ra.toFixed(2) + "h";
-  ctx.fillText(line, cx, Math.min(h-12, cy+R+8));
+  ctx.fillText(line, cx, eqY);
+  ctx.font = "10px Inter, sans-serif";
+  ctx.fillText("meridian at top · sky turns clockwise", cx, eqY + 13);
   ctx.restore();
 }
 
@@ -2398,7 +2478,7 @@ function cacheEls(){
    "poleReadout","readoutPoleAlt","badgeWrap","riseBadge","diurnalExtra","readoutTransitEl","readoutH0",
    "hlstLST","hlstH","hlstAlpha","hlstCulminateNote",
    "aboutCard","aboutTitle","aboutBody","formulasCard","formulasHead","formulasBody",
-   "stripModeToggle","legendAllsky","legendRadec"
+   "stripModeToggle","legendAllsky","legendRadec","dialHoverZone"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
 }
 
@@ -2528,7 +2608,7 @@ const TOGGLE_TIPS = {
   meridian: 'The great circle through the north point, zenith and south point — where every star culminates and where hour angle <span class="math">h</span> is zero.',
   diurnal: "The star's daily path: a circle of constant declination about the celestial pole.",
   arcs: 'The star\'s coordinates drawn as arcs: <span class="math">Az</span> and <span class="math">El</span> in cyan, <span class="math">&delta;</span> and <span class="math">&alpha;</span> in amber, hour angle <span class="math">h</span> in magenta.',
-  sectors: 'Translucent sectors from the observer out to each arc — the planes in which <span class="math">Az</span>, <span class="math">El</span>, <span class="math">&alpha;</span> and <span class="math">&delta;</span> are measured.',
+  sectorsControl: "Translucent sectors from the observer out to one pair of arcs — the planes in which that pair is measured. Show one pair at a time.",
   triangle: "The spherical triangle zenith–pole–star whose sides and angles convert between the two systems.",
   labels: "Names and symbols for points, arcs and cardinal directions."
 };
@@ -2563,7 +2643,7 @@ function wireDisplayToggles(){
     }
   }
   function showTip(btn){
-    tip.innerHTML = TOGGLE_TIPS[btn.dataset.key] || "";
+    tip.innerHTML = TOGGLE_TIPS[btn.dataset.tip || btn.dataset.key] || "";
     tip.hidden = false;
     positionTip(btn);
     btn.setAttribute("aria-describedby", "sharedTip");
@@ -2611,7 +2691,89 @@ function wireDisplayToggles(){
     });
   });
 
+  // Sectors segmented control (None / Az·El / α·δ): click selects state.sectorPair;
+  // hovering/focusing the "azel"/"radec" options reuses the exact same
+  // enterHighlight/leaveHighlight preview as the .toggle buttons above (their
+  // data-key doubles as the sector-pair highlightKey); the "None" option only
+  // shows the control's tooltip, since there's no pair to preview for it.
+  document.querySelectorAll("#sectorsControl button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      state.sectorPair = btn.dataset.pair;
+      document.querySelectorAll("#sectorsControl button").forEach(function(b){
+        const active = b === btn;
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      updateDynamicArcs(); // also calls applyHighlight() + requestRender()
+    });
+  });
+  document.querySelectorAll('#sectorsControl button[data-key]').forEach(function(btn){
+    btn.addEventListener("pointerenter", function(ev){
+      if(ev.pointerType === "touch") return;
+      enterHighlight(btn);
+      scheduleShowTip(btn);
+    });
+    btn.addEventListener("pointerleave", function(){ leaveHighlight(btn); });
+    btn.addEventListener("focus", function(){
+      enterHighlight(btn);
+      scheduleShowTip(btn);
+    });
+    btn.addEventListener("blur", function(){ leaveHighlight(btn); });
+  });
+  document.querySelectorAll('#sectorsControl button[data-pair="none"]').forEach(function(btn){
+    btn.addEventListener("pointerenter", function(ev){
+      if(ev.pointerType === "touch") return;
+      scheduleShowTip(btn);
+    });
+    btn.addEventListener("pointerleave", function(){ hideTip(); });
+    btn.addEventListener("focus", function(){ scheduleShowTip(btn); });
+    btn.addEventListener("blur", function(){ hideTip(); });
+  });
+
   window.addEventListener("resize", function(){ if(!tip.hidden) hideTip(); });
+}
+
+/* Hover tooltip for the h·α·LST dial overlay. The overlay canvas itself stays
+   pointer-events:none (so it never blocks camera-drag on the WebGL canvas
+   underneath); #dialHoverZone is a small transparent element, positioned by
+   setDialHoverZone() to exactly cover the dial circle, with pointer-events
+   re-enabled ONLY on it, and only while the dial is showing -- "hover only",
+   no keyboard focus target. Reuses the page's #sharedTip element, styled the
+   same way the Display-card toggles' tips are (positionTip()'s "stacked"
+   variant: appears below-left, arrow up) since the dial sits at the bottom
+   corner of the panel where there is no room to the right. */
+const DIAL_TIP_TEXT = 'The same bookkeeping seen from above the north celestial pole: the meridian is pinned at the top, right-ascension ticks turn with the sky, and the arcs <span class="math">h</span> (meridian &rarr; star) then <span class="math">&alpha;</span> (star &rarr; &#9800;) add up to LST.';
+function wireDialTooltip(){
+  const zone = els.dialHoverZone;
+  const tip = document.getElementById("sharedTip");
+  if(!zone || !tip) return;
+  let showTimer = null;
+  function hide(){
+    if(showTimer != null){ clearTimeout(showTimer); showTimer = null; }
+    tip.classList.remove("visible");
+    tip.hidden = true;
+    zone.removeAttribute("aria-describedby");
+  }
+  function show(){
+    tip.innerHTML = DIAL_TIP_TEXT;
+    tip.hidden = false;
+    tip.classList.add("tip-below");
+    const r = zone.getBoundingClientRect();
+    tip.style.left = clamp(r.left, 8, window.innerWidth - 248) + "px";
+    tip.style.top = (r.bottom + 8) + "px";
+    zone.setAttribute("aria-describedby", "sharedTip");
+    requestAnimationFrame(function(){ tip.classList.add("visible"); });
+  }
+  function scheduleShow(){
+    if(showTimer != null) clearTimeout(showTimer);
+    showTimer = setTimeout(function(){ showTimer = null; show(); }, 120);
+  }
+  zone.addEventListener("pointerenter", function(ev){
+    if(ev.pointerType === "touch") return;
+    scheduleShow();
+  });
+  zone.addEventListener("pointerleave", hide);
+  window.addEventListener("resize", function(){ if(!tip.hidden) hide(); });
 }
 
 function wireStripModeToggle(){
@@ -2655,6 +2817,7 @@ function switchTab(tabId){
   state.playing = cfg.playing;
   state.speed = cfg.speed;
   state.display = Object.assign({}, cfg.display);
+  state.sectorPair = cfg.sectorPair;
   state.gridAlpha = Object.assign({}, cfg.gridAlpha);
 
   setSliderNumber(els.phiRange, els.phiNum, state.phi, 0.1);
@@ -2668,6 +2831,12 @@ function switchTab(tabId){
   document.querySelectorAll(".toggle").forEach(function(btn){
     const key = btn.dataset.key;
     btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
+  });
+
+  document.querySelectorAll("#sectorsControl button").forEach(function(b){
+    const active = b.dataset.pair === state.sectorPair;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
   });
 
   els.tabBar.querySelectorAll("button").forEach(function(b){
@@ -3063,6 +3232,7 @@ function init(){
 
   wireTabs();
   wireDisplayToggles();
+  wireDialTooltip();
   wireStripModeToggle();
   wirePlayback();
   wireObserver();
