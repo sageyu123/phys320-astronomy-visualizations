@@ -736,9 +736,18 @@ const TAB_CONFIG = {
   triangle: {
     label: "Astronomical triangle",
     tint: "amber",
-    phi: 40.7, lst: 16, star: "arcturus",
+    // LST=18.5h puts Arcturus well past transit (h~+4.24h, El~32.2 deg, Az~268 deg,
+    // WSW) so the triangle's sides are wide (Z-P~49 deg, P-S~70.8 deg, Z-S~57.8 deg)
+    // instead of the small/edge-on triangle LST=16 produced -- see report for the
+    // numeric check against computeDerived().
+    phi: 40.7, lst: 18.5, star: "arcturus",
     playing: false, speed: 1.0,
     display: { hGrid:true, eGrid:true, diurnal:false, arcs:true, triangle:true, labels:true },
+    // viewpoint above the SW horizon (camera azimuth 225 deg) looking back toward
+    // the NE, elevation 20 deg -- spreads Z (top), P (north, El 40.7) and S (WSW,
+    // El~32) across the frame instead of viewing the triangle edge-on; see report
+    // for the theta<->azimuth derivation from applyCameraFromState()'s convention
+    camera: { thetaDeg: -45, phiDeg: 20 },
     gridAlpha: { h:0.5, e:0.5 },
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:true,
     aboutTitle: "The astronomical triangle",
@@ -810,6 +819,7 @@ const matRefs = { hGrid: [], eGrid: [] }; // {material, base} — opacity scaled
 function applyGridAlpha(){
   matRefs.hGrid.forEach(function(r){ r.material.opacity = r.base * state.gridAlpha.h; });
   matRefs.eGrid.forEach(function(r){ r.material.opacity = r.base * state.gridAlpha.e; });
+  requestRender();
 }
 function applyDisplayVisibility(){
   if(hGridGroup) hGridGroup.visible = !!state.display.hGrid;
@@ -818,7 +828,7 @@ function applyDisplayVisibility(){
     equatorialGroup.userData.equinoxPart.visible = !!state.display.eGrid;
   }
   if(diurnalGroup) diurnalGroup.visible = !!state.display.diurnal;
-  state.needsRender = true;
+  requestRender();
 }
 
 function makeLineLoop(points, colorInt, opacity, lineWidth){
@@ -857,30 +867,64 @@ function applySpriteScale(sprite){
 }
 function updateSpriteScales(){ labelRegistry.forEach(applySpriteScale); }
 
+/* Renders `text` into a canvas CROPPED TIGHTLY TO ITS ACTUAL INK — measured via
+   ctx.measureText()'s actualBoundingBox* metrics, not the font's nominal line
+   box (which for most fonts leaves 40-60% empty vertical space above/below the
+   glyph, the reason an earlier version of this sprite sized ~2x too small: it
+   was sizing the whole padded box to the target, not the visible glyph).
+   `opts.pixelHeight` is the desired GLYPH ink height in CSS px as measured on
+   screen; sprite.userData.pixelHeight (consumed by applySpriteScale) is then
+   back-solved so that ink height, not box height, comes out to that target. */
 function makeTextSprite(text, colorHex, opts){
   opts = opts || {};
-  const fontSizePx = opts.fontSizePx || 30;
-  const mathFont = (opts.math && !opts.upright) ? 'italic 600 ' : '600 ';
+  const targetGlyphPx = opts.pixelHeight || 13;
+  const italic = !!(opts.math && !opts.upright);
+  const fontStyle = (italic ? 'italic ' : '') + '600 '; // 600 = semibold throughout
   const fam = opts.math ? '"STIX Two Math","Cambria Math","Times New Roman",serif' : 'Inter, ui-sans-serif, sans-serif';
-  const font = mathFont + fontSizePx + "px " + fam;
-  const measure = document.createElement("canvas").getContext("2d");
-  measure.font = font;
-  const textW = Math.max(1, Math.ceil(measure.measureText(text).width));
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const REF = 80 * dpr; // reference bitmap font size -- affects only texture crispness
+  const refFont = fontStyle + REF + "px " + fam;
+  const mctx = document.createElement("canvas").getContext("2d");
+  mctx.font = refFont;
+  const m = mctx.measureText(text);
+  const inkAscent = m.actualBoundingBoxAscent || REF*0.72;
+  const inkDescent = m.actualBoundingBoxDescent || REF*0.18;
+  const inkLeft = (m.actualBoundingBoxLeft != null) ? m.actualBoundingBoxLeft : 0;
+  const inkRight = (m.actualBoundingBoxRight != null) ? m.actualBoundingBoxRight : m.width;
+  const inkH = Math.max(1, inkAscent + inkDescent);
+  const inkW = Math.max(1, inkLeft + inkRight);
+
+  const padBitmap = 4 * dpr; // ~4 CSS-px-equivalent padding each side (AA bleed + halo room)
   const c = document.createElement("canvas");
-  const padX = 10, padY = 8;
-  c.width = textW + padX*2; c.height = fontSizePx + padY*2;
+  c.width = Math.ceil(inkW) + padBitmap*2;
+  c.height = Math.ceil(inkH) + padBitmap*2;
   const cctx = c.getContext("2d");
-  cctx.font = font;
-  cctx.textAlign = "center"; cctx.textBaseline = "middle";
+  cctx.font = refFont;
+  cctx.textAlign = "center";
+  cctx.textBaseline = "alphabetic";
+  const cx = c.width/2;
+  const baselineY = padBitmap + inkAscent;
+
+  // ~2 CSS-px dark halo for contrast against grid lines/other labels, sized
+  // relative to the final on-screen glyph height so it reads as ~2px
+  // regardless of dpr or how large this particular glyph's bitmap is
+  const haloCssPx = 2;
+  cctx.lineJoin = "round";
+  cctx.lineWidth = haloCssPx * inkH / targetGlyphPx;
+  cctx.strokeStyle = "rgba(5,6,7,0.9)";
+  cctx.strokeText(text, cx, baselineY);
   cctx.fillStyle = colorHex;
-  cctx.fillText(text, c.width/2, c.height/2 + fontSizePx*0.03);
+  cctx.fillText(text, cx, baselineY);
+
   const tex = new THREE.CanvasTexture(c);
-  tex.minFilter = THREE.LinearFilter;
-  tex.needsUpdate = true;
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas 2D pixel values are already sRGB-encoded;
+  tex.minFilter = THREE.LinearFilter;     // without this the renderer sRGB-encodes them AGAIN,
+  tex.needsUpdate = true;                 // washing out/lightening every label's color
   const mat = new THREE.SpriteMaterial({ map:tex, transparent:true, depthWrite:false, depthTest:opts.depthTest!==false, sizeAttenuation:false });
   const sprite = new THREE.Sprite(mat);
   sprite.userData.aspect = c.width / c.height;
-  sprite.userData.pixelHeight = opts.pixelHeight || 12;
+  sprite.userData.pixelHeight = targetGlyphPx * c.height / inkH; // full box height that makes the INK equal targetGlyphPx
   sprite.renderOrder = 10;
   labelRegistry.push(sprite);
   applySpriteScale(sprite);
@@ -983,8 +1027,8 @@ function buildStaticScene(){
   const zen = new THREE.Mesh(zenGeo, new THREE.MeshBasicMaterial({ color:COLORI.text }));
   zen.position.set(0,1,0);
   scene.add(zen);
-  const zenLabel = makeTextSprite("Z", COLORS.text, { pixelHeight:12 });
-  zenLabel.position.set(0, 1.09, 0);
+  const zenLabel = makeTextSprite("Z", COLORS.text, { pixelHeight:16 });
+  zenLabel.position.set(0, 1.117, 0); // offset from surface raised ~1.3x for the larger (16px) labels
   scene.add(zenLabel);
 
   // N/E/S/W just outside the horizon ring, at ground level
@@ -992,9 +1036,9 @@ function buildStaticScene(){
   scene.add(hGridGroup);
   [["N",0],["E",90],["S",180],["W",270]].forEach(function(pair){
     const p = hzToVec(pair[1], 0);
-    const v = toThreeVec3(p).multiplyScalar(1.08);
+    const v = toThreeVec3(p).multiplyScalar(1.19);
     v.y = 0.015;
-    const lab = makeTextSprite(pair[0], COLORS.muted, { pixelHeight:11 });
+    const lab = makeTextSprite(pair[0], COLORS.muted, { pixelHeight:16 });
     lab.position.copy(v);
     scene.add(lab);
   });
@@ -1078,10 +1122,10 @@ function buildEquatorialGroup(){
   const scpDot = new THREE.Mesh(new THREE.SphereGeometry(0.014,10,8), new THREE.MeshBasicMaterial({ color:COLORI.magenta }));
   scpDot.position.set(0,-1,0);
   polarAxisPart.add(ncpDot, scpDot);
-  const ncpLabel = makeTextSprite("NCP", COLORS.magenta, { pixelHeight:12 });
-  ncpLabel.position.set(0,1.09,0);
-  const scpLabel = makeTextSprite("SCP", COLORS.magenta, { pixelHeight:12 });
-  scpLabel.position.set(0,-1.09,0);
+  const ncpLabel = makeTextSprite("NCP", COLORS.magenta, { pixelHeight:16 });
+  ncpLabel.position.set(0,1.117,0);
+  const scpLabel = makeTextSprite("SCP", COLORS.magenta, { pixelHeight:16 });
+  scpLabel.position.set(0,-1.117,0);
   polarAxisPart.add(ncpLabel, scpLabel);
 
   // vernal equinox marker
@@ -1089,8 +1133,8 @@ function buildEquatorialGroup(){
     const p = nativePointFromRA(0,0);
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012,10,8), new THREE.MeshBasicMaterial({ color:COLORI.amber }));
     dot.position.copy(p);
-    const lab = makeTextSprite("♈", COLORS.amber, { pixelHeight:12 });
-    lab.position.copy(p.clone().multiplyScalar(1.1));
+    const lab = makeTextSprite("♈", COLORS.amber, { pixelHeight:16 });
+    lab.position.copy(p.clone().multiplyScalar(1.13));
     equinoxPart.add(dot, lab);
   }
 
@@ -1125,6 +1169,7 @@ function makeGlowSpriteThree(colorHex, worldSize){
   cctx.fillStyle = grad;
   cctx.beginPath(); cctx.arc(size/2,size/2,size/2,0,TAU); cctx.fill();
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; // same sRGB-encoding fix as the text-label textures
   const mat = new THREE.SpriteMaterial({ map:tex, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending });
   const sprite = new THREE.Sprite(mat);
   sprite.scale.set(worldSize, worldSize, 1);
@@ -1158,14 +1203,14 @@ function updateStarInGroup(){
   const name = currentStarName();
   if(name !== starLabelText){
     if(starLabel){ equatorialGroup.userData.starPart.remove(starLabel); disposeSprite(starLabel); }
-    starLabel = makeTextSprite(name, COLORS.amber, { pixelHeight:12 });
+    starLabel = makeTextSprite(name, COLORS.amber, { pixelHeight:16 });
     equatorialGroup.userData.starPart.add(starLabel);
     starLabelText = name;
   }
-  starLabel.position.copy(p.clone().multiplyScalar(1.13));
+  starLabel.position.copy(p.clone().multiplyScalar(1.169));
 
   rebuildDiurnalCircle();
-  state.needsRender = true;
+  requestRender();
 }
 
 /* The diurnal circle (star's track of constant declination) is FIXED in the
@@ -1247,14 +1292,17 @@ function computeDefaultRadius(){
   return clamp(r, CAM_ZOOM_MIN, CAM_ZOOM_MAX);
 }
 function resetCameraView(){
-  state.cam.theta = CAM_DEFAULT.theta;
-  state.cam.phiAngle = CAM_DEFAULT.phiAngle;
+  // per-tab camera override (TAB_CONFIG[tab].camera = {thetaDeg,phiDeg}) lets a
+  // tab open (and its own reset-view control) at a bespoke vantage point instead
+  // of the global default -- same radius/target ("standard default distance")
+  const camOverride = TAB_CONFIG[state.tab] && TAB_CONFIG[state.tab].camera;
+  state.cam.theta = camOverride ? camOverride.thetaDeg*RAD : CAM_DEFAULT.theta;
+  state.cam.phiAngle = camOverride ? camOverride.phiDeg*RAD : CAM_DEFAULT.phiAngle;
   state.cam.radius = computeDefaultRadius();
   state.cam.target = { x:CAM_DEFAULT.target.x, y:CAM_DEFAULT.target.y, z:CAM_DEFAULT.target.z };
   state.cam.isDefault = true; // re-fitted automatically on resize until the user drags/zooms
   applyCameraFromState();
-  state.needsRender = true;
-  render();
+  requestRender();
 }
 function applyCameraFromState(){
   if(!camera) return;
@@ -1292,8 +1340,7 @@ function wireCameraControls(){
       state.cam.phiAngle = clamp(state.cam.phiAngle + dy*0.006, -12*RAD, 85*RAD);
     }
     applyCameraFromState();
-    state.needsRender = true;
-    render();
+    requestRender();
   });
   function endDrag(){ dragging = false; }
   glCanvas.addEventListener("pointerup", endDrag);
@@ -1303,8 +1350,7 @@ function wireCameraControls(){
     state.cam.isDefault = false;
     state.cam.radius = clamp(state.cam.radius * Math.pow(1.0016, ev.deltaY), CAM_ZOOM_MIN, CAM_ZOOM_MAX);
     applyCameraFromState();
-    state.needsRender = true;
-    render();
+    requestRender();
   }, { passive:false });
   document.getElementById("btnResetView").addEventListener("click", resetCameraView);
 }
@@ -1392,7 +1438,7 @@ function placeArrowAtEnd(cone, pts){
 function labelAtMid(sprite, pts, offsetScale){
   const mid = pts[Math.floor((pts.length-1)/2)];
   const len = Math.hypot(mid.x,mid.y,mid.z) || 1;
-  const k = 1 + (offsetScale||0.09)/len;
+  const k = 1 + (offsetScale||0.117)/len; // default raised ~1.3x for the larger (18px) arc labels
   sprite.position.set(mid.x*k, mid.y*k, mid.z*k);
   sprite.visible = true;
 }
@@ -1415,11 +1461,11 @@ function buildDynamicArcsGroup(){
   arcRA  = makeDynamicLine(COLORI.amber, 0.95, true);
   arrowAz = makeArrowCone(COLORI.cyan);
   arrowH  = makeArrowCone(COLORI.magenta);
-  labelAObj   = makeTextSprite("Az", COLORS.cyan, { math:true, upright:true, pixelHeight:13 });
-  labelAltObj = makeTextSprite("El", COLORS.cyan, { math:true, upright:true, pixelHeight:13 });
-  labelDecObj = makeTextSprite("δ", COLORS.amber, { math:true, pixelHeight:13 });
-  labelHObj   = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:13 });
-  labelRAObj  = makeTextSprite("α", COLORS.amber, { math:true, pixelHeight:13 });
+  labelAObj   = makeTextSprite("Az", COLORS.cyan, { math:true, upright:true, pixelHeight:18 });
+  labelAltObj = makeTextSprite("El", COLORS.cyan, { math:true, upright:true, pixelHeight:18 });
+  labelDecObj = makeTextSprite("δ", COLORS.amber, { math:true, pixelHeight:18 });
+  labelHObj   = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:18 });
+  labelRAObj  = makeTextSprite("α", COLORS.amber, { math:true, pixelHeight:18 });
   scene.add(labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj);
 
   hlstAlpha = makeDynamicLine(COLORI.amber, 1.0, false);
@@ -1428,9 +1474,9 @@ function buildDynamicArcsGroup(){
   hlstAlphaArrow = makeArrowCone(COLORI.amber);
   hlstHArrow     = makeArrowCone(COLORI.magenta);
   hlstLstArrow   = makeArrowCone(COLORI.cyan);
-  hlstAlphaLabel = makeTextSprite("α", COLORS.amber, { math:true, pixelHeight:13 });
-  hlstHLabel     = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:13 });
-  hlstLstLabel   = makeTextSprite("LST", COLORS.cyan, { pixelHeight:13 });
+  hlstAlphaLabel = makeTextSprite("α", COLORS.amber, { math:true, pixelHeight:18 });
+  hlstHLabel     = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:18 });
+  hlstLstLabel   = makeTextSprite("LST", COLORS.cyan, { pixelHeight:18 });
   scene.add(hlstAlphaLabel, hlstHLabel, hlstLstLabel);
 }
 
@@ -1504,7 +1550,7 @@ function updateDynamicArcs(){
   }
 
   updateTriangle();
-  state.needsRender = true;
+  requestRender();
 }
 
 /* =========================================================================
@@ -1542,12 +1588,12 @@ function buildTriangleGroup(){
   triFill.frustumCulled = false;
   scene.add(triFill);
 
-  triLabelZP = makeTextSprite("90°−φ", COLORS.text, { pixelHeight:12 });
-  triLabelPS = makeTextSprite("90°−δ", COLORS.amber, { pixelHeight:12 });
-  triLabelZS = makeTextSprite("90°−El", COLORS.cyan, { pixelHeight:12 });
-  angleLabelH = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:13 });
-  angleLabelA = makeTextSprite("Az", COLORS.cyan, { math:true, upright:true, pixelHeight:13 });
-  angleLabelQ = makeTextSprite("q", COLORS.green, { math:true, pixelHeight:13 });
+  triLabelZP = makeTextSprite("90°−φ", COLORS.text, { pixelHeight:18 });
+  triLabelPS = makeTextSprite("90°−δ", COLORS.amber, { pixelHeight:18 });
+  triLabelZS = makeTextSprite("90°−El", COLORS.cyan, { pixelHeight:18 });
+  angleLabelH = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:18 });
+  angleLabelA = makeTextSprite("Az", COLORS.cyan, { math:true, upright:true, pixelHeight:18 });
+  angleLabelQ = makeTextSprite("q", COLORS.green, { math:true, pixelHeight:18 });
   scene.add(triLabelZP, triLabelPS, triLabelZS, angleLabelH, angleLabelA, angleLabelQ);
 
   angleArcA = makeDynamicLine(COLORI.cyan, 0.8, false, 13);
@@ -1570,7 +1616,33 @@ function angleMarker(lineObj, sprite, V, other1, other2, angularRadiusDeg){
   const mid = pts[Math.floor(nn/2)];
   const dirFromV = mid.clone().sub(V);
   if(dirFromV.lengthSq() < 1e-10) dirFromV.set(0,1,0); else dirFromV.normalize();
-  sprite.position.copy(V).addScaledVector(dirFromV, angularRadiusDeg*RAD*1.8);
+  // "just inside" the angle-arc marker, toward the triangle interior: sit BETWEEN
+  // the vertex and the arc (a fraction of the arc's own angular radius), not
+  // pushed out beyond it -- keeps the label off the crowded region past the arc
+  // where the OTHER vertices'/sides' labels live
+  // bias away from the vertex's own always-on cardinal/star-name label (which
+  // sits further out along the SAME radial direction as the vertex itself) by
+  // moving tangentially (perpendicular to that radial direction) rather than
+  // purely toward the arc midpoint -- keeps the label "just inside... toward
+  // the interior" in spirit while dodging the wider always-on label's box
+  sprite.position.copy(V).addScaledVector(dirFromV, angularRadiusDeg*RAD*2.0);
+  sprite.visible = true;
+}
+
+/* Triangle-only side-label placement: offset the arc midpoint TANGENTIALLY,
+   away from the triangle's own spherical centroid, rather than radially from
+   the sphere center (the general-purpose labelAtMid() below). Radial offsets
+   push labels further from the sphere center but barely change their apparent
+   screen position when the anchor points are already close together (as at
+   Z/P for a mid-latitude observer); a tangential push actually separates them
+   along the sphere's surface. centroid must be a unit vector. */
+function triangleSideLabel(sprite, pts, centroid, offsetScale){
+  const mid = pts[Math.floor((pts.length-1)/2)];
+  const radial = mid.clone().normalize();
+  const awayFromCentroid = mid.clone().sub(centroid);
+  const tangential = awayFromCentroid.clone().sub(radial.clone().multiplyScalar(awayFromCentroid.dot(radial)));
+  if(tangential.lengthSq() < 1e-10) tangential.copy(radial); else tangential.normalize();
+  sprite.position.copy(mid).addScaledVector(tangential, offsetScale);
   sprite.visible = true;
 }
 
@@ -1617,9 +1689,9 @@ function updateTriangle(){
   triFill.visible = true;
 
   const showLabels = !!state.display.labels;
-  labelAtMid(triLabelZP, zp, 0.05); triLabelZP.visible = showLabels;
-  labelAtMid(triLabelPS, ps, 0.05); triLabelPS.visible = showLabels;
-  labelAtMid(triLabelZS, zs, 0.05); triLabelZS.visible = showLabels;
+  triangleSideLabel(triLabelZP, zp, C, 0.17); triLabelZP.visible = showLabels;
+  triangleSideLabel(triLabelPS, ps, C, 0.17); triLabelPS.visible = showLabels;
+  triangleSideLabel(triLabelZS, zs, C, 0.17); triLabelZS.visible = showLabels;
 
   angleMarker(angleArcA, angleLabelA, Z, P, S, 10);
   angleMarker(angleArcH, angleLabelH, P, Z, S, 10);
@@ -2027,8 +2099,7 @@ function fullUpdate(){
   updateReadouts();
   updateFormulas();
   state.stripDirty = true;
-  state.needsRender = true;
-  render();
+  requestRender();
 }
 function onObserverOrStarChanged(){
   if(state.webglOK) updateStarInGroup();
@@ -2113,10 +2184,10 @@ function wireDisplayToggles(){
       const key = btn.dataset.key;
       state.display[key] = !state.display[key];
       btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
-      applyDisplayVisibility();
+      applyDisplayVisibility(); // also calls requestRender()
       updateDynamicArcs();
       state.stripDirty = true;
-      state.needsRender = true;
+      requestRender();
     });
   });
 }
@@ -2133,6 +2204,7 @@ function wireStripModeToggle(){
       els.legendAllsky.style.display = (state.stripMode === "allsky") ? "" : "none";
       els.legendRadec.style.display = (state.stripMode === "radec") ? "" : "none";
       state.stripDirty = true;
+      requestRender();
     });
   });
 }
@@ -2198,9 +2270,15 @@ function switchTab(tabId){
   updatePlayButton();
   if(state.playing) startLoop(); else stopLoop();
 
+  resetCameraView(); // each tab opens at its own default vantage (global, or TAB_CONFIG's override)
   onObserverOrStarChanged();
   applyDisplayVisibility();
   applyGridAlpha();
+  // force an immediate synchronous paint of the new tab's state rather than
+  // relying on startLoop()'s first rAF tick (which can be delayed by
+  // throttling when the tab/page isn't the foreground-visible one) — a tab
+  // switch must never leave the previous tab's stale frame on screen
+  render();
 }
 
 /* =========================================================================
@@ -2301,8 +2379,7 @@ function setupGLResize(){
       applyCameraFromState();
     }
     resizeOverlayCanvas(w, h);
-    state.needsRender = true;
-    render();
+    requestRender();
   });
   ro.observe(glCanvas);
 }
@@ -2317,8 +2394,7 @@ function setupStripResize(){
     ctx.setTransform(dpr,0,0,dpr,0,0);
     state.stripW = cw; state.stripH = ch;
     state.stripDirty = true;
-    drawStrip();
-    state.stripDirty = false;
+    requestRender();
   });
   ro.observe(canvas);
 }
@@ -2356,6 +2432,10 @@ function setupSplitter(el, opts){
     if(opts.invert) delta = -delta;
     opts.setSize(clamp(startSize + delta, opts.min, opts.max));
     updateAria();
+    // the CSS var change reflows the canvases and their ResizeObservers will fire
+    // (each already calls requestRender()), but schedule one directly too so a
+    // slow/batched observer callback never leaves a stale frame showing mid-drag
+    requestRender();
   });
   function endDrag(ev){
     if(!dragging) return;
@@ -2388,17 +2468,38 @@ function wireSplitters(){
 
 /* =========================================================================
    14. RENDER ORCHESTRATION + CONTINUOUS-TIME ANIMATION LOOP
-       Rendering happens on demand (any control change or camera drag calls
-       render() directly) plus a rAF loop that runs ONLY while state.playing
-       is true — no idle hot loop. LST advances continuously every frame;
-       there is no fixed sampling grid to maintain here (unlike a trace/strip
-       history), since every displayed quantity is a pure function of the
-       instantaneous LST.
+
+       requestRender() is the SINGLE choke point for "something changed, the
+       screen needs to catch up" — every state-mutation path (display toggles,
+       every slider/number field, Location/Star selects, tab switches, the
+       strip-mode toggle, the reset-view button, step/reset LST buttons,
+       splitter drags, and the resize observers) calls it instead of touching
+       render()/state.needsRender directly. It schedules ONE rAF that performs
+       the full pass: apply .visible flags (already done by the caller before
+       requestRender() runs), refresh arcs/labels/readouts, renderer.render,
+       and redraw the strip if dirty. This fixes the bug where toggling a
+       display layer while paused had no visible effect until some other
+       interaction (drag, play) happened to trigger a frame.
+
+       While state.playing is true the rAF loop below already renders every
+       frame, so requestRender() just marks state.needsRender and returns
+       without scheduling a second, redundant rAF.
    ========================================================================= */
 function render(){
   if(state.needsRender){ renderThree(); state.needsRender = false; }
   drawOverlay();
   if(state.stripDirty){ drawStrip(); state.stripDirty = false; }
+}
+
+let renderRAF = null;
+function requestRender(){
+  state.needsRender = true;
+  if(state.playing) return;         // the play loop's own rAF already renders every frame
+  if(renderRAF != null) return;     // a render is already scheduled for the next frame
+  renderRAF = requestAnimationFrame(function(){
+    renderRAF = null;
+    render();
+  });
 }
 
 let rafId = null, lastFrameTs = null;
@@ -2411,8 +2512,9 @@ function loop(ts){
   if(dtSec > 0 && dtSec <= 0.25){
     state.lst = wrap24(state.lst + state.speed*dtSec);
     setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
-    fullUpdate(); // includes render()
+    fullUpdate(); // marks state.needsRender/stripDirty; requestRender() no-ops while playing
   }
+  render(); // the play loop IS the render tick while state.playing is true
   rafId = requestAnimationFrame(loop);
 }
 
