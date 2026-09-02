@@ -30,8 +30,8 @@ shot() {
   echo "assets/thumbs/${out_name}.jpg ($(du -h "assets/thumbs/${out_name}.jpg" | cut -f1))"
 }
 
-shot "html/ptolemy_model.html?tab=compare" "ptolemy_model"
-shot "html/altaz_radec.html?tab=grids"     "altaz_radec"
+shot "html/ptolemy_model.html?tab=compare&embed=1" "ptolemy_model"
+shot "html/altaz_radec.html?tab=grids&embed=1"     "altaz_radec"
 
 # If a WebGL panel renders black, retry that page's `shot` call with:
 #   --use-angle=swiftshader --enable-unsafe-swiftshader --use-gl=angle
