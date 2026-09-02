@@ -700,7 +700,9 @@ const TAB_CONFIG = {
   latitude: {
     label: "Latitude",
     tint: "purple",
-    phi: 40.7, lst: 6, star: "polaris",
+    phi: 40.7, lst: 8.0, star: "polaris", // lst nudged off 6h -- Polaris is circumpolar so any
+    // LST works, and 8h separates the "S"/coordinate-arc labels from a screen-space overlap
+    // that lst=6 produced at the default camera vantage
     playing: false, speed: 1.0,
     display: { hGrid:true, eGrid:true, diurnal:true, arcs:true, triangle:false, labels:true },
     gridAlpha: { h:1, e:1 },
@@ -1207,7 +1209,17 @@ function updateStarInGroup(){
     equatorialGroup.userData.starPart.add(starLabel);
     starLabelText = name;
   }
-  starLabel.position.copy(p.clone().multiplyScalar(1.169));
+  // Default offset pushes the label radially outward from the marker (same
+  // direction the marker itself points from the origin). When the star sits
+  // within 3 deg of the elevated pole (e.g. Polaris, 0.74 deg from the NCP)
+  // that direction nearly coincides with the NCP/SCP label's own outward
+  // offset, so the two labels collide. Fix: mirror the offset across the
+  // tangent plane at the marker (flip 1.169 -> 0.831, i.e. 2*1 - 1.169) so
+  // the star-name label lands on the opposite side of the marker instead.
+  const poleSign = state.phi >= 0 ? 1 : -1;
+  const distFromElevatedPole = 90 - poleSign*state.dec;
+  const starLabelMul = (distFromElevatedPole <= 3) ? 0.831 : 1.169;
+  starLabel.position.copy(p.clone().multiplyScalar(starLabelMul));
 
   rebuildDiurnalCircle();
   requestRender();
