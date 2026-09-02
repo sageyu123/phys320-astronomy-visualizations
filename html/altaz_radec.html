@@ -1,0 +1,2453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Sky Coordinates — PHYS 320</title>
+<style>
+  :root{
+    --background:#050607;
+    --rail:#171a1f;
+    --canvas:#0d1015;
+    --panel-deep:#151a20;
+    --panel:#202328;
+    --panel-raised:#292d32;
+    --border:#3b4046;
+    --border-strong:#4a5057;
+    --border-hover:#69717a;
+    --text:#e7e9eb;
+    --muted:#979ea6;
+    --cyan:#56c7d9;
+    --magenta:#ee65be;
+    --purple:#a99bff;
+    --amber:#ffcc66;
+    --green:#56dc72;
+    --on-accent:#0c181b;
+    --control-hover:#343a41;
+    --cyan-wash: rgb(86 199 217/10%);
+    --cyan-border: rgb(86 199 217/55%);
+    --black-shadow: rgb(0 0 0/25%);
+    --black-shadow-soft: rgb(0 0 0/13%);
+  }
+
+  *,*::before,*::after{ box-sizing:border-box; }
+  html,body{ height:100%; width:100%; overflow-x:hidden; }
+  body{
+    margin:0;
+    background:var(--background);
+    color:var(--text);
+    font-family:Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:13px;
+    line-height:1.4;
+    -webkit-font-smoothing:antialiased;
+  }
+  .math{ font-family:"STIX Two Math","Cambria Math","Times New Roman",serif; font-style:italic; }
+  .math-upright{ font-family:"STIX Two Math","Cambria Math","Times New Roman",serif; font-style:normal; }
+  .tabular{ font-variant-numeric:tabular-nums; }
+
+  button, input, select{ font-family:inherit; }
+
+  /* ---------- app shell ---------- */
+  #app{ height:100dvh; width:100%; display:grid; grid-template-rows:44px 1fr; overflow:hidden; }
+
+  .topbar{
+    grid-row:1; display:flex; align-items:center; justify-content:space-between;
+    gap:12px; height:44px; padding:0 12px;
+    background:var(--rail); border-bottom:1px solid var(--border);
+    min-width:0; overflow:hidden;
+  }
+  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; }
+  .brand-icon{ flex:0 0 auto; filter:drop-shadow(0 0 5px rgb(86 199 217/28%)); }
+  .brand-text{ display:flex; flex-direction:column; line-height:1.15; min-width:0; }
+  .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
+  .brand-sub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .tabbar{ flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:thin; }
+  .tabbar::-webkit-scrollbar{ height:4px; }
+  .tabbar::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
+
+  .segmented{
+    display:inline-flex; align-items:stretch;
+    border:1px solid var(--border); border-radius:6px; overflow:hidden;
+    background:var(--panel-raised); white-space:nowrap;
+  }
+  .segmented button{
+    appearance:none; border:none; border-right:1px solid var(--border);
+    background:transparent; color:var(--text);
+    font-size:12px; min-height:28px; padding:0 12px; cursor:pointer; white-space:nowrap;
+    transition:background .12s ease, color .12s ease;
+  }
+  .segmented button:last-child{ border-right:none; }
+  .segmented button:hover{ background:var(--control-hover); }
+  .segmented button.active{ background:var(--cyan); color:var(--on-accent); font-weight:600; }
+  .segmented button:disabled{ opacity:.45; cursor:default; }
+
+  /* ---------- body / rail / workspace ---------- */
+  .body{
+    grid-row:2; display:grid;
+    grid-template-columns: var(--rail-w, 300px) 6px minmax(0,1fr);
+    min-height:0; min-width:0;
+  }
+
+  .rail{
+    background:var(--rail); border-right:1px solid var(--border);
+    overflow-y:auto; overflow-x:hidden;
+    display:flex; flex-direction:column; gap:8px; padding:10px; min-width:0;
+  }
+
+  .workspace{
+    min-width:0; min-height:0; padding:10px;
+    display:grid; grid-template-rows:minmax(0,1fr) 6px var(--strip-h, 190px); gap:0;
+    background:radial-gradient(circle at 50% 45%, var(--panel-deep) 0%, var(--canvas) 60%, var(--background) 100%);
+  }
+
+  /* ---------- movable splitters ---------- */
+  .splitter{ position:relative; background:transparent; z-index:2; }
+  .splitter::after{
+    content:""; position:absolute; background:var(--cyan); opacity:0; border-radius:2px;
+    transition:opacity .12s ease;
+  }
+  .splitter:hover::after, .splitter.dragging::after, .splitter:focus-visible::after{ opacity:.4; }
+  .v-splitter{ cursor:col-resize; }
+  .v-splitter::after{ top:0; bottom:0; left:2px; width:2px; }
+  .h-splitter{ cursor:row-resize; margin:8px 0; }
+  .h-splitter::after{ left:0; right:0; top:2px; height:2px; }
+  body.resizing-col, body.resizing-col *{ cursor:col-resize !important; user-select:none !important; }
+  body.resizing-row, body.resizing-row *{ cursor:row-resize !important; user-select:none !important; }
+
+  .card{
+    border-radius:6px; border:1px solid var(--border); background:var(--panel);
+    box-shadow:0 5px 18px var(--black-shadow-soft); padding:10px; flex:0 0 auto; min-width:0;
+  }
+  .eyebrow{ font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 8px; }
+
+  /* ---------- canvas panels ---------- */
+  .panel{
+    border-radius:6px; border:1px solid var(--border); background:var(--canvas);
+    box-shadow:0 5px 18px var(--black-shadow-soft);
+    display:flex; flex-direction:column; overflow:hidden; min-height:0; min-width:0;
+  }
+  .panel-header{
+    height:34px; flex:0 0 34px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 10px; background:var(--panel-deep); border-bottom:1px solid var(--border);
+    gap:10px; overflow:hidden;
+  }
+  .panel-title{ font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .panel-readouts{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); white-space:nowrap; flex:0 0 auto; }
+  .panel-readouts b{ color:var(--text); font-weight:600; }
+  .panel-header-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+  .panel-body{ flex:1 1 auto; min-height:0; min-width:0; position:relative; }
+  .panel-body canvas{ display:block; width:100%; height:100%; }
+  .canvas-stack{ position:absolute; inset:0; }
+  .canvas-stack canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #overlayCanvas{ pointer-events:none; }
+  .drag-hint{
+    position:absolute; left:10px; bottom:8px; font-size:10px; color:var(--muted);
+    opacity:.7; pointer-events:none; white-space:nowrap; z-index:3;
+  }
+  .webgl-fallback{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    text-align:center; color:var(--muted); font-size:12px; padding:20px; z-index:4;
+  }
+  .webgl-fallback:not([hidden]){ display:flex; }
+
+  .swatch{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+
+  .pill{ display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+  .pill-circumpolar{ background:color-mix(in srgb, var(--green) 16%, var(--panel)); color:var(--green); }
+  .pill-rises{ background:color-mix(in srgb, var(--cyan) 16%, var(--panel)); color:var(--cyan); }
+  .pill-never{ background:color-mix(in srgb, var(--magenta) 16%, var(--panel)); color:var(--magenta); }
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    min-height:28px; padding:0 10px; color:var(--text); background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; font-size:12px; cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .btn:hover{ background:var(--control-hover); border-color:var(--border-hover); }
+  .btn:disabled{ opacity:.45; cursor:default; }
+  .icon-btn{ min-width:28px; padding:0 8px; font-size:13px; line-height:1; }
+
+  /* ---------- transport (playback) ---------- */
+  .transport{ width:100%; margin-bottom:10px; }
+  .transport button{ flex:1 1 0; }
+
+  /* ---------- slider + number fields ---------- */
+  .field{ margin-bottom:10px; }
+  .field:last-child{ margin-bottom:0; }
+  .field-label{ display:block; font-size:11px; color:var(--muted); margin-bottom:5px; }
+  .field-label .math{ color:var(--text); font-size:12px; }
+  .field-row{ display:flex; align-items:center; gap:8px; min-width:0; }
+  input[type=range]{ flex:1 1 auto; min-width:0; accent-color:var(--cyan); height:22px; background:transparent; }
+  .num-input{
+    width:64px; flex:0 0 auto; min-height:28px; background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; color:var(--text);
+    padding:4px 7px; font:inherit; font-variant-numeric:tabular-nums; text-align:right;
+  }
+  .unit{ flex:0 0 auto; font-size:11px; color:var(--muted); }
+
+  select{
+    width:100%; min-height:28px; background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; color:var(--text);
+    padding:4px 7px; font:inherit;
+  }
+  input:disabled, select:disabled{ opacity:.45; cursor:default; }
+
+  .field-highlight{ border:1px solid var(--cyan); border-radius:6px; padding:8px 8px 2px; margin:0 -8px 10px; background:var(--cyan-wash); }
+  .field-highlight .field{ margin-bottom:8px; }
+
+  /* ---------- toggles (display card) ---------- */
+  .toggle{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    width:100%; min-height:28px; padding:0 10px; margin-bottom:6px;
+    background:var(--panel-raised); border:1px solid var(--border); border-radius:4px;
+    color:var(--text); font-size:12px; cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .toggle:last-child{ margin-bottom:0; }
+  .toggle:hover{ background:var(--control-hover); border-color:var(--border-hover); }
+  .toggle .dot{ width:8px; height:8px; border-radius:50%; background:var(--border-strong); flex:0 0 auto; }
+  .toggle[aria-pressed="true"]{ background:var(--cyan); color:var(--on-accent); border-color:var(--cyan); font-weight:600; }
+  .toggle[aria-pressed="true"] .dot{ background:var(--on-accent); }
+
+  /* ---------- formulas card (collapsible) ---------- */
+  .card-head-row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; cursor:pointer; }
+  .card-head-row .eyebrow{ margin:0; }
+  .chevron{ color:var(--muted); font-size:10px; transition:transform .15s ease; flex:0 0 auto; }
+  .formulas-card.collapsed .chevron{ transform:rotate(-90deg); }
+  .formulas-card.collapsed .formulas-body{ display:none; }
+  .formula-line{ margin-bottom:10px; }
+  .formula-line:last-child{ margin-bottom:0; }
+  .formula-def{ font-size:12.5px; margin-bottom:3px; }
+  .formula-sub{ font-size:11.5px; color:var(--muted); word-break:break-word; }
+  .formula-sub b{ color:var(--text); font-weight:600; }
+
+  /* ---------- about card ---------- */
+  .about h3{ font-size:12px; font-weight:700; margin:0 0 8px; }
+  .about p{ margin:0 0 8px; color:var(--text); }
+  .about p:last-child{ margin-bottom:0; }
+  .about em{ font-style:italic; }
+  .tint-cyan{ background:color-mix(in srgb, var(--cyan) 7%, var(--panel)); border-color:color-mix(in srgb, var(--cyan) 30%, var(--border)); }
+  .tint-purple{ background:color-mix(in srgb, var(--purple) 7%, var(--panel)); border-color:color-mix(in srgb, var(--purple) 30%, var(--border)); }
+  .tint-magenta{ background:color-mix(in srgb, var(--magenta) 7%, var(--panel)); border-color:color-mix(in srgb, var(--magenta) 30%, var(--border)); }
+  .tint-amber{ background:color-mix(in srgb, var(--amber) 7%, var(--panel)); border-color:color-mix(in srgb, var(--amber) 30%, var(--border)); }
+  .tint-green{ background:color-mix(in srgb, var(--green) 7%, var(--panel)); border-color:color-mix(in srgb, var(--green) 30%, var(--border)); }
+
+  :focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition:none !important; animation:none !important; }
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width:900px){
+    .body{ grid-template-columns:1fr; overflow-y:auto; }
+    .rail{
+      order:2; border-right:none; border-top:1px solid var(--border);
+      display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start;
+      overflow-y:visible;
+    }
+    .workspace{ order:1; grid-template-rows:clamp(320px, 55vw, 420px) 160px; gap:8px; }
+    .splitter{ display:none; }
+  }
+  @media (max-width:560px){
+    .rail{ grid-template-columns:1fr; }
+  }
+  @media (max-width:480px){
+    .brand-sub{ display:none; }
+    .panel-title{ font-size:11px; }
+    .panel-readouts{ font-size:10px; gap:6px; }
+    .panel-header{ padding:0 8px; }
+    .drag-hint{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <svg class="brand-icon" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M1.5 13.5 A 8.5 3 0 0 1 18.5 13.5" fill="none" stroke="#56c7d9" stroke-width="1.3"/>
+        <ellipse cx="10" cy="9" rx="6.5" ry="6.5" transform="rotate(-28 10 9)" fill="none" stroke="#ffcc66" stroke-width="1.1" opacity="0.85"/>
+        <circle cx="10" cy="13.5" r="1.3" fill="#56c7d9"/>
+      </svg>
+      <div class="brand-text">
+        <div class="brand-title">SKY COORDINATES</div>
+        <div class="brand-sub">PHYS 320 · Az-El &#8646; RA/Dec</div>
+      </div>
+    </div>
+    <div class="tabbar">
+      <div class="segmented" id="tabBar" role="tablist" aria-label="Teaching stage">
+        <button type="button" data-tab="grids" class="active" role="tab" aria-selected="true">Two grids</button>
+        <button type="button" data-tab="latitude" role="tab" aria-selected="false">Latitude</button>
+        <button type="button" data-tab="diurnal" role="tab" aria-selected="false">Diurnal motion</button>
+        <button type="button" data-tab="hlst" role="tab" aria-selected="false">h &middot; &alpha; &middot; LST</button>
+        <button type="button" data-tab="triangle" role="tab" aria-selected="false">Astronomical triangle</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="rail">
+
+      <div class="card" id="playbackCard">
+        <div class="eyebrow">Playback</div>
+        <div class="segmented transport" id="transport">
+          <button type="button" id="btnStepBack" title="Step back 10 minutes">&lang; &minus;10m</button>
+          <button type="button" id="btnPlay" title="Play / pause">&#9658;</button>
+          <button type="button" id="btnStepFwd" title="Step forward 10 minutes">+10m &rang;</button>
+          <button type="button" id="btnReset" title="Reset LST to this stage's default">&#8634;</button>
+        </div>
+        <div class="field">
+          <label class="field-label" for="speedRange">Speed</label>
+          <div class="field-row">
+            <input type="range" id="speedRange" min="0.1" max="6" step="0.1" value="1.0">
+            <input type="number" id="speedNum" class="num-input" min="0.1" max="6" step="0.1" value="1.0">
+            <span class="unit">h/s</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="observerCard">
+        <div class="eyebrow">Observer</div>
+        <div class="field" id="locationField">
+          <label class="field-label" for="locationSelect">Location</label>
+          <select id="locationSelect">
+            <option value="newark">Newark, NJ (40.7&deg;)</option>
+            <option value="quito">Quito (0.0&deg;)</option>
+            <option value="reykjavik">Reykjav&iacute;k (64.1&deg;)</option>
+            <option value="sydney">Sydney (&minus;33.9&deg;)</option>
+            <option value="northpole">North Pole (90.0&deg;)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="phiRange">Latitude <span class="math">&phi;</span></label>
+          <div class="field-row">
+            <input type="range" id="phiRange" min="-90" max="90" step="0.1" value="40.7">
+            <input type="number" id="phiNum" class="num-input" min="-90" max="90" step="0.1" value="40.7">
+            <span class="unit">&deg;</span>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="lstRange">Local sidereal time</label>
+          <div class="field-row">
+            <input type="range" id="lstRange" min="0" max="24" step="0.05" value="6">
+            <input type="number" id="lstNum" class="num-input" min="0" max="24" step="0.05" value="6">
+            <span class="unit">h</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="starCard">
+        <div class="eyebrow">Star</div>
+        <div class="field">
+          <label class="field-label" for="starSelect">Star</label>
+          <select id="starSelect">
+            <option value="vega">Vega</option>
+            <option value="polaris">Polaris</option>
+            <option value="sirius">Sirius</option>
+            <option value="betelgeuse">Betelgeuse</option>
+            <option value="arcturus">Arcturus</option>
+            <option value="antares">Antares</option>
+            <option value="canopus">Canopus</option>
+            <option value="deneb">Deneb</option>
+            <option value="altair">Altair</option>
+            <option value="sun_equinox">Sun at equinox</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="raRange">Right ascension <span class="math">&alpha;</span></label>
+          <div class="field-row">
+            <input type="range" id="raRange" min="0" max="24" step="0.01" value="18.615">
+            <input type="number" id="raNum" class="num-input" min="0" max="24" step="0.01" value="18.615">
+            <span class="unit">h</span>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="decRange">Declination <span class="math">&delta;</span></label>
+          <div class="field-row">
+            <input type="range" id="decRange" min="-90" max="90" step="0.1" value="38.78">
+            <input type="number" id="decNum" class="num-input" min="-90" max="90" step="0.1" value="38.78">
+            <span class="unit">&deg;</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="displayCard">
+        <div class="eyebrow">Display</div>
+        <button type="button" class="toggle" data-key="hGrid" aria-pressed="true"><span>Horizontal grid</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="eGrid" aria-pressed="true"><span>Equatorial grid</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="diurnal" aria-pressed="true"><span>Diurnal circle</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="arcs" aria-pressed="true"><span>Coordinate arcs</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="triangle" aria-pressed="false"><span>Astronomical triangle</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="labels" aria-pressed="true"><span>Labels</span><span class="dot"></span></button>
+      </div>
+
+      <div class="card formulas-card collapsed" id="formulasCard">
+        <div class="card-head-row" id="formulasHead">
+          <div class="eyebrow">Formulas</div>
+          <span class="chevron">&#9660;</span>
+        </div>
+        <div class="formulas-body" id="formulasBody"></div>
+      </div>
+
+      <div class="card about tint-cyan" id="aboutCard">
+        <div class="eyebrow">About this stage</div>
+        <h3 id="aboutTitle"></h3>
+        <div id="aboutBody"></div>
+      </div>
+
+    </div>
+
+    <div class="splitter v-splitter" id="vSplitter" tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize sidebar width"></div>
+
+    <div class="workspace">
+      <div class="panel" id="mainPanel">
+        <div class="panel-header">
+          <div class="panel-title" id="mainPanelTitle">Celestial sphere</div>
+          <div class="panel-readouts" id="readoutsDefault">
+            <span><span class="math-upright">Az</span> = <b id="readoutA" class="tabular">&mdash;</b>&deg;&nbsp; <span class="math-upright">El</span> = <b id="readoutAlt" class="tabular">&mdash;</b>&deg;</span>
+            <span>|</span>
+            <span><span class="math">&alpha;</span> = <b id="readoutRA" class="tabular">&mdash;</b>h&nbsp; <span class="math">&delta;</span> = <b id="readoutDec" class="tabular">&mdash;</b>&deg;</span>
+            <span>|</span>
+            <span>h = <b id="readoutH" class="tabular">&mdash;</b>h</span>
+            <span id="poleReadout" style="display:none">&nbsp;&nbsp;pole elevation = <span class="math">&phi;</span> = <b id="readoutPoleAlt" class="tabular">&mdash;</b>&deg;</span>
+            <span id="badgeWrap" style="display:none">
+              <span id="diurnalExtra">transit <span class="math-upright">El</span> = <b id="readoutTransitEl" class="tabular">&mdash;</b>&deg;&nbsp; h&#8320; = <b id="readoutH0" class="tabular">&mdash;</b>h&nbsp;&nbsp;</span>
+              <span id="riseBadge" class="pill pill-rises">RISES &amp; SETS</span>
+            </span>
+          </div>
+          <div class="panel-readouts" id="readoutsHlst" style="display:none">
+            <span>LST = h + <span class="math">&alpha;</span> &rarr; <b id="hlstLST" class="tabular">&mdash;</b>h = <b id="hlstH" class="tabular">&mdash;</b>h + <b id="hlstAlpha" class="tabular">&mdash;</b>h</span>
+            <span class="unit" id="hlstCulminateNote">culminates when LST = &alpha;</span>
+          </div>
+          <div class="panel-header-right">
+            <button type="button" class="btn icon-btn" id="btnResetView" title="Reset camera view">&#8962;</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="canvas-stack">
+            <canvas id="glCanvas"></canvas>
+            <canvas id="overlayCanvas"></canvas>
+          </div>
+          <div class="drag-hint">Drag to rotate &middot; Scroll to zoom &middot; &#8962; reset</div>
+          <div class="webgl-fallback" id="webglFallback" hidden>WebGL is required for the 3D dome. Try a modern desktop browser (Chrome, Firefox, Edge, Safari).</div>
+        </div>
+      </div>
+
+      <div class="splitter h-splitter" id="hSplitter" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="Resize strip panel height"></div>
+
+      <div class="panel" id="stripPanel">
+        <div class="panel-header">
+          <div class="panel-title">Sky chart</div>
+          <div class="panel-readouts" id="stripLegend">
+            <span id="legendAllsky"><i class="swatch" style="background:var(--cyan)"></i>horizontal &nbsp; <i class="swatch" style="background:var(--amber)"></i>equatorial</span>
+            <span id="legendRadec" style="display:none"><i class="swatch" style="background:var(--cyan)"></i>horizon &nbsp; <i class="swatch" style="background:var(--amber)"></i>diurnal path</span>
+          </div>
+          <div class="segmented" id="stripModeToggle" role="tablist" aria-label="Strip panel mode">
+            <button type="button" data-mode="allsky" class="active" role="tab" aria-selected="true">All-sky view</button>
+            <button type="button" data-mode="radec" role="tab" aria-selected="false">RA/Dec map</button>
+          </div>
+        </div>
+        <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+/* =========================================================================
+   SKY COORDINATES — PHYS 320
+   Single-file, offline-capable teaching visualization.
+   Main-panel rendering: three.js WebGL "sky dome", loaded from a vendored
+   local copy (vendor/three.module.js, r168) so the page works fully offline.
+   Strip panel (all-sky projection / RA-Dec chart) and the h-alpha-LST inset
+   dial are plain Canvas 2D.
+   ========================================================================= */
+import * as THREE from '../vendor/three.module.js';
+
+/* =========================================================================
+   1. CONSTANTS / DESIGN TOKENS
+   ========================================================================= */
+const TAU = Math.PI * 2;
+const DEG = 180 / Math.PI;
+const RAD = Math.PI / 180;
+const CIRCLE_N = 120;           // sample count for great/small circles
+const ARC_N = 64;               // sample count for the dynamic teaching arcs
+
+function clamp(v,lo,hi){ return Math.min(hi, Math.max(lo, v)); }
+function norm360(d){ d = d % 360; if(d<0) d += 360; return d; }
+function wrap180(d){ // normalize an angle difference to (-180,180]
+  d = ((d + 180) % 360 + 360) % 360 - 180;
+  if(d <= -180) d += 360;
+  return d;
+}
+function wrap24(h){ h = h % 24; if(h<0) h += 24; return h; }
+function wrap12(h){ // hour angle convention: (-12,12]
+  h = ((h + 12) % 24 + 24) % 24 - 12;
+  if(h <= -12) h += 24;
+  return h;
+}
+function decimalsFromStep(step){
+  const s = String(step);
+  const i = s.indexOf(".");
+  return i<0 ? 0 : (s.length - i - 1);
+}
+function fmtNum(v, step){ return Number(v).toFixed(decimalsFromStep(step)); }
+function fmtSigned(v, decimals){
+  const s = Number(v).toFixed(decimals);
+  return (v >= 0 ? "+" : "") + s;
+}
+
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function hexToRgb(hex){
+  hex = hex.replace("#","");
+  if(hex.length===3){ hex = hex.split("").map(function(c){ return c+c; }).join(""); }
+  const num = parseInt(hex,16);
+  return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+}
+function hexAlpha(hex, a){ const c = hexToRgb(hex); return "rgba("+c.r+","+c.g+","+c.b+","+a+")"; }
+function hexToInt(hex){ return parseInt(hex.replace("#",""), 16); }
+
+const COLORS = {};   // CSS hex strings, e.g. "#56c7d9"
+const COLORI = {};   // numeric 0xRRGGBB, for three.js materials
+function loadColors(){
+  ["background","rail","canvas","panel-deep","panel","panel-raised","border",
+   "border-strong","border-hover","text","muted","cyan","magenta","purple",
+   "amber","green","on-accent"].forEach(function(n){
+    const v = cssVar("--"+n);
+    COLORS[n] = v;
+    COLORI[n] = hexToInt(v);
+  });
+}
+
+/* deterministic PRNG (mulberry32) — reserved for future illustrative starfields */
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* pre-rendered radial glow sprite (Canvas 2D use — strip panel), drawn via
+   drawImage instead of shadowBlur (shadowBlur forces slow software compositing) */
+function makeGlowSprite(colorHex, cssSize){
+  const dpr = window.devicePixelRatio || 1;
+  const size = Math.max(2, Math.round(cssSize*dpr));
+  const c = document.createElement("canvas");
+  c.width = size; c.height = size;
+  const gctx = c.getContext("2d");
+  const rgb = hexToRgb(colorHex);
+  const grad = gctx.createRadialGradient(size/2,size/2,0, size/2,size/2, size/2);
+  grad.addColorStop(0, "rgba("+rgb.r+","+rgb.g+","+rgb.b+",0.85)");
+  grad.addColorStop(0.5, "rgba("+rgb.r+","+rgb.g+","+rgb.b+",0.35)");
+  grad.addColorStop(1, "rgba("+rgb.r+","+rgb.g+","+rgb.b+",0)");
+  gctx.fillStyle = grad;
+  gctx.beginPath(); gctx.arc(size/2,size/2,size/2,0,TAU); gctx.fill();
+  return { canvas:c, cssSize:cssSize };
+}
+function drawGlow(ctx, sprite, x, y, destSize){
+  const s = destSize || sprite.cssSize;
+  ctx.drawImage(sprite.canvas, x-s/2, y-s/2, s, s);
+}
+let glowSprite = null; // amber, used by the strip panel
+
+/* =========================================================================
+   2. MODEL MATH  (all "_deg"/"_h" params in degrees/hours; internal work in
+      radians; vectors on the unit celestial sphere, model frame:
+      x = East, y = North, z = Up. Verified against a standalone Node
+      harness — see report for the numeric self-checks.)
+   ========================================================================= */
+function hzToVec(A_deg, a_deg){
+  const A = A_deg*RAD, a = a_deg*RAD;
+  return { x: Math.cos(a)*Math.sin(A), y: Math.cos(a)*Math.cos(A), z: Math.sin(a) };
+}
+function vecToHz(x,y,z){
+  const a = Math.asin(clamp(z,-1,1))*DEG;
+  const A = norm360(Math.atan2(x,y)*DEG);
+  return { A:A, a:a };
+}
+function pHatModel(phi_deg){ const phi = phi_deg*RAD; return { x:0, y:Math.cos(phi), z:Math.sin(phi) }; }
+function sHatModel(phi_deg){ const phi = phi_deg*RAD; return { x:0, y:-Math.sin(phi), z:Math.cos(phi) }; }
+const eHatModel = { x:1, y:0, z:0 };
+
+function eqToVec(H_deg, delta_deg, phi_deg){
+  const H = H_deg*RAD, d = delta_deg*RAD;
+  const s = sHatModel(phi_deg), p = pHatModel(phi_deg);
+  const cH = Math.cos(H), sH = Math.sin(H), cd = Math.cos(d), sd = Math.sin(d);
+  return {
+    x: cd*(cH*s.x - sH*eHatModel.x) + sd*p.x,
+    y: cd*(cH*s.y - sH*eHatModel.y) + sd*p.y,
+    z: cd*(cH*s.z - sH*eHatModel.z) + sd*p.z
+  };
+}
+
+/* model (x=East,y=North,z=Up) -> three.js (y-up: x=East,y=Up,z=-North) */
+function toThree(v){ return { x:v.x, y:v.z, z:-v.y }; }
+function toThreeVec3(v){ return new THREE.Vector3(v.x, v.z, -v.y); }
+
+function hourAngleDeg(lst_h, ra_h){ return wrap180((lst_h - ra_h)*15); }
+function hourAngleHours(lst_h, ra_h){ return wrap12(lst_h - ra_h); }
+
+function altAzFromEq(phi_deg, delta_deg, H_deg){
+  const phi=phi_deg*RAD, delta=delta_deg*RAD, H=H_deg*RAD;
+  const sinA_ = Math.sin(phi)*Math.sin(delta) + Math.cos(phi)*Math.cos(delta)*Math.cos(H);
+  const a = Math.asin(clamp(sinA_,-1,1));
+  const cosA_denom = Math.cos(phi)*Math.cos(a);
+  let A;
+  if(Math.abs(cosA_denom) < 1e-9){
+    A = NaN; // undefined at the pole (phi=+-90) or when the star sits at the zenith (a=90)
+  } else {
+    let cosAval = (Math.sin(delta) - Math.sin(phi)*Math.sin(a)) / cosA_denom;
+    cosAval = clamp(cosAval, -1, 1);
+    A = Math.acos(cosAval)*DEG;
+    if(Math.sin(H) > 0) A = 360 - A; // star west of the meridian
+  }
+  return { a: a*DEG, A: A };
+}
+
+function transitAltitudeDeg(phi_deg, delta_deg){ return 90 - Math.abs(phi_deg - delta_deg); }
+
+/* rise/set hour angle via cosH0 = -tan(phi)tan(delta), robust to hemisphere sign
+   (no special-cased north/south inequalities needed — the clamp IS the rule) */
+function riseSetInfo(phi_deg, delta_deg){
+  const phi = phi_deg*RAD, delta = delta_deg*RAD;
+  const val = -Math.tan(phi)*Math.tan(delta);
+  if(val < -1) return { circumpolar:true, neverRises:false, H0deg:null };
+  if(val > 1)  return { circumpolar:false, neverRises:true,  H0deg:null };
+  return { circumpolar:false, neverRises:false, H0deg: Math.acos(val)*DEG };
+}
+
+function parallacticAngleDeg(H_deg, phi_deg, delta_deg){
+  const H=H_deg*RAD, phi=phi_deg*RAD, delta=delta_deg*RAD;
+  return Math.atan2(Math.sin(H), Math.tan(phi)*Math.cos(delta) - Math.sin(delta)*Math.cos(H))*DEG;
+}
+
+/* slerp between two unit vectors — used for the astronomical-triangle's
+   great-circle sides (shortest arc) */
+function slerp3(A, B, t){
+  let dot = clamp(A.x*B.x+A.y*B.y+A.z*B.z, -1, 1);
+  const theta = Math.acos(dot);
+  if(theta < 1e-6) return { x:A.x, y:A.y, z:A.z };
+  const s = Math.sin(theta);
+  const wA = Math.sin((1-t)*theta)/s, wB = Math.sin(t*theta)/s;
+  return { x: wA*A.x+wB*B.x, y: wA*A.y+wB*B.y, z: wA*A.z+wB*B.z };
+}
+
+/* full set of derived quantities for the current (phi, lst, ra, dec) — computed
+   once per state change/frame and shared by readouts, formulas, and drawing */
+function computeDerived(phi_deg, lst_h, ra_h, dec_deg){
+  const H_deg = hourAngleDeg(lst_h, ra_h);
+  const h_h = hourAngleHours(lst_h, ra_h);
+  const altaz = altAzFromEq(phi_deg, dec_deg, H_deg);
+  const rs = riseSetInfo(phi_deg, dec_deg);
+  const transitAlt = transitAltitudeDeg(phi_deg, dec_deg);
+  const q_deg = parallacticAngleDeg(H_deg, phi_deg, dec_deg);
+  let badge = "rises";
+  if(rs.circumpolar) badge = "circumpolar";
+  else if(rs.neverRises) badge = "never";
+  return { H_deg:H_deg, h_h:h_h, A_deg:altaz.A, a_deg:altaz.a, riseSet:rs,
+           transitAlt:transitAlt, q_deg:q_deg, badge:badge };
+}
+
+/* =========================================================================
+   3. PRESETS
+   ========================================================================= */
+const LOCATIONS = {
+  newark:    { name:"Newark, NJ",  phi:40.7 },
+  quito:     { name:"Quito",       phi:0.0 },
+  reykjavik: { name:"Reykjavík", phi:64.1 },
+  sydney:    { name:"Sydney",      phi:-33.9 },
+  northpole: { name:"North Pole",  phi:90.0 }
+};
+const STARS = {
+  vega:        { name:"Vega",           ra:18.615, dec:38.78 },
+  polaris:     { name:"Polaris",        ra:2.530,  dec:89.26 },
+  sirius:      { name:"Sirius",         ra:6.752,  dec:-16.72 },
+  betelgeuse:  { name:"Betelgeuse",     ra:5.919,  dec:7.41 },
+  arcturus:    { name:"Arcturus",       ra:14.261, dec:19.18 },
+  antares:     { name:"Antares",        ra:16.490, dec:-26.43 },
+  canopus:     { name:"Canopus",        ra:6.399,  dec:-52.70 },
+  deneb:       { name:"Deneb",          ra:20.690, dec:45.28 },
+  altair:      { name:"Altair",         ra:19.846, dec:8.87 },
+  sun_equinox: { name:"Sun at equinox", ra:0.000,  dec:0.00 }
+};
+
+/* =========================================================================
+   4. TAB CONFIG — defaults, display state, and About text per teaching stage
+   ========================================================================= */
+const TAB_ORDER = ["grids","latitude","diurnal","hlst","triangle"];
+const TAB_CONFIG = {
+  grids: {
+    label: "Two grids",
+    tint: "cyan",
+    phi: 40.7, lst: 15.0, star: "vega", // El~49 deg, Az~74 deg (up in the east, all arcs short & clear)
+    playing: false, speed: 1.0,
+    display: { hGrid:true, eGrid:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    gridAlpha: { h:1, e:1 },
+    badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
+    aboutTitle: "Two grids on one sphere",
+    aboutHTML:
+      '<p>The sky behaves like a sphere centred on you. There are two natural ways to say where a star is. The horizontal system uses your own horizon: azimuth <span class="math-upright">Az</span>, measured from North through East along the horizon, and elevation <span class="math-upright">El</span> (altitude), measured up from the horizon toward the zenith. It is easy to measure — but it changes minute by minute and differs from city to city. The equatorial system uses the sky\'s own grid: declination <span class="math">&delta;</span>, measured from the celestial equator toward the poles, and right ascension <span class="math">&alpha;</span>, measured eastward along the equator from the vernal equinox &#9800;. It is fixed to the stars, identical for every observer, and is what catalogues print. Both grids are drawn here; the star wears both addresses at once.</p>'
+  },
+  latitude: {
+    label: "Latitude",
+    tint: "purple",
+    phi: 40.7, lst: 6, star: "polaris",
+    playing: false, speed: 1.0,
+    display: { hGrid:true, eGrid:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    gridAlpha: { h:1, e:1 },
+    badge: "none", poleReadout:true, locationHighlight:true, hlstReadout:false, formulasExpanded:false,
+    aboutTitle: "One tilt explains everything",
+    aboutHTML:
+      '<p>The celestial pole stands due north at an elevation equal to your latitude <span class="math">&phi;</span>. That single fact fixes the relation between the two grids: the celestial equator crosses the meridian due south at elevation 90&deg; &minus; <span class="math">&phi;</span>, and the whole equatorial grid is tilted by 90&deg; &minus; <span class="math">&phi;</span> from the zenith. Drag the latitude. At the North Pole the grids coincide — the pole is overhead, the equator lies on the horizon, and elevation simply equals declination. At the equator the pole lies on the horizon and every star rises and sets vertically. In between, every star\'s path is slanted by the same tilt.</p>'
+  },
+  diurnal: {
+    label: "Diurnal motion",
+    tint: "magenta",
+    phi: 40.7, lst: 5.0, star: "sirius", // h~-1.75h, just before transit -- play shows it culminate then set
+    playing: true, speed: 1.0,
+    display: { hGrid:false, eGrid:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    gridAlpha: { h:1, e:1 },
+    badge: "diurnal", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
+    aboutTitle: "The sky turns about the pole",
+    aboutHTML:
+      '<p>Earth\'s rotation turns the whole equatorial grid about the polar axis once per sidereal day (23&nbsp;h&nbsp;56&nbsp;m). A star\'s <span class="math">&alpha;</span> and <span class="math">&delta;</span> never change; it simply rides its circle of constant declination — its diurnal circle — while its azimuth and elevation sweep continuously. The hour angle h = LST &minus; <span class="math">&alpha;</span> measures how far the star has turned past the meridian; it culminates (highest, at elevation 90&deg; &minus; |<span class="math">&phi;</span> &minus; <span class="math">&delta;</span>|) when h = 0. Stars with <span class="math">&delta;</span> &gt; 90&deg; &minus; <span class="math">&phi;</span> never dip below the horizon: they are circumpolar. Stars with <span class="math">&delta;</span> &lt; &minus;(90&deg; &minus; <span class="math">&phi;</span>) never rise at all.</p>'
+  },
+  hlst: {
+    label: "h · α · LST",
+    tint: "green",
+    phi: 40.7, lst: 21.0, star: "vega",
+    playing: false, speed: 0.5,
+    display: { hGrid:false, eGrid:true, diurnal:false, arcs:false, triangle:false, labels:true },
+    gridAlpha: { h:1, e:0.5 },
+    badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:true, formulasExpanded:false,
+    aboutTitle: "Hour angle, right ascension, sidereal time",
+    aboutHTML:
+      '<p>Three angles live on the celestial equator. Right ascension <span class="math">&alpha;</span> belongs to the star: measured eastward from the vernal equinox &#9800; to the star\'s hour circle, it never changes. The hour angle h belongs to you: measured westward from your meridian to that same hour circle, it grows steadily as the sky turns — it is the star\'s time since culmination (negative before it). Local sidereal time LST is the hour angle of &#9800; itself — equivalently, the right ascension that is on your meridian right now. Lay the arcs end to end and the bookkeeping is LST = h + <span class="math">&alpha;</span>. So a star culminates when LST = <span class="math">&alpha;</span>, and knowing the sidereal time tells you at once which stars are up: those with <span class="math">&alpha;</span> within a few hours of LST.</p>'
+  },
+  triangle: {
+    label: "Astronomical triangle",
+    tint: "amber",
+    phi: 40.7, lst: 16, star: "arcturus",
+    playing: false, speed: 1.0,
+    display: { hGrid:true, eGrid:true, diurnal:false, arcs:true, triangle:true, labels:true },
+    gridAlpha: { h:0.5, e:0.5 },
+    badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:true,
+    aboutTitle: "The astronomical triangle",
+    aboutHTML:
+      '<p>Zenith <span class="math">Z</span>, celestial pole <span class="math">P</span>, and star <span class="math">S</span> form a spherical triangle. Its sides are 90&deg; &minus; <span class="math">&phi;</span> (<span class="math">Z</span> to <span class="math">P</span>), 90&deg; &minus; <span class="math">&delta;</span> (<span class="math">P</span> to <span class="math">S</span>) and 90&deg; &minus; <span class="math-upright">El</span> (<span class="math">Z</span> to <span class="math">S</span>); its angles are the hour angle h at the pole, the azimuth <span class="math-upright">Az</span> at the zenith (measured from north), and the parallactic angle <span class="math">q</span> at the star. The spherical law of cosines applied to side <span class="math">Z&ndash;S</span> gives sin <span class="math-upright">El</span> = sin <span class="math">&phi;</span> sin <span class="math">&delta;</span> + cos <span class="math">&phi;</span> cos <span class="math">&delta;</span> cos h, and applied to side <span class="math">P&ndash;S</span> gives the azimuth. Every conversion between the two systems is this one triangle, solved.</p>'
+  }
+};
+
+/* =========================================================================
+   5. STATE
+   ========================================================================= */
+const state = {
+  tab: "grids",
+  phi: 40.7, locationKey: "newark",
+  lst: 6,                    // hours, continuous display value
+  starKey: "vega", ra: 18.615, dec: 38.78,
+  playing: false, speed: 1.0,
+  display: { hGrid:true, eGrid:true, diurnal:true, arcs:true, triangle:false, labels:true },
+  gridAlpha: { h:1, e:1 },
+  stripMode: "allsky",        // "allsky" | "radec"
+  derived: null,              // computeDerived(...) result for the current instant
+  // three.js orbit-camera state (spherical, around a fixed target)
+  cam: { theta: 0, phiAngle: 0, radius: 3.2, target: { x:0, y:0.15, z:0 }, isDefault: true },
+  needsRender: true,          // set true whenever the GL scene must redraw
+  mainW: 0, mainH: 0, overlayW: 0, overlayH: 0, stripW: 0, stripH: 0,
+  stripDirty: true,
+  webglOK: true,
+  // cached readout strings (avoid redundant DOM writes)
+  _lastReadout: null, _lastPoleAlt: null, _lastBadge: null,
+  _lastHlstLST: null, _lastHlstH: null, _lastHlstAlpha: null
+};
+
+function currentStarName(){
+  if(state.starKey !== "custom" && STARS[state.starKey]) return STARS[state.starKey].name;
+  return "Custom";
+}
+function currentLocationName(){
+  if(state.locationKey !== "custom" && LOCATIONS[state.locationKey]) return LOCATIONS[state.locationKey].name;
+  return "Custom";
+}
+function recomputeDerived(){
+  state.derived = computeDerived(state.phi, state.lst, state.ra, state.dec);
+}
+
+/* =========================================================================
+   6. THREE.JS SCENE — the "sky dome" (main panel)
+
+   Structural trick: everything fixed in the EQUATORIAL frame (celestial
+   equator, declination circles, hour-circle grid, NCP/SCP, the vernal
+   equinox marker, the star marker) is built ONCE in a canonical "native"
+   frame (pole = local +Y) using nativePointFromRA()/nativeSmallCirclePoints
+   below, then the whole group is re-oriented by ONE quaternion per
+   φ/LST change: first tilt (rotate -90+φ about local +X = East) so the
+   native pole points along the real p-hat direction, then spin (rotate
+   -LST*15 deg about local +Y, applied BEFORE the tilt) to place the
+   vernal equinox correctly. This quaternion composition is verified
+   against the closed-form eqToVec()+toThree() formula to 1e-9 — see
+   self-check #11 in the report. Objects that are NOT fixed in the
+   equatorial frame (the dynamic teaching arcs, the star's diurnal circle
+   with its horizon split, the astronomical triangle) are recomputed
+   directly in world space whenever state changes — see DYNAMIC ARCS /
+   TRIANGLE sections below.
+   ========================================================================= */
+let renderer, scene, camera, glCanvas;
+let hGridGroup, meridianGroup, equatorialGroup, diurnalGroup;
+let starTorus, starSphere, starGlow, starLabel, starLabelText = null;
+const matRefs = { hGrid: [], eGrid: [] }; // {material, base} — opacity scaled by state.gridAlpha
+
+function applyGridAlpha(){
+  matRefs.hGrid.forEach(function(r){ r.material.opacity = r.base * state.gridAlpha.h; });
+  matRefs.eGrid.forEach(function(r){ r.material.opacity = r.base * state.gridAlpha.e; });
+}
+function applyDisplayVisibility(){
+  if(hGridGroup) hGridGroup.visible = !!state.display.hGrid;
+  if(equatorialGroup){
+    equatorialGroup.userData.eGridPart.visible = !!state.display.eGrid;
+    equatorialGroup.userData.equinoxPart.visible = !!state.display.eGrid;
+  }
+  if(diurnalGroup) diurnalGroup.visible = !!state.display.diurnal;
+  state.needsRender = true;
+}
+
+function makeLineLoop(points, colorInt, opacity, lineWidth){
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = new THREE.LineBasicMaterial({ color:colorInt, transparent:true, opacity:opacity, depthWrite:false });
+  const line = new THREE.LineLoop(geo, mat);
+  return { line:line, material:mat };
+}
+function makeLineStrip(points, colorInt, opacity, dashed){
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  let mat, line;
+  if(dashed){
+    mat = new THREE.LineDashedMaterial({ color:colorInt, transparent:true, opacity:opacity, dashSize:0.045, gapSize:0.03, depthWrite:false });
+    line = new THREE.Line(geo, mat);
+    line.computeLineDistances();
+  } else {
+    mat = new THREE.LineBasicMaterial({ color:colorInt, transparent:true, opacity:opacity, depthWrite:false });
+    line = new THREE.Line(geo, mat);
+  }
+  return { line:line, material:mat };
+}
+
+/* ---- label sprites: text is fixed per label (never changes per frame), so
+   each is built once and only re-POSITIONED afterward — no per-frame texture work.
+   sizeAttenuation is OFF: label pixel size must be independent of camera distance
+   AND of panel size, so the on-screen size is driven directly from the desired
+   CSS pixel height (opts.pixelHeight) via applySpriteScale()/updateSpriteScales(),
+   recomputed whenever the panel resizes (the only thing besides camera.fov that
+   the size depends on — camera.fov itself never changes at runtime). ---- */
+const labelRegistry = [];
+function applySpriteScale(sprite){
+  if(!camera || !state.mainH) return; // not sized yet -- updateSpriteScales() catches up on first resize
+  const k = 2*Math.tan((camera.fov/2)*RAD) / state.mainH;
+  const h = sprite.userData.pixelHeight * k;
+  sprite.scale.set(h*sprite.userData.aspect, h, 1);
+}
+function updateSpriteScales(){ labelRegistry.forEach(applySpriteScale); }
+
+function makeTextSprite(text, colorHex, opts){
+  opts = opts || {};
+  const fontSizePx = opts.fontSizePx || 30;
+  const mathFont = (opts.math && !opts.upright) ? 'italic 600 ' : '600 ';
+  const fam = opts.math ? '"STIX Two Math","Cambria Math","Times New Roman",serif' : 'Inter, ui-sans-serif, sans-serif';
+  const font = mathFont + fontSizePx + "px " + fam;
+  const measure = document.createElement("canvas").getContext("2d");
+  measure.font = font;
+  const textW = Math.max(1, Math.ceil(measure.measureText(text).width));
+  const c = document.createElement("canvas");
+  const padX = 10, padY = 8;
+  c.width = textW + padX*2; c.height = fontSizePx + padY*2;
+  const cctx = c.getContext("2d");
+  cctx.font = font;
+  cctx.textAlign = "center"; cctx.textBaseline = "middle";
+  cctx.fillStyle = colorHex;
+  cctx.fillText(text, c.width/2, c.height/2 + fontSizePx*0.03);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  const mat = new THREE.SpriteMaterial({ map:tex, transparent:true, depthWrite:false, depthTest:opts.depthTest!==false, sizeAttenuation:false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.userData.aspect = c.width / c.height;
+  sprite.userData.pixelHeight = opts.pixelHeight || 12;
+  sprite.renderOrder = 10;
+  labelRegistry.push(sprite);
+  applySpriteScale(sprite);
+  return sprite;
+}
+function disposeSprite(sprite){
+  if(!sprite) return;
+  const idx = labelRegistry.indexOf(sprite);
+  if(idx >= 0) labelRegistry.splice(idx,1);
+  if(sprite.material){ if(sprite.material.map) sprite.material.map.dispose(); sprite.material.dispose(); }
+}
+
+/* native-frame helpers (pre-tilt/spin; pole = local +Y, equinox = local +Z) */
+function nativePointFromRA(alpha_deg, delta_deg){
+  const a = alpha_deg*RAD, d = delta_deg*RAD;
+  return new THREE.Vector3(Math.cos(d)*Math.sin(a), Math.sin(d), Math.cos(d)*Math.cos(a));
+}
+function nativeSmallCirclePoints(delta_deg, n){
+  const n2 = n || CIRCLE_N;
+  const pts = [];
+  for(let i=0;i<=n2;i++) pts.push(nativePointFromRA((i/n2)*360, delta_deg));
+  return pts;
+}
+function nativeHourCirclePoints(alphaFixed_deg, n){
+  // great circle through both native poles and the equator point at native RA = alphaFixed_deg
+  const n2 = n || CIRCLE_N;
+  const a = alphaFixed_deg*RAD;
+  const ex = Math.sin(a), ez = Math.cos(a);
+  const pts = [];
+  for(let i=0;i<=n2;i++){
+    const t = (i/n2)*TAU, ct = Math.cos(t), st = Math.sin(t);
+    pts.push(new THREE.Vector3(ct*ex, st, ct*ez));
+  }
+  return pts;
+}
+
+function initThreeScene(){
+  glCanvas = document.getElementById("glCanvas");
+  let gl = null;
+  try{ gl = glCanvas.getContext("webgl2") || glCanvas.getContext("webgl"); }catch(e){ gl = null; }
+  if(!gl){
+    state.webglOK = false;
+    document.getElementById("webglFallback").hidden = false;
+    return;
+  }
+  try{
+    renderer = new THREE.WebGLRenderer({ canvas:glCanvas, context:gl, antialias:true, alpha:true });
+  }catch(e){
+    state.webglOK = false;
+    document.getElementById("webglFallback").hidden = false;
+    return;
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
+
+  buildStaticScene();
+  buildEquatorialGroup();
+  buildDynamicArcsGroup();   // defined in the DYNAMIC ARCS section below
+  buildTriangleGroup();      // defined in the TRIANGLE section below
+
+  resetCameraView();
+  wireCameraControls();
+}
+
+function buildStaticScene(){
+  // ground
+  const groundGeo = new THREE.PlaneGeometry(6,6);
+  const groundMat = new THREE.MeshBasicMaterial({ color:COLORI["panel-deep"], transparent:true, opacity:0.55, side:THREE.DoubleSide, depthWrite:false });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI/2;
+  scene.add(ground);
+
+  const grid = new THREE.GridHelper(6, 12, COLORI["border-strong"], 0x2a2f36);
+  grid.material.transparent = true;
+  grid.material.opacity = 0.22;
+  scene.add(grid);
+
+  // sky dome (upper hemisphere), two passes so it reads from outside too
+  const domeGeo = new THREE.SphereGeometry(1, 48, 24, 0, TAU, 0, Math.PI/2);
+  const domeBack = new THREE.Mesh(domeGeo, new THREE.MeshBasicMaterial({ color:COLORI.cyan, transparent:true, opacity:0.05, side:THREE.BackSide, depthWrite:false }));
+  const domeFront = new THREE.Mesh(domeGeo, new THREE.MeshBasicMaterial({ color:COLORI.cyan, transparent:true, opacity:0.03, side:THREE.FrontSide, depthWrite:false }));
+  scene.add(domeBack, domeFront);
+
+  // horizon ring
+  const ringGeo = new THREE.TorusGeometry(1, 0.006, 8, 160);
+  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color:0x69717a, transparent:true, opacity:0.6 }));
+  ring.rotation.x = Math.PI/2;
+  scene.add(ring);
+
+  // observer marker at the origin
+  const obsGeo = new THREE.SphereGeometry(0.012, 12, 8);
+  const obsMat = new THREE.MeshBasicMaterial({ color:COLORI.cyan });
+  scene.add(new THREE.Mesh(obsGeo, obsMat));
+
+  // zenith
+  const zenGeo = new THREE.SphereGeometry(0.012, 12, 8);
+  const zen = new THREE.Mesh(zenGeo, new THREE.MeshBasicMaterial({ color:COLORI.text }));
+  zen.position.set(0,1,0);
+  scene.add(zen);
+  const zenLabel = makeTextSprite("Z", COLORS.text, { pixelHeight:12 });
+  zenLabel.position.set(0, 1.09, 0);
+  scene.add(zenLabel);
+
+  // N/E/S/W just outside the horizon ring, at ground level
+  hGridGroup = new THREE.Group();
+  scene.add(hGridGroup);
+  [["N",0],["E",90],["S",180],["W",270]].forEach(function(pair){
+    const p = hzToVec(pair[1], 0);
+    const v = toThreeVec3(p).multiplyScalar(1.08);
+    v.y = 0.015;
+    const lab = makeTextSprite(pair[0], COLORS.muted, { pixelHeight:11 });
+    lab.position.copy(v);
+    scene.add(lab);
+  });
+
+  // horizontal grid: altitude circles a=30,60 (cyan) + azimuth verticals every 30 deg
+  [30,60].forEach(function(a){
+    const pts = [];
+    for(let i=0;i<=CIRCLE_N;i++) pts.push(toThreeVec3(hzToVec((i/CIRCLE_N)*360, a)));
+    const r = makeLineLoop(pts, COLORI.cyan, 0.18);
+    hGridGroup.add(r.line);
+    matRefs.hGrid.push({ material:r.material, base:0.18 });
+  });
+  for(let k=0;k<12;k++){
+    const A0 = k*30;
+    const pts = [];
+    const nseg = 32;
+    for(let i=0;i<=nseg;i++) pts.push(toThreeVec3(hzToVec(A0, (i/nseg)*90)));
+    const r = makeLineStrip(pts, COLORI.cyan, 0.18, false);
+    hGridGroup.add(r.line);
+    matRefs.hGrid.push({ material:r.material, base:0.18 });
+  }
+
+  // meridian (great circle N-Z-S-nadir): upper half bright, lower half dim — static,
+  // independent of phi/LST, so built once directly in world space
+  meridianGroup = new THREE.Group();
+  scene.add(meridianGroup);
+  function meridianPoint(thDeg){
+    const th = thDeg*RAD;
+    // p(th) = cos(th)*N_dir + sin(th)*Zenith, N_dir=hzToVec(0,0), Zenith model=(0,0,1)
+    const n = hzToVec(0,0);
+    return toThreeVec3({ x:Math.cos(th)*n.x, y:Math.cos(th)*n.y, z:Math.cos(th)*n.z + Math.sin(th) });
+  }
+  const upperPts = [], lowerPts = [];
+  const nseg = 60;
+  for(let i=0;i<=nseg;i++) upperPts.push(meridianPoint((i/nseg)*180));
+  for(let i=0;i<=nseg;i++) lowerPts.push(meridianPoint(180 + (i/nseg)*180));
+  meridianGroup.add(makeLineStrip(upperPts, 0x979ea6, 0.5, false).line);
+  meridianGroup.add(makeLineStrip(lowerPts, 0x979ea6, 0.18, false).line);
+}
+
+function buildEquatorialGroup(){
+  equatorialGroup = new THREE.Group();
+  scene.add(equatorialGroup);
+
+  const eGridPart = new THREE.Group();
+  const polarAxisPart = new THREE.Group();
+  const equinoxPart = new THREE.Group();
+  const starPart = new THREE.Group();
+  equatorialGroup.add(eGridPart, polarAxisPart, equinoxPart, starPart);
+  equatorialGroup.userData = { eGridPart:eGridPart, polarAxisPart:polarAxisPart, equinoxPart:equinoxPart, starPart:starPart };
+
+  // celestial equator — the brightest grid element, but still well below the
+  // coordinate-arc opacities (~1.0) so the didactic arcs stay dominant
+  {
+    const r = makeLineLoop(nativeSmallCirclePoints(0), COLORI.amber, 0.45);
+    eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base:0.45 });
+  }
+  // declination circles +-30, +-60
+  [30,-30,60,-60].forEach(function(d){
+    const r = makeLineLoop(nativeSmallCirclePoints(d), COLORI.amber, 0.18);
+    eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base:0.18 });
+  });
+  // hour circles every 2h (6 great circles cover all 12 half-meridians); 0h brighter
+  for(let k=0;k<6;k++){
+    const raH = k*2;
+    const bright = (raH === 0);
+    const r = makeLineLoop(nativeHourCirclePoints(raH*15), COLORI.amber, bright ? 0.32 : 0.14);
+    eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base: bright ? 0.32 : 0.14 });
+  }
+
+  // polar axis (dashed magenta line through the group) + NCP/SCP markers
+  {
+    const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-1,0), new THREE.Vector3(0,1,0)]);
+    const mat = new THREE.LineDashedMaterial({ color:COLORI.magenta, transparent:true, opacity:0.7, dashSize:0.045, gapSize:0.03, depthWrite:false });
+    const line = new THREE.Line(geo, mat);
+    line.computeLineDistances();
+    polarAxisPart.add(line);
+  }
+  const ncpDot = new THREE.Mesh(new THREE.SphereGeometry(0.014,10,8), new THREE.MeshBasicMaterial({ color:COLORI.magenta }));
+  ncpDot.position.set(0,1,0);
+  const scpDot = new THREE.Mesh(new THREE.SphereGeometry(0.014,10,8), new THREE.MeshBasicMaterial({ color:COLORI.magenta }));
+  scpDot.position.set(0,-1,0);
+  polarAxisPart.add(ncpDot, scpDot);
+  const ncpLabel = makeTextSprite("NCP", COLORS.magenta, { pixelHeight:12 });
+  ncpLabel.position.set(0,1.09,0);
+  const scpLabel = makeTextSprite("SCP", COLORS.magenta, { pixelHeight:12 });
+  scpLabel.position.set(0,-1.09,0);
+  polarAxisPart.add(ncpLabel, scpLabel);
+
+  // vernal equinox marker
+  {
+    const p = nativePointFromRA(0,0);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012,10,8), new THREE.MeshBasicMaterial({ color:COLORI.amber }));
+    dot.position.copy(p);
+    const lab = makeTextSprite("♈", COLORS.amber, { pixelHeight:12 });
+    lab.position.copy(p.clone().multiplyScalar(1.1));
+    equinoxPart.add(dot, lab);
+  }
+
+  // diurnal circle lives in world space (see rebuildDiurnalCircle) — NOT a
+  // child of equatorialGroup, since it does not rotate with LST
+  diurnalGroup = new THREE.Group();
+  scene.add(diurnalGroup);
+
+  // star marker: torus + small sphere + glow sprite + name label
+  const torusGeo = new THREE.TorusGeometry(0.035, 0.006, 10, 48);
+  starTorus = new THREE.Mesh(torusGeo, new THREE.MeshBasicMaterial({ color:COLORI.amber }));
+  starSphere = new THREE.Mesh(new THREE.SphereGeometry(0.016,12,10), new THREE.MeshBasicMaterial({ color:COLORI.amber }));
+  starGlow = makeGlowSpriteThree(COLORS.amber, 0.22);
+  starPart.add(starTorus, starSphere, starGlow);
+  updateStarInGroup();
+
+  updateEquatorialOrientation();
+  applyGridAlpha();
+  applyDisplayVisibility();
+}
+
+function makeGlowSpriteThree(colorHex, worldSize){
+  const size = 128;
+  const c = document.createElement("canvas");
+  c.width = size; c.height = size;
+  const cctx = c.getContext("2d");
+  const rgb = hexToRgb(colorHex);
+  const grad = cctx.createRadialGradient(size/2,size/2,0, size/2,size/2, size/2);
+  grad.addColorStop(0, "rgba("+rgb.r+","+rgb.g+","+rgb.b+",0.9)");
+  grad.addColorStop(0.5, "rgba("+rgb.r+","+rgb.g+","+rgb.b+",0.35)");
+  grad.addColorStop(1, "rgba("+rgb.r+","+rgb.g+","+rgb.b+",0)");
+  cctx.fillStyle = grad;
+  cctx.beginPath(); cctx.arc(size/2,size/2,size/2,0,TAU); cctx.fill();
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map:tex, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(worldSize, worldSize, 1);
+  return sprite;
+}
+
+/* Sets the equatorial group's orientation from the current phi/LST.
+   quaternion = Qtilt * Qspin  (Qspin applied first, in the native frame;
+   Qtilt applied second) — verified against eqToVec()+toThree() to 1e-9. */
+const _qTilt = new THREE.Quaternion(), _qSpin = new THREE.Quaternion();
+const _axisX = new THREE.Vector3(1,0,0), _axisY = new THREE.Vector3(0,1,0);
+function updateEquatorialOrientation(){
+  if(!equatorialGroup) return;
+  _qTilt.setFromAxisAngle(_axisX, (state.phi - 90)*RAD);
+  _qSpin.setFromAxisAngle(_axisY, -(state.lst*15)*RAD);
+  equatorialGroup.quaternion.copy(_qTilt).multiply(_qSpin);
+}
+
+/* Repositions the star marker + rebuilds its (fixed-until-changed) name label
+   and diurnal-circle geometry. Called when the star selection or ra/dec change —
+   NOT every frame. */
+function updateStarInGroup(){
+  if(!starTorus) return;
+  const p = nativePointFromRA(state.ra*15, state.dec);
+  starTorus.position.copy(p);
+  starSphere.position.copy(p);
+  starGlow.position.copy(p);
+  // orient the torus to face outward (lie tangent to the sphere at p)
+  starTorus.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), p.clone().normalize());
+
+  const name = currentStarName();
+  if(name !== starLabelText){
+    if(starLabel){ equatorialGroup.userData.starPart.remove(starLabel); disposeSprite(starLabel); }
+    starLabel = makeTextSprite(name, COLORS.amber, { pixelHeight:12 });
+    equatorialGroup.userData.starPart.add(starLabel);
+    starLabelText = name;
+  }
+  starLabel.position.copy(p.clone().multiplyScalar(1.13));
+
+  rebuildDiurnalCircle();
+  state.needsRender = true;
+}
+
+/* The diurnal circle (star's track of constant declination) is FIXED in the
+   observer's horizontal frame for a given (phi, delta) — it does NOT rotate
+   with LST (only the star's position ON it does). So unlike the equatorial
+   group's contents, it is built directly in WORLD space via the closed-form
+   eqToVec()+toThree() and only rebuilt when phi or the star's declination
+   changes (never per animation frame) — dispose+recreate here is fine since
+   this is outside the per-frame render path. Above-horizon = solid; below =
+   dashed, low alpha; rise/set points get small tick marks. */
+function rebuildDiurnalCircle(){
+  if(!diurnalGroup) return;
+  while(diurnalGroup.children.length){
+    const c = diurnalGroup.children.pop();
+    c.geometry && c.geometry.dispose();
+    c.material && c.material.dispose();
+  }
+  const n = CIRCLE_N;
+  const worldPts = [], zSign = [];
+  for(let i=0;i<=n;i++){
+    const Hd = (i/n)*360;
+    const v = eqToVec(Hd, state.dec, state.phi);
+    worldPts.push(toThreeVec3(v));
+    zSign.push(v.z >= 0);
+  }
+  // walk the closed loop once, splitting into contiguous above/below runs
+  // (a circle cut by a plane crosses at most twice, so at most one run of
+  // each kind — but code generically in case of numerical edge cases)
+  let runs = [];
+  let curSign = zSign[0], curPts = [worldPts[0]];
+  for(let i=1;i<=n;i++){
+    const idx = i % (n+1);
+    if(zSign[idx] === curSign){
+      curPts.push(worldPts[idx]);
+    } else {
+      runs.push({ above:curSign, pts:curPts });
+      curSign = zSign[idx];
+      curPts = [worldPts[i-1], worldPts[idx]]; // include the crossing edge
+    }
+  }
+  runs.push({ above:curSign, pts:curPts });
+  // if the very first and last runs share the same sign (no wrap boundary
+  // fell between them), merge them so the loop doesn't show a false seam
+  if(runs.length > 1 && runs[0].above === runs[runs.length-1].above){
+    runs[0].pts = runs[runs.length-1].pts.concat(runs[0].pts);
+    runs.pop();
+  }
+  runs.forEach(function(run){
+    const r = run.above
+      ? makeLineStrip(run.pts, COLORI.amber, 0.55, false)
+      : makeLineStrip(run.pts, COLORI.amber, 0.22, true);
+    diurnalGroup.add(r.line);
+  });
+  // rise/set tick marks, if they exist
+  const rs = riseSetInfo(state.phi, state.dec);
+  if(!rs.circumpolar && !rs.neverRises && rs.H0deg != null){
+    [rs.H0deg, -rs.H0deg].forEach(function(Hd){
+      const v = eqToVec(Hd, state.dec, state.phi);
+      const p = toThreeVec3(v);
+      const outward = p.clone().normalize();
+      const tick = new THREE.Mesh(new THREE.SphereGeometry(0.013,8,6), new THREE.MeshBasicMaterial({ color:COLORI.amber }));
+      tick.position.copy(p);
+      diurnalGroup.add(tick);
+    });
+  }
+}
+
+/* ---- camera: simple spherical orbit around a fixed target ---- */
+/* Default view: south-east, ~28 deg elevation. Distance 3.2 = r/sin(21deg) (~2.8,
+   the exact fit for the 42deg-vertical-FOV camera against the unit sphere) plus
+   ~12% margin. Aspect-aware: on a portrait/mobile panel (aspect<1) the HORIZONTAL
+   FOV is the binding constraint, so back off by 1/aspect to keep the whole dome
+   in frame width-wise too. */
+const CAM_DEFAULT = { theta: -11*RAD, phiAngle: 28*RAD, baseRadius: 3.2, target:{x:0,y:0.15,z:0} };
+const CAM_ZOOM_MIN = 1.8, CAM_ZOOM_MAX = 6;
+function computeDefaultRadius(){
+  const aspect = (state.mainW && state.mainH) ? (state.mainW/state.mainH) : 1;
+  const r = aspect < 1 ? CAM_DEFAULT.baseRadius/aspect : CAM_DEFAULT.baseRadius;
+  return clamp(r, CAM_ZOOM_MIN, CAM_ZOOM_MAX);
+}
+function resetCameraView(){
+  state.cam.theta = CAM_DEFAULT.theta;
+  state.cam.phiAngle = CAM_DEFAULT.phiAngle;
+  state.cam.radius = computeDefaultRadius();
+  state.cam.target = { x:CAM_DEFAULT.target.x, y:CAM_DEFAULT.target.y, z:CAM_DEFAULT.target.z };
+  state.cam.isDefault = true; // re-fitted automatically on resize until the user drags/zooms
+  applyCameraFromState();
+  state.needsRender = true;
+  render();
+}
+function applyCameraFromState(){
+  if(!camera) return;
+  const c = state.cam;
+  const cp = Math.cos(c.phiAngle), sp = Math.sin(c.phiAngle);
+  const x = c.target.x + c.radius*cp*Math.sin(c.theta);
+  const y = c.target.y + c.radius*sp;
+  const z = c.target.z + c.radius*cp*Math.cos(c.theta);
+  camera.position.set(x,y,z);
+  camera.lookAt(c.target.x, c.target.y, c.target.z);
+}
+function wireCameraControls(){
+  if(!state.webglOK) return;
+  let dragging = false, lastX=0, lastY=0, panMode=false;
+  glCanvas.style.touchAction = "none";
+  glCanvas.addEventListener("pointerdown", function(ev){
+    dragging = true; lastX = ev.clientX; lastY = ev.clientY;
+    panMode = !!ev.shiftKey;
+    try{ glCanvas.setPointerCapture(ev.pointerId); }catch(e){}
+  });
+  glCanvas.addEventListener("pointermove", function(ev){
+    if(!dragging) return;
+    const dx = ev.clientX - lastX, dy = ev.clientY - lastY;
+    lastX = ev.clientX; lastY = ev.clientY;
+    state.cam.isDefault = false; // manual interaction -- stop auto-refitting on resize
+    if(panMode){
+      const panScale = state.cam.radius * 0.0016;
+      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+      const up = new THREE.Vector3(0,1,0);
+      state.cam.target.x -= right.x*dx*panScale;
+      state.cam.target.z -= right.z*dx*panScale;
+      state.cam.target.y = clamp(state.cam.target.y + up.y*dy*panScale, -0.3, 0.6);
+    } else {
+      state.cam.theta -= dx * 0.006;
+      state.cam.phiAngle = clamp(state.cam.phiAngle + dy*0.006, -12*RAD, 85*RAD);
+    }
+    applyCameraFromState();
+    state.needsRender = true;
+    render();
+  });
+  function endDrag(){ dragging = false; }
+  glCanvas.addEventListener("pointerup", endDrag);
+  glCanvas.addEventListener("pointercancel", endDrag);
+  glCanvas.addEventListener("wheel", function(ev){
+    ev.preventDefault();
+    state.cam.isDefault = false;
+    state.cam.radius = clamp(state.cam.radius * Math.pow(1.0016, ev.deltaY), CAM_ZOOM_MIN, CAM_ZOOM_MAX);
+    applyCameraFromState();
+    state.needsRender = true;
+    render();
+  }, { passive:false });
+  document.getElementById("btnResetView").addEventListener("click", resetCameraView);
+}
+
+function renderThree(){
+  if(!state.webglOK || !renderer) return;
+  renderer.render(scene, camera);
+}
+
+/* =========================================================================
+   7. DYNAMIC ARCS — the coordinate-arc teaching layer (Az, El, delta, h, alpha
+      on tabs grids/latitude/diurnal/triangle; the three equator arcs on the
+      h-alpha-LST tab). These genuinely change every frame while LST is
+      animating (the star's Az, El, H all move), so they are computed directly
+      in world space each update from the verified hzToVec/eqToVec formulas.
+      Every line uses a PREALLOCATED BufferGeometry — updateDynamicArcs()
+      only overwrites the position (and, for the one dashed line, a manually
+      maintained lineDistance) attribute arrays; no geometry/material is
+      created here. (Contrast with the diurnal circle above, which is
+      LST-invariant and is instead dispose+rebuilt on the rarer phi/star
+      change — never from the per-frame path.)
+   ========================================================================= */
+let arcAz, arcAlt, arcDec, arcH, arcRA;
+let arrowAz, arrowH;
+let labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj;
+let hlstAlpha, hlstH, hlstLst;
+let hlstAlphaArrow, hlstHArrow, hlstLstArrow;
+let hlstAlphaLabel, hlstHLabel, hlstLstLabel;
+const coneGeoShared = new THREE.ConeGeometry(0.012, 0.044, 8);
+
+function makeDynamicLine(colorInt, opacity, dashed, capacity){
+  const cap = capacity || (ARC_N+1);
+  const positions = new Float32Array(cap*3);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  let distArr = null, mat;
+  if(dashed){
+    distArr = new Float32Array(cap);
+    geo.setAttribute("lineDistance", new THREE.BufferAttribute(distArr, 1));
+    mat = new THREE.LineDashedMaterial({ color:colorInt, transparent:true, opacity:opacity, dashSize:0.035, gapSize:0.025, depthWrite:false });
+  } else {
+    mat = new THREE.LineBasicMaterial({ color:colorInt, transparent:true, opacity:opacity, depthWrite:false });
+  }
+  geo.setDrawRange(0,0);
+  const line = new THREE.Line(geo, mat);
+  line.frustumCulled = false;
+  scene.add(line);
+  return { line:line, geo:geo, positions:positions, distArr:distArr, capacity:cap, dashed:!!dashed };
+}
+/* overwrites the preallocated arrays in place — no allocation */
+function setLinePoints(obj, pts){
+  const n = Math.min(pts.length, obj.capacity);
+  const arr = obj.positions;
+  let cum = 0;
+  for(let i=0;i<n;i++){
+    const p = pts[i];
+    arr[i*3]=p.x; arr[i*3+1]=p.y; arr[i*3+2]=p.z;
+    if(obj.dashed){
+      if(i>0){
+        const dx=p.x-pts[i-1].x, dy=p.y-pts[i-1].y, dz=p.z-pts[i-1].z;
+        cum += Math.sqrt(dx*dx+dy*dy+dz*dz);
+      }
+      obj.distArr[i] = cum;
+    }
+  }
+  obj.geo.attributes.position.needsUpdate = true;
+  if(obj.dashed) obj.geo.attributes.lineDistance.needsUpdate = true;
+  obj.geo.setDrawRange(0, n);
+}
+function makeArrowCone(colorInt){
+  const mesh = new THREE.Mesh(coneGeoShared, new THREE.MeshBasicMaterial({ color:colorInt }));
+  scene.add(mesh);
+  return mesh;
+}
+function placeArrowAtEnd(cone, pts){
+  const n = pts.length;
+  const tip = pts[n-1], prev = pts[n-2];
+  const dir = new THREE.Vector3().subVectors(tip, prev);
+  if(dir.lengthSq() < 1e-12) dir.set(0,1,0); else dir.normalize();
+  const halfH = 0.022;
+  cone.position.copy(tip).addScaledVector(dir, -halfH);
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+  cone.visible = true;
+}
+function labelAtMid(sprite, pts, offsetScale){
+  const mid = pts[Math.floor((pts.length-1)/2)];
+  const len = Math.hypot(mid.x,mid.y,mid.z) || 1;
+  const k = 1 + (offsetScale||0.09)/len;
+  sprite.position.set(mid.x*k, mid.y*k, mid.z*k);
+  sprite.visible = true;
+}
+function hideAll(objs){ objs.forEach(function(o){ if(o) o.visible = false; }); }
+
+/* Coordinate arcs are the didactic layer and must read as visually dominant
+   over the grids: near-opaque, lifted slightly off the dome surface (radius
+   ARC_LIFT instead of 1) so they never z-fight with the grid/dome wireframe
+   underneath, with arrowheads + labels. Az/El render in the upright (non-
+   italic) math font so they read as names, matching phi/delta/alpha/h/q
+   staying italic. */
+const ARC_LIFT = 1.012;
+function liftedThree(v){ return toThreeVec3(v).multiplyScalar(ARC_LIFT); }
+
+function buildDynamicArcsGroup(){
+  arcAz  = makeDynamicLine(COLORI.cyan, 1.0, false);
+  arcAlt = makeDynamicLine(COLORI.cyan, 1.0, false);
+  arcDec = makeDynamicLine(COLORI.amber, 1.0, false);
+  arcH   = makeDynamicLine(COLORI.magenta, 1.0, false);
+  arcRA  = makeDynamicLine(COLORI.amber, 0.95, true);
+  arrowAz = makeArrowCone(COLORI.cyan);
+  arrowH  = makeArrowCone(COLORI.magenta);
+  labelAObj   = makeTextSprite("Az", COLORS.cyan, { math:true, upright:true, pixelHeight:13 });
+  labelAltObj = makeTextSprite("El", COLORS.cyan, { math:true, upright:true, pixelHeight:13 });
+  labelDecObj = makeTextSprite("δ", COLORS.amber, { math:true, pixelHeight:13 });
+  labelHObj   = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:13 });
+  labelRAObj  = makeTextSprite("α", COLORS.amber, { math:true, pixelHeight:13 });
+  scene.add(labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj);
+
+  hlstAlpha = makeDynamicLine(COLORI.amber, 1.0, false);
+  hlstH     = makeDynamicLine(COLORI.magenta, 1.0, false);
+  hlstLst   = makeDynamicLine(COLORI.cyan, 1.0, false);
+  hlstAlphaArrow = makeArrowCone(COLORI.amber);
+  hlstHArrow     = makeArrowCone(COLORI.magenta);
+  hlstLstArrow   = makeArrowCone(COLORI.cyan);
+  hlstAlphaLabel = makeTextSprite("α", COLORS.amber, { math:true, pixelHeight:13 });
+  hlstHLabel     = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:13 });
+  hlstLstLabel   = makeTextSprite("LST", COLORS.cyan, { pixelHeight:13 });
+  scene.add(hlstAlphaLabel, hlstHLabel, hlstLstLabel);
+}
+
+function updateDynamicArcs(){
+  const d = state.derived;
+  const showArcs = state.tab !== "hlst" && !!state.display.arcs;
+  const showHlst = state.tab === "hlst";
+  const showLabels = !!state.display.labels;
+
+  if(showArcs){
+    let pts = [];
+    for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec((i/ARC_N)*d.A_deg, 0)));
+    setLinePoints(arcAz, pts); arcAz.line.visible = true;
+    placeArrowAtEnd(arrowAz, pts);
+    labelAtMid(labelAObj, pts); labelAObj.visible = showLabels;
+
+    pts = [];
+    for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec(d.A_deg, (i/ARC_N)*d.a_deg)));
+    setLinePoints(arcAlt, pts); arcAlt.line.visible = true;
+    labelAtMid(labelAltObj, pts); labelAltObj.visible = showLabels;
+
+    pts = [];
+    for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(eqToVec(d.H_deg, (i/ARC_N)*state.dec, state.phi)));
+    setLinePoints(arcDec, pts); arcDec.line.visible = true;
+    labelAtMid(labelDecObj, pts); labelDecObj.visible = showLabels;
+
+    pts = [];
+    for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(eqToVec((i/ARC_N)*d.H_deg, 0, state.phi)));
+    setLinePoints(arcH, pts); arcH.line.visible = true;
+    placeArrowAtEnd(arrowH, pts);
+    labelAtMid(labelHObj, pts); labelHObj.visible = showLabels;
+
+    pts = [];
+    const alphaDeg = state.ra*15, lstDeg = state.lst*15;
+    for(let i=0;i<=ARC_N;i++){
+      const Hh = lstDeg - (i/ARC_N)*alphaDeg;
+      pts.push(liftedThree(eqToVec(Hh, 0, state.phi)));
+    }
+    setLinePoints(arcRA, pts); arcRA.line.visible = true;
+    labelAtMid(labelRAObj, pts); labelRAObj.visible = showLabels;
+  } else {
+    hideAll([arcAz.line, arcAlt.line, arcDec.line, arcH.line, arcRA.line,
+             arrowAz, arrowH, labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj]);
+  }
+
+  if(showHlst){
+    const alphaDeg = state.ra*15, lstDeg = state.lst*15;
+    const hDeg = wrap180(lstDeg - alphaDeg);
+
+    let pts = [];
+    for(let i=0;i<=ARC_N;i++){ const Hh = lstDeg - (i/ARC_N)*alphaDeg; pts.push(liftedThree(eqToVec(Hh,-4,state.phi))); }
+    setLinePoints(hlstAlpha, pts); hlstAlpha.line.visible = true;
+    placeArrowAtEnd(hlstAlphaArrow, pts);
+    labelAtMid(hlstAlphaLabel, pts); hlstAlphaLabel.visible = showLabels;
+
+    pts = [];
+    for(let i=0;i<=ARC_N;i++){ const Hh = (i/ARC_N)*hDeg; pts.push(liftedThree(eqToVec(Hh,-8,state.phi))); }
+    setLinePoints(hlstH, pts); hlstH.line.visible = true;
+    placeArrowAtEnd(hlstHArrow, pts);
+    labelAtMid(hlstHLabel, pts); hlstHLabel.visible = showLabels;
+
+    pts = [];
+    for(let i=0;i<=ARC_N;i++){ const Hh = lstDeg - (i/ARC_N)*lstDeg; pts.push(liftedThree(eqToVec(Hh,0,state.phi))); }
+    setLinePoints(hlstLst, pts); hlstLst.line.visible = true;
+    placeArrowAtEnd(hlstLstArrow, pts);
+    labelAtMid(hlstLstLabel, pts); hlstLstLabel.visible = showLabels;
+  } else {
+    hideAll([hlstAlpha.line, hlstH.line, hlstLst.line,
+             hlstAlphaArrow, hlstHArrow, hlstLstArrow,
+             hlstAlphaLabel, hlstHLabel, hlstLstLabel]);
+  }
+
+  updateTriangle();
+  state.needsRender = true;
+}
+
+/* =========================================================================
+   8. ASTRONOMICAL TRIANGLE (tab 5) — Z (zenith), P (elevated pole), S (star).
+      Sides are great-circle arcs (slerp, preallocated buffers); the fill is
+      a triangle fan from an approximate centroid to the sampled boundary
+      loop (also preallocated, positions rewritten in place).
+   ========================================================================= */
+let sideZP, sidePS, sideZS, triFill, triFillPositions;
+let triLabelZP, triLabelPS, triLabelZS, angleLabelA, angleLabelH, angleLabelQ;
+let angleArcA, angleArcH, angleArcQ;
+
+function slerpTHREE(A, B, t){
+  const v = slerp3({x:A.x,y:A.y,z:A.z}, {x:B.x,y:B.y,z:B.z}, t);
+  return new THREE.Vector3(v.x, v.y, v.z);
+}
+function threeArc(A, B, n){
+  const pts = [];
+  for(let i=0;i<=n;i++) pts.push(slerpTHREE(A, B, i/n));
+  return pts;
+}
+
+function buildTriangleGroup(){
+  sideZP = makeDynamicLine(COLORI.text, 0.85, false);
+  sidePS = makeDynamicLine(COLORI.amber, 0.85, false);
+  sideZS = makeDynamicLine(COLORI.cyan, 0.85, false);
+
+  const fanCap = 3*ARC_N; // triangles in the boundary fan
+  triFillPositions = new Float32Array(fanCap*3*3);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(triFillPositions,3));
+  geo.setDrawRange(0,0);
+  const fillMat = new THREE.MeshBasicMaterial({ color:COLORI.green, transparent:true, opacity:0.10, side:THREE.DoubleSide, depthWrite:false });
+  triFill = new THREE.Mesh(geo, fillMat);
+  triFill.frustumCulled = false;
+  scene.add(triFill);
+
+  triLabelZP = makeTextSprite("90°−φ", COLORS.text, { pixelHeight:12 });
+  triLabelPS = makeTextSprite("90°−δ", COLORS.amber, { pixelHeight:12 });
+  triLabelZS = makeTextSprite("90°−El", COLORS.cyan, { pixelHeight:12 });
+  angleLabelH = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:13 });
+  angleLabelA = makeTextSprite("Az", COLORS.cyan, { math:true, upright:true, pixelHeight:13 });
+  angleLabelQ = makeTextSprite("q", COLORS.green, { math:true, pixelHeight:13 });
+  scene.add(triLabelZP, triLabelPS, triLabelZS, angleLabelH, angleLabelA, angleLabelQ);
+
+  angleArcA = makeDynamicLine(COLORI.cyan, 0.8, false, 13);
+  angleArcH = makeDynamicLine(COLORI.magenta, 0.8, false, 13);
+  angleArcQ = makeDynamicLine(COLORI.green, 0.8, false, 13);
+}
+
+function angleMarker(lineObj, sprite, V, other1, other2, angularRadiusDeg){
+  const ang1 = Math.acos(clamp(V.dot(other1),-1,1))*DEG;
+  const ang2 = Math.acos(clamp(V.dot(other2),-1,1))*DEG;
+  const f1 = clamp(angularRadiusDeg/Math.max(ang1,1e-6), 0.05, 0.9);
+  const f2 = clamp(angularRadiusDeg/Math.max(ang2,1e-6), 0.05, 0.9);
+  const p1 = slerpTHREE(V, other1, f1);
+  const p2 = slerpTHREE(V, other2, f2);
+  const nn = lineObj.capacity-1;
+  const pts = [];
+  for(let i=0;i<=nn;i++) pts.push(slerpTHREE(p1, p2, i/nn).multiplyScalar(ARC_LIFT));
+  setLinePoints(lineObj, pts);
+  lineObj.line.visible = true;
+  const mid = pts[Math.floor(nn/2)];
+  const dirFromV = mid.clone().sub(V);
+  if(dirFromV.lengthSq() < 1e-10) dirFromV.set(0,1,0); else dirFromV.normalize();
+  sprite.position.copy(V).addScaledVector(dirFromV, angularRadiusDeg*RAD*1.8);
+  sprite.visible = true;
+}
+
+function updateTriangle(){
+  const on = state.tab === "triangle" && !!state.display.triangle;
+  const allObjs = [sideZP.line, sidePS.line, sideZS.line, triFill,
+                    triLabelZP, triLabelPS, triLabelZS,
+                    angleLabelH, angleLabelA, angleLabelQ,
+                    angleArcA.line, angleArcH.line, angleArcQ.line];
+  if(!on){ hideAll(allObjs); return; }
+
+  const d = state.derived;
+  const Pm0 = pHatModel(state.phi);
+  const Pm = state.phi >= 0 ? Pm0 : { x:-Pm0.x, y:-Pm0.y, z:-Pm0.z }; // elevated pole
+  const Z = toThreeVec3({x:0,y:0,z:1});
+  const P = toThreeVec3(Pm);
+  const S = toThreeVec3(hzToVec(d.A_deg, d.a_deg));
+
+  const zp = threeArc(Z,P,ARC_N);
+  const ps = threeArc(P,S,ARC_N);
+  const zs = threeArc(Z,S,ARC_N);
+  // lines are drawn lifted off the dome surface (matching the coordinate arcs);
+  // the fill/boundary/label placement below stay on the unlifted (radius-1) points
+  setLinePoints(sideZP, zp.map(function(p){ return p.clone().multiplyScalar(ARC_LIFT); })); sideZP.line.visible = true;
+  setLinePoints(sidePS, ps.map(function(p){ return p.clone().multiplyScalar(ARC_LIFT); })); sidePS.line.visible = true;
+  setLinePoints(sideZS, zs.map(function(p){ return p.clone().multiplyScalar(ARC_LIFT); })); sideZS.line.visible = true;
+
+  // fill: fan from an approximate centroid over the boundary loop Z->P->S->Z
+  const cx=(Z.x+P.x+S.x)/3, cy=(Z.y+P.y+S.y)/3, cz=(Z.z+P.z+S.z)/3;
+  const clen = Math.hypot(cx,cy,cz) || 1;
+  const C = new THREE.Vector3(cx/clen, cy/clen, cz/clen);
+  const boundary = zp.concat(ps.slice(1)).concat(zs.slice(0,-1).reverse());
+  const capTri = triFillPositions.length/9;
+  const useTri = Math.min(boundary.length, capTri);
+  for(let i=0;i<useTri;i++){
+    const b0 = boundary[i], b1 = boundary[(i+1)%boundary.length];
+    const o = i*9;
+    triFillPositions[o]=C.x; triFillPositions[o+1]=C.y; triFillPositions[o+2]=C.z;
+    triFillPositions[o+3]=b0.x; triFillPositions[o+4]=b0.y; triFillPositions[o+5]=b0.z;
+    triFillPositions[o+6]=b1.x; triFillPositions[o+7]=b1.y; triFillPositions[o+8]=b1.z;
+  }
+  triFill.geometry.attributes.position.needsUpdate = true;
+  triFill.geometry.setDrawRange(0, useTri*3);
+  triFill.visible = true;
+
+  const showLabels = !!state.display.labels;
+  labelAtMid(triLabelZP, zp, 0.05); triLabelZP.visible = showLabels;
+  labelAtMid(triLabelPS, ps, 0.05); triLabelPS.visible = showLabels;
+  labelAtMid(triLabelZS, zs, 0.05); triLabelZS.visible = showLabels;
+
+  angleMarker(angleArcA, angleLabelA, Z, P, S, 10);
+  angleMarker(angleArcH, angleLabelH, P, Z, S, 10);
+  angleMarker(angleArcQ, angleLabelQ, S, Z, P, 10);
+  angleLabelA.visible = showLabels; angleLabelH.visible = showLabels; angleLabelQ.visible = showLabels;
+}
+
+/* =========================================================================
+   9. 2D OVERLAY — the h/alpha/LST inset 24-hour dial (Canvas 2D, transparent,
+      layered over the WebGL canvas; only drawn on the "hlst" tab). Viewed
+      from above the NCP: East is counterclockwise. The meridian is fixed at
+      the top; the 24 hour ticks (RA lines) rotate with LST: the tick for RA
+      r sits at angle (LST-r)*15 deg clockwise from the top. The star sits at
+      h*15 deg clockwise (signed — negative h swings counterclockwise, the
+      "short way"), the vernal equinox at LST*15 deg clockwise. Chaining the
+      magenta (h) and amber (alpha) arcs clockwise from the top always lands
+      exactly on the equinox tick, since (top->star)+(star->equinox) =
+      h + alpha = LST by construction — verified in the report (check #9/#10).
+   ========================================================================= */
+function drawOverlay(){
+  const canvas = document.getElementById("overlayCanvas");
+  const ctx = canvas.getContext("2d");
+  const w = state.overlayW || canvas.clientWidth;
+  const h = state.overlayH || canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if(!w || !h || state.tab !== "hlst") return;
+  drawHlstDial(ctx, w, h);
+}
+
+function drawHlstDial(ctx, w, h){
+  const R = 0.16*Math.min(w,h);
+  const margin = 16;
+  const cx = w - R - margin, cy = h - R - margin;
+  function pt(theta, r){ return { x: cx + r*Math.sin(theta), y: cy - r*Math.cos(theta) }; }
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU);
+  ctx.fillStyle = hexAlpha(COLORS["panel-deep"], 0.85);
+  ctx.fill();
+  ctx.lineWidth = 1; ctx.strokeStyle = COLORS.border; ctx.stroke();
+
+  const lst = wrap24(state.lst), ra = state.ra;
+  const hHours = wrap12(lst - ra);
+  const thetaStar = hHours*15*RAD;      // signed, (-180,180] deg -> rad
+  const thetaEquinox = lst*15*RAD;      // [0,360) deg -> rad
+
+  // 24 hour ticks (RA lines), rotating with LST
+  for(let r=0;r<24;r++){
+    const th = wrap24(lst-r)*15*RAD;
+    const p1 = pt(th, R*0.86), p2 = pt(th, R*0.98);
+    ctx.strokeStyle = hexAlpha(COLORS.muted, (r%6===0) ? 0.55 : 0.26);
+    ctx.lineWidth = (r%6===0) ? 1.3 : 0.8;
+    ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+  }
+
+  // meridian tick, fixed at top
+  ctx.strokeStyle = COLORS.text; ctx.lineWidth = 1.4;
+  const m1 = pt(0, R*0.80), m2 = pt(0, R*1.0);
+  ctx.beginPath(); ctx.moveTo(m1.x,m1.y); ctx.lineTo(m2.x,m2.y); ctx.stroke();
+  ctx.fillStyle = COLORS.text;
+  ctx.font = "9px Inter, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  ctx.fillText("meridian", cx, cy - R*1.02 - 2);
+
+  function arcPath(th0, th1, radius){
+    const n = 48;
+    ctx.beginPath();
+    for(let i=0;i<=n;i++){
+      const t = th0 + (th1-th0)*(i/n);
+      const p = pt(t, radius);
+      if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+    }
+    ctx.stroke();
+  }
+  // h: top -> star (signed sweep). alpha: continuing clockwise, star -> equinox
+  // (theta_equinox - theta_star == alpha*15 exactly, always positive, regardless of h's sign).
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = COLORS.magenta; arcPath(0, thetaStar, R*0.72);
+  ctx.strokeStyle = COLORS.amber;   arcPath(thetaStar, thetaStar + norm360((thetaEquinox-thetaStar)*DEG)*RAD, R*0.72);
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = COLORS.cyan;    arcPath(0, thetaEquinox, R*0.92);
+
+  const starP = pt(thetaStar, R*0.72);
+  const eqP = pt(thetaEquinox, R*0.72);
+  ctx.fillStyle = COLORS.amber;
+  ctx.beginPath(); ctx.arc(starP.x,starP.y,3.2,0,TAU); ctx.fill();
+  ctx.font = "10px Inter, sans-serif";
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText(currentStarName(), starP.x+6, starP.y);
+  ctx.font = "13px serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("♈", eqP.x, eqP.y);
+  ctx.restore();
+
+  ctx.save();
+  ctx.font = "10.5px Inter, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillStyle = COLORS.muted;
+  const line = "LST = h + α  →  " + lst.toFixed(2) + "h = " + hHours.toFixed(2) + "h + " + ra.toFixed(2) + "h";
+  ctx.fillText(line, cx, Math.min(h-12, cy+R+8));
+  ctx.restore();
+}
+
+/* =========================================================================
+   10. STRIP PANEL — Canvas 2D. "All-sky view": azimuthal-equidistant, zenith
+       at centre, North at top, EAST ON THE LEFT (sky-chart convention).
+       "RA/Dec map": rectangular chart, alpha increasing to the LEFT (24h at
+       left, 0h at right), delta from -90 (bottom) to +90 (top). Redrawn only
+       on a dirty flag, not every animation frame (unless playing).
+   ========================================================================= */
+function drawStrip(){
+  const canvas = document.getElementById("stripCanvas");
+  const ctx = canvas.getContext("2d");
+  const w = state.stripW || canvas.clientWidth;
+  const h = state.stripH || canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if(w<=0 || h<=0 || !state.derived) return; // defensive: derived quantities not yet computed
+  if(state.stripMode === "radec") drawRadecMap(ctx,w,h);
+  else drawAllSky(ctx,w,h);
+}
+
+function allskyPoint(A_deg, a_deg, R, cx, cy){
+  const r = (90-a_deg)/90*R;
+  const A = A_deg*RAD;
+  return { x: cx - Math.sin(A)*r, y: cy - Math.cos(A)*r }; // East on the left, North at top
+}
+
+function drawAllSky(ctx, w, h){
+  const pad = 26;
+  const R = Math.max(4, Math.min(w,h)/2 - pad);
+  const cx = w/2, cy = h/2;
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU); ctx.clip();
+  ctx.fillStyle = COLORS.canvas; ctx.fillRect(cx-R,cy-R,2*R,2*R);
+
+  // altitude rings
+  [30,60].forEach(function(a){
+    const r = (90-a)/90*R;
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,TAU);
+    ctx.strokeStyle = hexAlpha(COLORS.cyan,0.22); ctx.lineWidth = 1; ctx.stroke();
+  });
+  // meridian (vertical line, N-S)
+  ctx.beginPath(); ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R);
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.4); ctx.lineWidth=1; ctx.stroke();
+
+  // equatorial grid: dec circles + hour circles + equator, projected
+  const phi = state.phi, lst = state.lst;
+  function drawEqCurve(paramCount, fn, colorHex, alpha, width){
+    ctx.beginPath();
+    let started = false;
+    for(let i=0;i<=paramCount;i++){
+      const v = fn(i);
+      const hz = vecToHz(v.x,v.y,v.z);
+      const p = allskyPoint(hz.A, hz.a, R, cx, cy);
+      if(!started){ ctx.moveTo(p.x,p.y); started=true; } else ctx.lineTo(p.x,p.y);
+    }
+    ctx.strokeStyle = hexAlpha(colorHex, alpha); ctx.lineWidth = width; ctx.stroke();
+  }
+  [30,-30,60,-60].forEach(function(d){
+    drawEqCurve(CIRCLE_N, function(i){ return eqToVec((i/CIRCLE_N)*360, d, phi); }, COLORS.amber, 0.22*state.gridAlpha.e, 1);
+  });
+  for(let k=0;k<12;k++){
+    const raH = k*2;
+    drawEqCurve(CIRCLE_N, function(i){ const del=(i/CIRCLE_N)*180-90; return eqToVec(hourAngleDeg(lst,raH), del, phi); }, COLORS.amber, 0.18*state.gridAlpha.e, 1);
+  }
+  drawEqCurve(CIRCLE_N, function(i){ return eqToVec((i/CIRCLE_N)*360, 0, phi); }, COLORS.amber, 0.55*state.gridAlpha.e, 1.4);
+
+  // NCP marker if above horizon
+  {
+    const p = pHatModel(phi);
+    const hz = vecToHz(p.x,p.y,p.z);
+    if(hz.a >= 0){
+      const pp = allskyPoint(hz.A, hz.a, R, cx, cy);
+      ctx.fillStyle = COLORS.magenta;
+      ctx.beginPath(); ctx.arc(pp.x,pp.y,2.5,0,TAU); ctx.fill();
+    }
+  }
+
+  // star diurnal track (above-horizon only — natural via the horizon clip)
+  if(state.display.diurnal){
+    drawEqCurve(CIRCLE_N, function(i){ return eqToVec((i/CIRCLE_N)*360, state.dec, phi); }, COLORS.amber, 0.6, 1.5);
+  }
+
+  // coordinate arcs: azimuth (Az) along rim from N, elevation (El) radially
+  if(state.display.arcs && state.tab !== "hlst"){
+    const d = state.derived;
+    ctx.beginPath();
+    for(let i=0;i<=48;i++){
+      const p = allskyPoint((i/48)*d.A_deg, 0, R, cx, cy);
+      if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+    }
+    ctx.strokeStyle = hexAlpha(COLORS.cyan,0.85); ctx.lineWidth=1.5; ctx.stroke();
+    const p0 = allskyPoint(d.A_deg,0,R,cx,cy), p1 = allskyPoint(d.A_deg,d.a_deg,R,cx,cy);
+    ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y);
+    ctx.strokeStyle = hexAlpha(COLORS.cyan,0.85); ctx.lineWidth=1.5; ctx.stroke();
+
+    if(state.display.labels){
+      const pMid = allskyPoint(d.A_deg*0.5, 0, R, cx, cy);
+      const pElMid = allskyPoint(d.A_deg, d.a_deg*0.5, R, cx, cy);
+      ctx.font = "600 10px STIX Two Math, Cambria Math, serif";
+      ctx.fillStyle = COLORS.cyan;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("Az", pMid.x, pMid.y - 6);
+      ctx.fillText("El", pElMid.x + 10, pElMid.y);
+    }
+  }
+
+  // star + glow
+  {
+    const d = state.derived;
+    if(d.a_deg >= -2){
+      const p = allskyPoint(d.A_deg, d.a_deg, R, cx, cy);
+      drawGlow(ctx, glowSprite, p.x, p.y, 20);
+      ctx.fillStyle = COLORS.amber;
+      ctx.beginPath(); ctx.arc(p.x,p.y,3.5,0,TAU); ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  // rim + N/E/S/W labels (outside the clip)
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU);
+  ctx.strokeStyle = COLORS["border-strong"]; ctx.lineWidth=1; ctx.stroke();
+  ctx.font = "10px Inter, sans-serif";
+  ctx.fillStyle = COLORS.muted;
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText("N", cx, cy-R-9);
+  ctx.fillText("S", cx, cy+R+9);
+  ctx.fillText("E", cx-R-9, cy);
+  ctx.fillText("W", cx+R+9, cy);
+  ctx.font = "8px Inter, sans-serif";
+  ctx.fillStyle = hexAlpha(COLORS.muted,0.7);
+  ctx.textAlign = "left"; ctx.textBaseline="bottom";
+  ctx.fillText("E on the left: you are looking up", 6, h-4);
+}
+
+function drawRadecMap(ctx, w, h){
+  const padL=34, padR=10, padT=10, padB=20;
+  const plotL=padL, plotR=w-padR, plotT=padT, plotB=h-padB;
+  const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
+  function xOf(alphaH){ return plotL + (24-alphaH)/24*plotW; } // alpha increases to the LEFT
+  function yOf(delta){ return plotB - (delta+90)/180*plotH; }
+
+  ctx.fillStyle = COLORS.canvas; ctx.fillRect(0,0,w,h);
+
+  // gridlines every 2h / 30deg
+  ctx.lineWidth=1;
+  for(let k=0;k<=12;k++){
+    const x = xOf(k*2);
+    ctx.strokeStyle = hexAlpha(COLORS.border,0.35);
+    ctx.beginPath(); ctx.moveTo(x,plotT); ctx.lineTo(x,plotB); ctx.stroke();
+  }
+  for(let d=-90; d<=90; d+=30){
+    const y = yOf(d);
+    ctx.strokeStyle = hexAlpha(COLORS.border,0.35);
+    ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
+  }
+
+  const phi = state.phi, lst = state.lst;
+
+  // below-horizon shading + horizon curve
+  ctx.beginPath();
+  let horizonPts = [];
+  const nCols = 200;
+  const tiny = 1e-6;
+  const tphi = Math.tan(phi*RAD);
+  for(let i=0;i<=nCols;i++){
+    const alphaH = 24*i/nCols;
+    const Hd = hourAngleDeg(lst, alphaH);
+    let delta;
+    if(Math.abs(tphi) < tiny){
+      delta = NaN; // degenerate at the equator: handled by the vertical-line fallback below
+    } else {
+      const tanDelta = -Math.cos(Hd*RAD)/tphi;
+      delta = Math.atan(tanDelta)*DEG;
+    }
+    horizonPts.push({ alphaH:alphaH, delta:delta });
+  }
+  if(Math.abs(tphi) < tiny){
+    // equator: horizon = two vertical lines at alpha = lst-6 and lst+6
+    [wrap24(lst-6), wrap24(lst+6)].forEach(function(a){
+      const x = xOf(a);
+      ctx.beginPath(); ctx.moveTo(x,plotT); ctx.lineTo(x,plotB);
+      ctx.strokeStyle = COLORS.cyan; ctx.lineWidth=1.5; ctx.stroke();
+    });
+  } else {
+    ctx.beginPath();
+    horizonPts.forEach(function(p,i){
+      const x = xOf(p.alphaH), y = yOf(p.delta);
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.strokeStyle = COLORS.cyan; ctx.lineWidth=1.5; ctx.stroke();
+
+    // shade whichever side is below horizon (determined per-column, robust to hemisphere)
+    ctx.fillStyle = hexAlpha(COLORS.cyan, 0.06);
+    for(let i=0;i<nCols;i++){
+      const p0 = horizonPts[i], p1 = horizonPts[i+1];
+      const Hd = hourAngleDeg(lst, p0.alphaH);
+      const testDelta = clamp(p0.delta+0.5, -89.9, 89.9);
+      const aTest = altAzFromEq(phi, testDelta, Hd).a;
+      const belowIsAbove = aTest < 0; // if testing slightly above delta_h gives a<0, "above" the curve is actually below horizon
+      const x0=xOf(p0.alphaH), x1=xOf(p1.alphaH);
+      const y0=yOf(p0.delta), y1=yOf(p1.delta);
+      const yEdge = belowIsAbove ? plotT : plotB;
+      ctx.beginPath();
+      ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.lineTo(x1,yEdge); ctx.lineTo(x0,yEdge); ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // zenith
+  {
+    const zx = xOf(wrap24(lst)), zy = yOf(clamp(phi,-90,90));
+    ctx.fillStyle = COLORS.text;
+    ctx.beginPath(); ctx.arc(zx,zy,3,0,TAU); ctx.fill();
+    ctx.font="9px Inter, sans-serif"; ctx.fillStyle=COLORS.text;
+    ctx.textAlign="left"; ctx.textBaseline="bottom";
+    ctx.fillText("Z", zx+4, zy-2);
+  }
+  // meridian (dashed, at alpha=lst)
+  ctx.save();
+  ctx.setLineDash([4,4]);
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.6); ctx.lineWidth=1;
+  const mx = xOf(wrap24(lst));
+  ctx.beginPath(); ctx.moveTo(mx,plotT); ctx.lineTo(mx,plotB); ctx.stroke();
+  ctx.restore();
+
+  // NCP / SCP rows
+  ctx.font="9px Inter, sans-serif"; ctx.fillStyle=hexAlpha(COLORS.magenta,0.85);
+  ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillText("NCP", plotL+3, plotT+2);
+  ctx.textAlign="left"; ctx.textBaseline="bottom"; ctx.fillText("SCP", plotL+3, plotB-2);
+
+  // star diurnal motion (horizontal dashed line at delta=const) + star marker
+  ctx.save();
+  ctx.setLineDash([5,3]);
+  ctx.strokeStyle = hexAlpha(COLORS.amber,0.7); ctx.lineWidth=1.3;
+  const yStar = yOf(state.dec);
+  ctx.beginPath(); ctx.moveTo(plotL,yStar); ctx.lineTo(plotR,yStar); ctx.stroke();
+  ctx.restore();
+  {
+    const sx = xOf(wrap24(state.ra)), sy = yOf(state.dec);
+    drawGlow(ctx, glowSprite, sx, sy, 18);
+    ctx.fillStyle = COLORS.amber;
+    ctx.beginPath(); ctx.arc(sx,sy,3.5,0,TAU); ctx.fill();
+  }
+
+  ctx.strokeStyle = COLORS.border; ctx.lineWidth=1;
+  ctx.strokeRect(plotL+0.5,plotT+0.5,plotW-1,plotH-1);
+}
+
+/* =========================================================================
+   11. CONTROLS WIRING
+   ========================================================================= */
+const els = {};
+function cacheEls(){
+  ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum",
+   "locationField","locationSelect","phiRange","phiNum","lstRange","lstNum",
+   "starSelect","raRange","raNum","decRange","decNum",
+   "mainPanelTitle","readoutsDefault","readoutsHlst",
+   "readoutA","readoutAlt","readoutRA","readoutDec","readoutH",
+   "poleReadout","readoutPoleAlt","badgeWrap","riseBadge","diurnalExtra","readoutTransitEl","readoutH0",
+   "hlstLST","hlstH","hlstAlpha","hlstCulminateNote",
+   "aboutCard","aboutTitle","aboutBody","formulasCard","formulasHead","formulasBody",
+   "stripModeToggle","legendAllsky","legendRadec"
+  ].forEach(function(id){ els[id] = document.getElementById(id); });
+}
+
+function locationKeyForPhi(phi){
+  for(const k in LOCATIONS){ if(Math.abs(LOCATIONS[k].phi - phi) < 1e-9) return k; }
+  return "custom";
+}
+
+/* generic slider+number two-way sync, matching the reference page's pattern */
+function wireSliderNumber(rangeEl, numEl, opts){
+  function commit(v){
+    v = clamp(v, opts.min, opts.max);
+    opts.onCommit(v);
+  }
+  rangeEl.addEventListener("input", function(){
+    const v = parseFloat(rangeEl.value);
+    numEl.value = fmtNum(v, opts.step);
+    commit(v);
+  });
+  numEl.addEventListener("input", function(){
+    const v = parseFloat(numEl.value);
+    if(!isNaN(v)){ rangeEl.value = clamp(v, opts.min, opts.max); commit(v); }
+  });
+  numEl.addEventListener("blur", function(){
+    let v = parseFloat(numEl.value);
+    if(isNaN(v)) v = opts.fallback();
+    v = clamp(v, opts.min, opts.max);
+    numEl.value = fmtNum(v, opts.step);
+    rangeEl.value = v;
+    commit(v);
+  });
+}
+function setSliderNumber(rangeEl, numEl, v, step){
+  rangeEl.value = v; numEl.value = fmtNum(v, step);
+}
+
+function fullUpdate(){
+  recomputeDerived();
+  updateEquatorialOrientation();
+  updateDynamicArcs();
+  updateReadouts();
+  updateFormulas();
+  state.stripDirty = true;
+  state.needsRender = true;
+  render();
+}
+function onObserverOrStarChanged(){
+  if(state.webglOK) updateStarInGroup();
+  fullUpdate();
+}
+
+function wirePlayback(){
+  els.btnStepBack.addEventListener("click", function(){
+    state.lst = wrap24(state.lst - 1/6); // 10 minutes
+    setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
+    fullUpdate();
+  });
+  els.btnStepFwd.addEventListener("click", function(){
+    state.lst = wrap24(state.lst + 1/6);
+    setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
+    fullUpdate();
+  });
+  els.btnReset.addEventListener("click", function(){
+    state.lst = TAB_CONFIG[state.tab].lst;
+    setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
+    fullUpdate();
+  });
+  els.btnPlay.addEventListener("click", function(){
+    state.playing = !state.playing;
+    updatePlayButton();
+    if(state.playing) startLoop(); else stopLoop();
+  });
+  wireSliderNumber(els.speedRange, els.speedNum, {
+    min:0.1, max:6, step:0.1, fallback:function(){ return state.speed; },
+    onCommit:function(v){ state.speed = v; }
+  });
+}
+
+function wireObserver(){
+  els.locationSelect.addEventListener("change", function(){
+    const key = els.locationSelect.value;
+    if(key === "custom"){ state.locationKey = "custom"; return; }
+    const loc = LOCATIONS[key];
+    state.locationKey = key; state.phi = loc.phi;
+    setSliderNumber(els.phiRange, els.phiNum, state.phi, 0.1);
+    onObserverOrStarChanged();
+  });
+  wireSliderNumber(els.phiRange, els.phiNum, {
+    min:-90, max:90, step:0.1, fallback:function(){ return state.phi; },
+    onCommit:function(v){
+      state.phi = v;
+      const k = locationKeyForPhi(v);
+      state.locationKey = k;
+      els.locationSelect.value = k;
+      onObserverOrStarChanged();
+    }
+  });
+  wireSliderNumber(els.lstRange, els.lstNum, {
+    min:0, max:24, step:0.05, fallback:function(){ return state.lst; },
+    onCommit:function(v){ state.lst = v; fullUpdate(); }
+  });
+}
+
+function wireStar(){
+  els.starSelect.addEventListener("change", function(){
+    const key = els.starSelect.value;
+    if(key === "custom"){ state.starKey = "custom"; return; }
+    const st = STARS[key];
+    state.starKey = key; state.ra = st.ra; state.dec = st.dec;
+    setSliderNumber(els.raRange, els.raNum, state.ra, 0.01);
+    setSliderNumber(els.decRange, els.decNum, state.dec, 0.1);
+    onObserverOrStarChanged();
+  });
+  wireSliderNumber(els.raRange, els.raNum, {
+    min:0, max:24, step:0.01, fallback:function(){ return state.ra; },
+    onCommit:function(v){ state.ra = v; state.starKey = "custom"; els.starSelect.value = "custom"; onObserverOrStarChanged(); }
+  });
+  wireSliderNumber(els.decRange, els.decNum, {
+    min:-90, max:90, step:0.1, fallback:function(){ return state.dec; },
+    onCommit:function(v){ state.dec = v; state.starKey = "custom"; els.starSelect.value = "custom"; onObserverOrStarChanged(); }
+  });
+}
+
+function wireDisplayToggles(){
+  document.querySelectorAll(".toggle").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      const key = btn.dataset.key;
+      state.display[key] = !state.display[key];
+      btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
+      applyDisplayVisibility();
+      updateDynamicArcs();
+      state.stripDirty = true;
+      state.needsRender = true;
+    });
+  });
+}
+
+function wireStripModeToggle(){
+  els.stripModeToggle.querySelectorAll("button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      state.stripMode = btn.dataset.mode;
+      els.stripModeToggle.querySelectorAll("button").forEach(function(b){
+        const active = b === btn;
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      els.legendAllsky.style.display = (state.stripMode === "allsky") ? "" : "none";
+      els.legendRadec.style.display = (state.stripMode === "radec") ? "" : "none";
+      state.stripDirty = true;
+    });
+  });
+}
+
+function wireTabs(){
+  els.tabBar.querySelectorAll("button").forEach(function(btn){
+    btn.addEventListener("click", function(){ switchTab(btn.dataset.tab); });
+  });
+}
+
+function updatePlayButton(){
+  els.btnPlay.innerHTML = state.playing ? "&#10074;&#10074;" : "&#9658;";
+  els.btnPlay.classList.toggle("active", state.playing);
+}
+
+function switchTab(tabId){
+  state.tab = tabId;
+  const cfg = TAB_CONFIG[tabId];
+
+  state.phi = cfg.phi;
+  state.locationKey = locationKeyForPhi(cfg.phi);
+  state.lst = cfg.lst;
+  state.starKey = cfg.star;
+  const st = STARS[cfg.star];
+  state.ra = st.ra; state.dec = st.dec;
+  state.playing = cfg.playing;
+  state.speed = cfg.speed;
+  state.display = Object.assign({}, cfg.display);
+  state.gridAlpha = Object.assign({}, cfg.gridAlpha);
+
+  setSliderNumber(els.phiRange, els.phiNum, state.phi, 0.1);
+  els.locationSelect.value = state.locationKey;
+  setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
+  els.starSelect.value = state.starKey;
+  setSliderNumber(els.raRange, els.raNum, state.ra, 0.01);
+  setSliderNumber(els.decRange, els.decNum, state.dec, 0.1);
+  setSliderNumber(els.speedRange, els.speedNum, state.speed, 0.1);
+
+  document.querySelectorAll(".toggle").forEach(function(btn){
+    const key = btn.dataset.key;
+    btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
+  });
+
+  els.tabBar.querySelectorAll("button").forEach(function(b){
+    const active = b.dataset.tab === tabId;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+  });
+
+  els.mainPanelTitle.textContent = "Celestial sphere — " + cfg.label;
+  els.aboutCard.className = "card about tint-" + cfg.tint;
+  els.aboutTitle.textContent = cfg.aboutTitle;
+  els.aboutBody.innerHTML = cfg.aboutHTML;
+
+  els.formulasCard.classList.toggle("collapsed", !cfg.formulasExpanded);
+
+  els.poleReadout.style.display = cfg.poleReadout ? "" : "none";
+  els.badgeWrap.style.display = (cfg.badge === "diurnal") ? "" : "none";
+  els.readoutsDefault.style.display = cfg.hlstReadout ? "none" : "";
+  els.readoutsHlst.style.display = cfg.hlstReadout ? "" : "none";
+  els.locationField.classList.toggle("field-highlight", !!cfg.locationHighlight);
+
+  updatePlayButton();
+  if(state.playing) startLoop(); else stopLoop();
+
+  onObserverOrStarChanged();
+  applyDisplayVisibility();
+  applyGridAlpha();
+}
+
+/* =========================================================================
+   12. READOUTS + FORMULAS CARD (live substituted numbers)
+   ========================================================================= */
+function updateReadouts(){
+  const d = state.derived;
+  els.readoutA.textContent   = isNaN(d.A_deg) ? "—" : d.A_deg.toFixed(1);
+  els.readoutAlt.textContent = d.a_deg.toFixed(1);
+  els.readoutRA.textContent  = state.ra.toFixed(2);
+  els.readoutDec.textContent = fmtSigned(state.dec,1);
+  els.readoutH.textContent   = fmtSigned(d.h_h,2);
+
+  if(els.poleReadout.style.display !== "none"){
+    els.readoutPoleAlt.textContent = state.phi.toFixed(1);
+  }
+  if(els.badgeWrap.style.display !== "none"){
+    const badge = d.badge;
+    els.riseBadge.className = "pill " + (badge==="circumpolar" ? "pill-circumpolar" : badge==="never" ? "pill-never" : "pill-rises");
+    els.riseBadge.textContent = badge==="circumpolar" ? "CIRCUMPOLAR" : badge==="never" ? "NEVER RISES" : "RISES & SETS";
+    els.readoutTransitEl.textContent = d.transitAlt.toFixed(1);
+    els.readoutH0.textContent = (d.riseSet.H0deg == null) ? "—" : (d.riseSet.H0deg/15).toFixed(2);
+  }
+  if(els.readoutsHlst.style.display !== "none"){
+    const lst = wrap24(state.lst), hH = wrap12(lst - state.ra);
+    els.hlstLST.textContent = lst.toFixed(2);
+    els.hlstH.textContent = hH.toFixed(2);
+    els.hlstAlpha.textContent = state.ra.toFixed(2);
+    els.hlstCulminateNote.textContent = "culminates when LST = α = " + state.ra.toFixed(2) + " h";
+  }
+}
+
+function updateFormulas(){
+  const d = state.derived;
+  const phi = state.phi, dec = state.dec, hDeg = d.H_deg;
+  const sinA_ = Math.sin(phi*RAD)*Math.sin(dec*RAD) + Math.cos(phi*RAD)*Math.cos(dec*RAD)*Math.cos(hDeg*RAD);
+
+  const line1 =
+    '<div class="formula-line">' +
+      '<div class="formula-def"><span class="math">sin</span> <span class="math-upright">El</span> = <span class="math">sin &phi; sin &delta; + cos &phi; cos &delta; cos h</span></div>' +
+      '<div class="formula-sub">sin ' + fmtNum(phi,0.1) + '&deg; sin ' + fmtSigned(dec,1) + '&deg; + cos ' + fmtNum(phi,0.1) + '&deg; cos ' + fmtSigned(dec,1) + '&deg; cos(' + fmtSigned(hDeg,1) + '&deg;) = <b>' + sinA_.toFixed(3) + '</b> &rarr; <span class="math-upright">El</span> = <b>' + d.a_deg.toFixed(1) + '&deg;</b></div>' +
+    '</div>';
+
+  let line2;
+  const cosAdenom = Math.cos(phi*RAD)*Math.cos(d.a_deg*RAD);
+  if(Math.abs(cosAdenom) < 1e-9){
+    line2 =
+      '<div class="formula-line">' +
+        '<div class="formula-def"><span class="math">cos</span> <span class="math-upright">Az</span> = <span class="math">(sin &delta; &minus; sin &phi; sin</span> <span class="math-upright">El</span><span class="math">) / (cos &phi; cos</span> <span class="math-upright">El</span><span class="math">)</span></div>' +
+        '<div class="formula-sub">undefined here (cos &phi; cos <span class="math-upright">El</span> &asymp; 0) &mdash; <span class="math-upright">Az</span> = &mdash;</div>' +
+      '</div>';
+  } else {
+    const cosAval = clamp((Math.sin(dec*RAD) - Math.sin(phi*RAD)*Math.sin(d.a_deg*RAD)) / cosAdenom, -1, 1);
+    const westEast = (Math.sin(hDeg*RAD) > 0) ? "west" : "east";
+    line2 =
+      '<div class="formula-line">' +
+        '<div class="formula-def"><span class="math">cos</span> <span class="math-upright">Az</span> = <span class="math">(sin &delta; &minus; sin &phi; sin</span> <span class="math-upright">El</span><span class="math">) / (cos &phi; cos</span> <span class="math-upright">El</span><span class="math">)</span>, <span class="math-upright">Az</span> &rarr; 360&deg; &minus; <span class="math-upright">Az</span> when sin h &gt; 0</div>' +
+        '<div class="formula-sub">(sin ' + fmtSigned(dec,1) + '&deg; &minus; sin ' + fmtNum(phi,0.1) + '&deg; sin ' + d.a_deg.toFixed(1) + '&deg;) / (cos ' + fmtNum(phi,0.1) + '&deg; cos ' + d.a_deg.toFixed(1) + '&deg;) = <b>' + cosAval.toFixed(3) + '</b> &rarr; <span class="math-upright">Az</span> = <b>' + (isNaN(d.A_deg)?"&mdash;":d.A_deg.toFixed(1)+'&deg;') + '</b> (h ' + (hDeg>=0?'&gt;':'&lt;') + ' 0 &rarr; star ' + westEast + ' of meridian)</div>' +
+      '</div>';
+  }
+  els.formulasBody.innerHTML = line1 + line2;
+}
+
+function wireFormulasCollapse(){
+  els.formulasHead.addEventListener("click", function(){
+    els.formulasCard.classList.toggle("collapsed");
+  });
+}
+
+/* =========================================================================
+   13. RESIZE HANDLING (DPR-aware; dimensions cached on state.* so draw
+       functions never force a synchronous layout read) + movable splitters
+   ========================================================================= */
+function resizeOverlayCanvas(w, h){
+  const canvas = document.getElementById("overlayCanvas");
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(w*dpr));
+  canvas.height = Math.max(1, Math.round(h*dpr));
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  state.overlayW = w; state.overlayH = h;
+}
+function setupGLResize(){
+  const ro = new ResizeObserver(function(){
+    const rect = glCanvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
+    state.mainW = w; state.mainH = h;
+    if(state.webglOK && renderer){
+      renderer.setSize(w, h, false);
+      camera.aspect = w / (h || 1);
+      camera.updateProjectionMatrix();
+    }
+    updateSpriteScales(); // label pixel sizes depend on camera.fov + CSS height, both fixed except on resize
+    if(state.cam.isDefault){
+      // panel size/aspect changed while still at the default view -- re-fit rather than
+      // leaving a manually-untouched camera looking wrong after e.g. a window resize
+      state.cam.radius = computeDefaultRadius();
+      applyCameraFromState();
+    }
+    resizeOverlayCanvas(w, h);
+    state.needsRender = true;
+    render();
+  });
+  ro.observe(glCanvas);
+}
+function setupStripResize(){
+  const canvas = document.getElementById("stripCanvas");
+  const ctx = canvas.getContext("2d");
+  const ro = new ResizeObserver(function(){
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.max(1, Math.round(rect.width)), ch = Math.max(1, Math.round(rect.height));
+    canvas.width = cw*dpr; canvas.height = ch*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    state.stripW = cw; state.stripH = ch;
+    state.stripDirty = true;
+    drawStrip();
+    state.stripDirty = false;
+  });
+  ro.observe(canvas);
+}
+
+let railWidth = 300, stripPanelHeight = 190;
+function applyRailWidth(px){
+  railWidth = clamp(px, 230, 420);
+  document.querySelector(".body").style.setProperty("--rail-w", railWidth+"px");
+}
+function applyStripHeight(px){
+  stripPanelHeight = clamp(px, 120, 320);
+  document.querySelector(".workspace").style.setProperty("--strip-h", stripPanelHeight+"px");
+}
+function setupSplitter(el, opts){
+  let dragging = false, startPos = 0, startSize = 0;
+  function updateAria(){
+    el.setAttribute("aria-valuemin", String(opts.min));
+    el.setAttribute("aria-valuemax", String(opts.max));
+    el.setAttribute("aria-valuenow", String(Math.round(opts.getSize())));
+  }
+  updateAria();
+  el.addEventListener("pointerdown", function(ev){
+    dragging = true;
+    try{ el.setPointerCapture(ev.pointerId); }catch(e){}
+    startPos = opts.axis === "x" ? ev.clientX : ev.clientY;
+    startSize = opts.getSize();
+    el.classList.add("dragging");
+    document.body.classList.add(opts.axis === "x" ? "resizing-col" : "resizing-row");
+    ev.preventDefault();
+  });
+  el.addEventListener("pointermove", function(ev){
+    if(!dragging) return;
+    const pos = opts.axis === "x" ? ev.clientX : ev.clientY;
+    let delta = pos - startPos;
+    if(opts.invert) delta = -delta;
+    opts.setSize(clamp(startSize + delta, opts.min, opts.max));
+    updateAria();
+  });
+  function endDrag(ev){
+    if(!dragging) return;
+    dragging = false;
+    try{ el.releasePointerCapture(ev.pointerId); }catch(e){}
+    el.classList.remove("dragging");
+    document.body.classList.remove(opts.axis === "x" ? "resizing-col" : "resizing-row");
+  }
+  el.addEventListener("pointerup", endDrag);
+  el.addEventListener("pointercancel", endDrag);
+  el.addEventListener("keydown", function(ev){
+    const step = 10;
+    let dirKey = null;
+    if(opts.axis === "x"){
+      if(ev.key === "ArrowLeft") dirKey = -1; else if(ev.key === "ArrowRight") dirKey = 1;
+    } else {
+      if(ev.key === "ArrowUp") dirKey = -1; else if(ev.key === "ArrowDown") dirKey = 1;
+    }
+    if(dirKey === null) return;
+    ev.preventDefault();
+    const signedStep = opts.invert ? -dirKey*step : dirKey*step;
+    opts.setSize(clamp(opts.getSize() + signedStep, opts.min, opts.max));
+    updateAria();
+  });
+}
+function wireSplitters(){
+  setupSplitter(document.getElementById("vSplitter"), { axis:"x", invert:false, min:230, max:420, getSize:function(){ return railWidth; }, setSize:applyRailWidth });
+  setupSplitter(document.getElementById("hSplitter"), { axis:"y", invert:true, min:120, max:320, getSize:function(){ return stripPanelHeight; }, setSize:applyStripHeight });
+}
+
+/* =========================================================================
+   14. RENDER ORCHESTRATION + CONTINUOUS-TIME ANIMATION LOOP
+       Rendering happens on demand (any control change or camera drag calls
+       render() directly) plus a rAF loop that runs ONLY while state.playing
+       is true — no idle hot loop. LST advances continuously every frame;
+       there is no fixed sampling grid to maintain here (unlike a trace/strip
+       history), since every displayed quantity is a pure function of the
+       instantaneous LST.
+   ========================================================================= */
+function render(){
+  if(state.needsRender){ renderThree(); state.needsRender = false; }
+  drawOverlay();
+  if(state.stripDirty){ drawStrip(); state.stripDirty = false; }
+}
+
+let rafId = null, lastFrameTs = null;
+function startLoop(){ if(rafId == null){ lastFrameTs = null; rafId = requestAnimationFrame(loop); } }
+function stopLoop(){ if(rafId != null){ cancelAnimationFrame(rafId); rafId = null; } }
+function loop(ts){
+  if(lastFrameTs == null) lastFrameTs = ts;
+  const dtSec = (ts - lastFrameTs) / 1000;
+  lastFrameTs = ts;
+  if(dtSec > 0 && dtSec <= 0.25){
+    state.lst = wrap24(state.lst + state.speed*dtSec);
+    setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
+    fullUpdate(); // includes render()
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+/* =========================================================================
+   15. BOOTSTRAP
+   ========================================================================= */
+function init(){
+  cacheEls();
+  loadColors();
+  glowSprite = makeGlowSprite(COLORS.amber, 48);
+  recomputeDerived(); // seed state.derived before any early render (e.g. initThreeScene's initial resetCameraView -> render)
+
+  initThreeScene(); // builds the dome scene; sets state.webglOK
+
+  wireTabs();
+  wireDisplayToggles();
+  wireStripModeToggle();
+  wirePlayback();
+  wireObserver();
+  wireStar();
+  wireFormulasCollapse();
+  wireSplitters();
+
+  setupGLResize();
+  setupStripResize();
+
+  switchTab(state.tab); // seeds all controls/about/formulas and renders once
+}
+
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+
+</script>
+</body>
+</html>

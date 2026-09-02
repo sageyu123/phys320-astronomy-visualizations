@@ -6,6 +6,7 @@ Interactive teaching visualizations for PHYS 320 (Astronomy) at NJIT, Fall 2026 
 - Live site: <https://sageyu123.github.io/phys320-astronomy-visualizations/>
 - `index.html` opens the landing page.
 - `html/ptolemy_model.html` — Ptolemy's model: eccentric, epicycle, equant, the full Almagest construction, and a geocentric ⇄ heliocentric comparison.
+- `html/altaz_radec.html` — Sky coordinates: alt-az versus RA/Dec on a rotatable celestial sphere, with all-sky and RA/Dec chart views.
 
 ## Running Locally
 Every page is a single self-contained HTML file with no dependencies. Open it directly in any modern browser, or serve the folder with `python3 -m http.server`.
