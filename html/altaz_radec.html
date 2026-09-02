@@ -756,6 +756,10 @@ const TAB_CONFIG = {
     playing: false, speed: 1.0,
     display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
     sectorPair: "radec",
+    // raised from CAM_DEFAULT's 28 deg elevation to 38 deg so the alpha wedge
+    // (which lies in the equatorial plane) is not seen nearly edge-on -- keeps
+    // the same theta=-11 deg (azimuth from the SE) as the global default
+    camera: { thetaDeg: -11, phiDeg: 38 },
     gridAlpha: { h:1, e:1 },
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "Two grids on one sphere",
@@ -999,13 +1003,32 @@ function applyHighlight(){
   sectorDec.material.opacity   = sectorPairOpacity(sectorDec.baseOpacity, "radec", hk);
   sectorAlpha.material.opacity = sectorPairOpacity(sectorAlpha.baseOpacity, "radec", hk);
 
+  // each fan's radial edges + in-wedge label follow that same fan's highlight
+  // group (its pair, "azel"/"radec") rather than the generic "arcs"/"labels"
+  // groups -- see sectorPairOpacity() above.
+  [edgeAzStart, edgeAzEnd, edgeElStart, edgeElEnd].forEach(function(o){
+    o.material.opacity = sectorPairOpacity(o.baseOpacity, "azel", hk);
+  });
+  [edgeDecStart, edgeDecEnd, edgeAlphaStart, edgeAlphaEnd].forEach(function(o){
+    o.material.opacity = sectorPairOpacity(o.baseOpacity, "radec", hk);
+  });
+  wedgeLabelAz.material.opacity    = sectorPairOpacity(0.9, "azel", hk);
+  wedgeLabelEl.material.opacity    = sectorPairOpacity(0.9, "azel", hk);
+  wedgeLabelDec.material.opacity   = sectorPairOpacity(0.9, "radec", hk);
+  wedgeLabelAlpha.material.opacity = sectorPairOpacity(0.9, "radec", hk);
+
   [sideZP, sidePS, sideZS].forEach(function(o){
     setHighlightedOpacity(o.material, o.baseOpacity, "triangle", hk, o.baseLinewidth);
   });
   setHighlightedOpacity(triFill.material, 0.10, "triangle", hk);
   [angleArcA, angleArcH, angleArcQ].forEach(function(o){ setHighlightedOpacity(o.line.material, 0.8, "triangle", hk); });
 
-  labelRegistry.forEach(function(spr){ setHighlightedOpacity(spr.material, 1, "labels", hk); });
+  labelRegistry.forEach(function(spr){
+    // the 4 in-wedge labels are handled above (their fan's own azel/radec
+    // group), not the generic "labels" toggle group
+    if(spr === wedgeLabelAz || spr === wedgeLabelEl || spr === wedgeLabelDec || spr === wedgeLabelAlpha) return;
+    setHighlightedOpacity(spr.material, 1, "labels", hk);
+  });
 
   requestRender();
 }
@@ -1664,6 +1687,11 @@ let arcAz, arcAlt, arcDec, arcH, arcRA;
 let arrowAz, arrowAlt, arrowDec, arrowH, arrowRA;
 let labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj;
 let sectorAz, sectorEl, sectorDec, sectorAlpha; // coordinate-sector fans (Task 3)
+// per-fan radial edges (straight fat lines, observer -> arc start/end) and
+// in-wedge labels that turn each translucent fan into a readable wedge
+let edgeAzStart, edgeAzEnd, edgeElStart, edgeElEnd, edgeDecStart, edgeDecEnd, edgeAlphaStart, edgeAlphaEnd;
+let wedgeLabelAz, wedgeLabelEl, wedgeLabelDec, wedgeLabelAlpha;
+const SECTOR_ORIGIN = new THREE.Vector3(0,0,0); // observer sits at the world origin; shared, read-only
 let hlstAlpha, hlstH, hlstLst;
 let hlstAlphaArrow, hlstHArrow, hlstLstArrow;
 let hlstAlphaLabel, hlstHLabel, hlstLstLabel;
@@ -1790,6 +1818,31 @@ function updateSectorFan(sector, pts){
   sector.geo.setDrawRange(0, n*3);
 }
 
+/* A fan alone reads as a faint, edgeless smear -- these two helpers add the
+   two RADIAL edges (observer -> arc start, observer -> arc end; the arc
+   itself is the fan's third, already-drawn, curved edge) and an in-wedge
+   label, together turning each fan into an unmistakable wedge. Both reuse
+   the exact same sampled `pts` array the fan itself is built from, so they
+   never need their own geometry query. */
+function makeSectorEdge(colorInt){
+  return makeFatDynamicLine(colorInt, 0.75, 2.0, false, 2); // 2px fat line, 2-point capacity (preallocated)
+}
+function updateSectorEdges(edgeStart, edgeEnd, pts, visible){
+  setLinePoints(edgeStart, [SECTOR_ORIGIN, pts[0]]);
+  setLinePoints(edgeEnd, [SECTOR_ORIGIN, pts[pts.length-1]]);
+  edgeStart.line.visible = visible;
+  edgeEnd.line.visible = visible;
+}
+function updateWedgeLabel(sprite, pts, visible){
+  // bisector = normalized mid-arc direction; label sits at 55% of the radius
+  // along it, well inside the wedge rather than out on the dome surface
+  const mid = pts[Math.floor((pts.length-1)/2)];
+  const len = Math.hypot(mid.x, mid.y, mid.z) || 1;
+  const k = 0.55/len;
+  sprite.position.set(mid.x*k, mid.y*k, mid.z*k);
+  sprite.visible = visible;
+}
+
 function buildDynamicArcsGroup(){
   arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 4.0, false);
   arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 4.0, false);
@@ -1808,12 +1861,34 @@ function buildDynamicArcsGroup(){
   labelRAObj  = makeTextSprite("α", COLORS.amber, { math:true, pixelHeight:18 });
   scene.add(labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj);
 
-  // coordinate-sector fans: Az/El in cyan (horizon/vertical planes), alpha/delta
-  // in amber (equatorial/hour-circle planes) -- see Task 3
-  sectorAz    = makeSectorFan(COLORI.cyan, 0.10);
-  sectorEl    = makeSectorFan(COLORI.cyan, 0.14);
-  sectorDec   = makeSectorFan(COLORI.amber, 0.16);
-  sectorAlpha = makeSectorFan(COLORI.amber, 0.12);
+  // coordinate-sector fans: each pair gets two distinguishable tints so a
+  // viewer can tell the two wedges of a pair apart -- Az a paler aqua, El the
+  // standard cyan; alpha a paler gold, delta the standard amber. Opacities
+  // raised from the original 0.10-0.16 range (unreadable on near-black) to
+  // 0.20-0.28.
+  const AZ_TINT = 0x9fe3ee, EL_TINT = COLORI.cyan, DEC_TINT = COLORI.amber, ALPHA_TINT = 0xffe3a3;
+  sectorAz    = makeSectorFan(AZ_TINT,    0.20);
+  sectorEl    = makeSectorFan(EL_TINT,    0.26);
+  sectorDec   = makeSectorFan(DEC_TINT,   0.28);
+  sectorAlpha = makeSectorFan(ALPHA_TINT, 0.22);
+
+  // radial edges (2 per fan, observer -> arc start/end) + in-wedge labels --
+  // together with the fan's own curved (arc) edge, these make each wedge read
+  // like the classic textbook figure instead of a faint, edgeless smear.
+  edgeAzStart    = makeSectorEdge(AZ_TINT);
+  edgeAzEnd      = makeSectorEdge(AZ_TINT);
+  edgeElStart    = makeSectorEdge(EL_TINT);
+  edgeElEnd      = makeSectorEdge(EL_TINT);
+  edgeDecStart   = makeSectorEdge(DEC_TINT);
+  edgeDecEnd     = makeSectorEdge(DEC_TINT);
+  edgeAlphaStart = makeSectorEdge(ALPHA_TINT);
+  edgeAlphaEnd   = makeSectorEdge(ALPHA_TINT);
+
+  wedgeLabelAz    = makeTextSprite("Az", "#9fe3ee", { math:true, upright:true, pixelHeight:15 });
+  wedgeLabelEl    = makeTextSprite("El", COLORS.cyan, { math:true, upright:true, pixelHeight:15 });
+  wedgeLabelDec   = makeTextSprite("δ", COLORS.amber, { math:true, pixelHeight:15 });
+  wedgeLabelAlpha = makeTextSprite("α", "#ffe3a3", { math:true, pixelHeight:15 });
+  scene.add(wedgeLabelAz, wedgeLabelEl, wedgeLabelDec, wedgeLabelAlpha);
 
   hlstAlpha = makeFatDynamicLine(COLORI.amber, 1.0, 3.5, false);
   hlstH     = makeFatDynamicLine(COLORI.magenta, 1.0, 3.5, true); // dashed, matching the main h arc
@@ -1849,6 +1924,8 @@ function updateDynamicArcs(){
     if(showArcs) placeArrowAtEnd(arrowAz, pts);
     labelAtMid(labelAObj, pts); labelAObj.visible = showArcs && showLabels;
     updateSectorFan(sectorAz, pts); sectorAz.mesh.visible = showSectorsAzEl;
+    updateSectorEdges(edgeAzStart, edgeAzEnd, pts, showSectorsAzEl);
+    updateWedgeLabel(wedgeLabelAz, pts, showSectorsAzEl);
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec(d.A_deg, (i/ARC_N)*d.a_deg)));
@@ -1856,6 +1933,8 @@ function updateDynamicArcs(){
     if(showArcs) placeArrowAtEnd(arrowAlt, pts);
     labelAtMid(labelAltObj, pts); labelAltObj.visible = showArcs && showLabels;
     updateSectorFan(sectorEl, pts); sectorEl.mesh.visible = showSectorsAzEl;
+    updateSectorEdges(edgeElStart, edgeElEnd, pts, showSectorsAzEl);
+    updateWedgeLabel(wedgeLabelEl, pts, showSectorsAzEl);
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(eqToVec(d.H_deg, (i/ARC_N)*state.dec, state.phi)));
@@ -1863,6 +1942,8 @@ function updateDynamicArcs(){
     if(showArcs) placeArrowAtEnd(arrowDec, pts);
     labelAtMid(labelDecObj, pts); labelDecObj.visible = showArcs && showLabels;
     updateSectorFan(sectorDec, pts); sectorDec.mesh.visible = showSectorsRadec;
+    updateSectorEdges(edgeDecStart, edgeDecEnd, pts, showSectorsRadec);
+    updateWedgeLabel(wedgeLabelDec, pts, showSectorsRadec);
 
     // h: dashed, on the small circle delta=-4 (a parallel just below the equator)
     // so it never shares pixels with the alpha arc drawn ON the equator itself
@@ -1886,6 +1967,8 @@ function updateDynamicArcs(){
     if(showArcs) placeArrowAtEnd(arrowRA, pts);
     labelAtMid(labelRAObj, pts); labelRAObj.visible = showArcs && showLabels;
     updateSectorFan(sectorAlpha, pts); sectorAlpha.mesh.visible = showSectorsRadec;
+    updateSectorEdges(edgeAlphaStart, edgeAlphaEnd, pts, showSectorsRadec);
+    updateWedgeLabel(wedgeLabelAlpha, pts, showSectorsRadec);
 
     starHourCircle.line.visible = showArcs;
   } else {
@@ -1893,7 +1976,10 @@ function updateDynamicArcs(){
              arrowAz, arrowAlt, arrowDec, arrowH, arrowRA,
              labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj,
              starHourCircle.line,
-             sectorAz.mesh, sectorEl.mesh, sectorDec.mesh, sectorAlpha.mesh]);
+             sectorAz.mesh, sectorEl.mesh, sectorDec.mesh, sectorAlpha.mesh,
+             edgeAzStart.line, edgeAzEnd.line, edgeElStart.line, edgeElEnd.line,
+             edgeDecStart.line, edgeDecEnd.line, edgeAlphaStart.line, edgeAlphaEnd.line,
+             wedgeLabelAz, wedgeLabelEl, wedgeLabelDec, wedgeLabelAlpha]);
   }
 
   if(showHlst){
