@@ -149,6 +149,72 @@
     position:absolute; left:10px; bottom:8px; font-size:10px; color:var(--muted);
     opacity:.7; pointer-events:none; white-space:nowrap; z-index:3;
   }
+
+  /* ---------- Origin tab: full-width timeline overlay across the top of
+     #mainPanel (a CSS overlay only -- the WebGL canvas underneath keeps its
+     full size, no layout shift). Shown only on the Origin tab, hidden in
+     ?embed=1 (see the embed-mode block below). #mainPanel needs its own
+     positioning context since this is the only absolutely-positioned direct
+     child that isn't already covered by .panel-body's own position:relative. */
+  #mainPanel{ position:relative; }
+  .origin-timeline{
+    position:absolute; left:0; right:0; top:34px; height:46px; z-index:5;
+    display:flex; align-items:flex-start; gap:8px; padding:14px 12px 0 8px;
+    background:color-mix(in srgb, var(--panel) 85%, transparent);
+    border-bottom:1px solid var(--border);
+  }
+  .origin-timeline-play{
+    flex:0 0 auto; width:22px; height:22px; margin-top:-3px; padding:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    border-radius:4px; border:1px solid var(--border); background:var(--panel-raised);
+    color:var(--text); font-size:10px; line-height:1; cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .origin-timeline-play:hover{ background:var(--control-hover); border-color:var(--border-hover); }
+  .origin-timeline-play.active{ background:var(--cyan); color:var(--on-accent); border-color:var(--cyan); }
+  .origin-timeline-track-wrap{ position:relative; flex:1 1 auto; min-width:0; }
+  .origin-timeline-bubble{
+    position:absolute; top:-14px; left:0; transform:translateX(-50%);
+    font-size:10px; color:var(--text); background:var(--panel-raised);
+    border:1px solid var(--border-strong); border-radius:4px; padding:1px 6px;
+    white-space:nowrap; pointer-events:none;
+  }
+  .origin-timeline-range{
+    -webkit-appearance:none; appearance:none; display:block; width:100%; height:16px;
+    margin:0; background:transparent; cursor:pointer; accent-color:var(--cyan);
+  }
+  .origin-timeline-range::-webkit-slider-runnable-track{
+    height:6px; border-radius:3px; background:var(--panel-raised); border:1px solid var(--border);
+  }
+  .origin-timeline-range::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:16px; height:16px; margin-top:-5px;
+    border-radius:50%; background:var(--cyan); border:2px solid var(--on-accent);
+    box-shadow:0 1px 3px var(--black-shadow); cursor:pointer;
+  }
+  .origin-timeline-range::-moz-range-track{
+    height:6px; border-radius:3px; background:var(--panel-raised); border:1px solid var(--border);
+  }
+  .origin-timeline-range::-moz-range-thumb{
+    width:16px; height:16px; border-radius:50%; background:var(--cyan);
+    border:2px solid var(--on-accent); box-shadow:0 1px 3px var(--black-shadow); cursor:pointer;
+  }
+  .origin-timeline-ticks{ position:absolute; left:0; right:0; top:16px; height:16px; pointer-events:none; }
+  .origin-timeline-tick{
+    position:absolute; top:0; width:1px; height:4px; background:var(--border-strong); transform:translateX(-0.5px);
+  }
+  .origin-timeline-tick-label{
+    position:absolute; top:5px; font-size:10px; color:var(--muted); transform:translateX(-50%); white-space:nowrap;
+  }
+  .origin-timeline-tick.cardinal{ width:2px; height:6px; transform:translateX(-1px); }
+  .origin-timeline-tick-label.cardinal{ font-size:11px; font-weight:600; }
+  .origin-timeline-tick.cardinal.equinox{ background:var(--purple); }
+  .origin-timeline-tick-label.cardinal.equinox{ color:var(--purple); }
+  .origin-timeline-tick.cardinal.solstice{ background:var(--amber); }
+  .origin-timeline-tick-label.cardinal.solstice{ color:var(--amber); }
+  @media (max-width:900px){
+    .origin-timeline-month-label{ display:none; }
+  }
+
   .webgl-fallback{
     position:absolute; inset:0; display:none; align-items:center; justify-content:center;
     text-align:center; color:var(--muted); font-size:12px; padding:20px; z-index:4;
@@ -310,7 +376,8 @@
   body.embed .splitter,
   body.embed #stripPanel,
   body.embed .panel-header,
-  body.embed .drag-hint{ display:none; }
+  body.embed .drag-hint,
+  body.embed .origin-timeline{ display:none; }
   body.embed #app{ grid-template-rows:1fr; }
   body.embed .body{ grid-template-columns:1fr; }
   body.embed .workspace{ padding:0; grid-template-rows:1fr; }
@@ -537,6 +604,14 @@
           </div>
           <div class="panel-header-right">
             <button type="button" class="btn icon-btn" id="btnResetView" title="Reset camera view">&#8962;</button>
+          </div>
+        </div>
+        <div class="origin-timeline" id="originTimeline" style="display:none">
+          <button type="button" class="origin-timeline-play" id="btnTimelinePlay" title="Play / pause">&#9658;</button>
+          <div class="origin-timeline-track-wrap">
+            <div class="origin-timeline-bubble" id="timelineBubble">Mar 20</div>
+            <input type="range" id="timelineRange" class="origin-timeline-range" min="0" max="365.25" step="0.05" value="79" aria-label="Day of year">
+            <div class="origin-timeline-ticks" id="timelineTicks" aria-hidden="true"></div>
           </div>
         </div>
         <div class="panel-body">
@@ -978,6 +1053,8 @@ function recomputeDerived(){
    TRIANGLE sections below.
    ========================================================================= */
 let renderer, scene, camera, glCanvas;
+/* height of the Origin tab's timeline strip, reserved above the stage's viewport captions */
+function originHudInsetPx(){ return document.body.classList.contains("embed") ? 0 : 46; }
 let originStage = null; // lazily constructed on first activation of the "origin" tab -- see ensureOriginStage()
 let hGridGroup, meridianGroup, equatorialGroup, diurnalGroup;
 let meridianUpper, meridianLower; // {line,material,baseOpacity,baseLinewidth} wrappers, for applyHighlight()
@@ -1367,7 +1444,7 @@ function ensureOriginStage(){
     renderer:renderer, makeTextSprite:makeTextSprite, applySpriteScale:originApplySpriteScale
   });
   const rect = glCanvas.getBoundingClientRect();
-  originStage.resize(Math.round(rect.width), Math.round(rect.height));
+  originStage.resize(Math.round(rect.width), Math.round(rect.height), originHudInsetPx());
 }
 
 function buildStaticScene(){
@@ -2749,6 +2826,18 @@ const ORIGIN_CARDINAL_READOUTS = [
   "Mar 20 · ♈ equinox", "Jun 21 · solstice", "Sep 22 · equinox", "Dec 21 · solstice"
 ]; // same literal strings as the ghost-Earth labels in altaz_origin_stage.js
 const ORIGIN_SNAP_TOLERANCE_DAYS = 3;
+/* Shared cardinal-date snap used by both the Date card's own doyRange input
+   (wireOriginDate()) and the full-width timeline strip's range input
+   (wireOriginTimeline()) -- one source of truth so "the SAME snapping"
+   requirement can't drift between the two controls. */
+function snapOriginDay(v){
+  let bestI = -1, bestDist = Infinity;
+  for(let i=0;i<ORIGIN_CARDINAL_DAYS.length;i++){
+    const d = Math.abs(v - ORIGIN_CARDINAL_DAYS[i]);
+    if(d < bestDist){ bestDist = d; bestI = i; }
+  }
+  return (bestDist <= ORIGIN_SNAP_TOLERANCE_DAYS) ? ORIGIN_CARDINAL_DAYS[bestI] : v;
+}
 /* Date-card calendar readout: the plain calendar label, unless state.day
    sits exactly on a cardinal longitude (a slider snap, a cardinal-button
    click, or Reset), in which case the landmark is appended. */
@@ -2852,6 +2941,7 @@ function cacheEls(){
    "observerCard","locationField","locationSelect","phiRange","phiNum","lstRange","lstNum",
    "starCard","starSelect","raRange","raNum","decRange","decNum",
    "dateCard","doyRange","doyNum","doyCalendarReadout","doyTicks","cardinalControl",
+   "originTimeline","btnTimelinePlay","timelineRange","timelineBubble","timelineTicks",
    "displayTogglesNormal","displayTogglesOrigin",
    "mainPanelTitle","readoutsDefault","readoutsHlst","readoutsOrigin",
    "readoutA","readoutAlt","readoutRA","readoutDec","readoutH",
@@ -2925,11 +3015,22 @@ function onObserverOrStarChanged(){
 function onOriginDateChanged(){
   if(!originStage) return;
   originStage.setDate(state.day);
-  els.doyCalendarReadout.textContent = originCalendarReadout(state.day, originStage.getState().dateLabel);
+  const calReadout = originCalendarReadout(state.day, originStage.getState().dateLabel);
+  els.doyCalendarReadout.textContent = calReadout;
+  syncOriginTimeline(calReadout);
   updateReadouts();
   updateFormulas();
   state.stripDirty = true;
   requestRender();
+}
+
+/* Shared by the Playback card's own btnPlay and the Origin tab's timeline
+   strip's btnTimelinePlay (wireOriginTimeline()) -- one play/pause state,
+   two buttons that mirror it (see updatePlayButton()). */
+function togglePlayback(){
+  state.playing = !state.playing;
+  updatePlayButton();
+  if(state.playing) startLoop(); else stopLoop();
 }
 
 function wirePlayback(){
@@ -2966,11 +3067,7 @@ function wirePlayback(){
     setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
     fullUpdate();
   });
-  els.btnPlay.addEventListener("click", function(){
-    state.playing = !state.playing;
-    updatePlayButton();
-    if(state.playing) startLoop(); else stopLoop();
-  });
+  els.btnPlay.addEventListener("click", togglePlayback);
   // Speed control: bounds/step/bound-field all depend on the active tab (h/s
   // 0.1-6 for the LST-based tabs vs days/s 1-60 for the Origin tab) -- see
   // wireSliderNumber()'s function-valued min/max/step support above.
@@ -3003,6 +3100,45 @@ function buildDoyTicks(){
   });
 }
 
+/* Origin tab's full-width timeline strip: 12 faint month ticks (calendar
+   first-of-month day-of-year, non-leap year) plus the same 4 accented
+   cardinal ticks as the Date card's own row (ORIGIN_CARDINAL_DAYS), each
+   with a text label underneath. Percentages are computed against 365.25 (the
+   timeline range's own max) so a tick lines up exactly with the thumb
+   whenever state.day matches it. Built once from wireOriginTimeline(). */
+const ORIGIN_TIMELINE_MONTH_DAYS = [0,31,59,90,120,151,181,212,243,273,304,334];
+const ORIGIN_TIMELINE_MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const ORIGIN_TIMELINE_CARDINAL_LABELS = ["♈ Mar 20","Jun 21","♎ Sep 22","Dec 21"];
+const ORIGIN_TIMELINE_CARDINAL_KIND = ["equinox","solstice","equinox","solstice"];
+function buildTimelineTicks(){
+  const wrap = els.timelineTicks;
+  ORIGIN_TIMELINE_MONTH_DAYS.forEach(function(day, i){
+    const pct = (day/365.25*100).toFixed(3) + "%";
+    const tick = document.createElement("span");
+    tick.className = "origin-timeline-tick";
+    tick.style.left = pct;
+    wrap.appendChild(tick);
+    const label = document.createElement("span");
+    label.className = "origin-timeline-tick-label origin-timeline-month-label";
+    label.style.left = pct;
+    label.textContent = ORIGIN_TIMELINE_MONTH_LABELS[i];
+    wrap.appendChild(label);
+  });
+  ORIGIN_CARDINAL_DAYS.forEach(function(day, i){
+    const pct = (day/365.25*100).toFixed(3) + "%";
+    const kind = ORIGIN_TIMELINE_CARDINAL_KIND[i];
+    const tick = document.createElement("span");
+    tick.className = "origin-timeline-tick cardinal " + kind;
+    tick.style.left = pct;
+    wrap.appendChild(tick);
+    const label = document.createElement("span");
+    label.className = "origin-timeline-tick-label cardinal " + kind;
+    label.style.left = pct;
+    label.textContent = ORIGIN_TIMELINE_CARDINAL_LABELS[i];
+    wrap.appendChild(label);
+  });
+}
+
 /* Day-of-year slider + number: unlike the generic wireSliderNumber() helper
    used elsewhere, these two inputs need ASYMMETRIC behavior -- dragging the
    RANGE input snaps to the nearest cardinal date within +-3 days (matching
@@ -3014,13 +3150,8 @@ function wireOriginDate(){
   buildDoyTicks();
 
   els.doyRange.addEventListener("input", function(){
-    let v = parseFloat(els.doyRange.value);
-    let bestI = -1, bestDist = Infinity;
-    for(let i=0;i<ORIGIN_CARDINAL_DAYS.length;i++){
-      const d = Math.abs(v - ORIGIN_CARDINAL_DAYS[i]);
-      if(d < bestDist){ bestDist = d; bestI = i; }
-    }
-    if(bestDist <= ORIGIN_SNAP_TOLERANCE_DAYS){ v = ORIGIN_CARDINAL_DAYS[bestI]; els.doyRange.value = v; }
+    let v = snapOriginDay(parseFloat(els.doyRange.value));
+    els.doyRange.value = v;
     state.day = v;
     els.doyNum.value = fmtNum(v, 0.5);
     onOriginDateChanged();
@@ -3056,6 +3187,54 @@ function wireOriginDate(){
       onOriginDateChanged();
     });
   });
+}
+
+/* Full-width timeline strip (originTimeline): a second, self-contained
+   control for state.day that mirrors the Date card's own doyRange -- same
+   cardinal snapping while dragging (snapOriginDay(), shared with
+   wireOriginDate() above), 1-day steps on the arrow keys (wrapYear(), same
+   as the Playback card's +-1 day buttons), and its own Play/Pause button
+   wired to the same togglePlayback() as the Playback card's btnPlay. Every
+   path here ends in onOriginDateChanged(), which is what actually pushes the
+   new value back out to the Date card + this strip via syncOriginTimeline()
+   below -- so the two controls stay in sync without any direct coupling. */
+function wireOriginTimeline(){
+  buildTimelineTicks();
+
+  els.timelineRange.addEventListener("input", function(){
+    const v = snapOriginDay(parseFloat(els.timelineRange.value));
+    els.timelineRange.value = v;
+    state.day = v;
+    setSliderNumber(els.doyRange, els.doyNum, v, 0.5);
+    onOriginDateChanged();
+  });
+  els.timelineRange.addEventListener("keydown", function(e){
+    const dir = (e.key === "ArrowLeft" || e.key === "ArrowDown") ? -1
+              : (e.key === "ArrowRight" || e.key === "ArrowUp") ? 1 : 0;
+    if(!dir) return;
+    e.preventDefault(); // override the range's own 0.05-day step attribute
+    state.day = wrapYear(state.day + dir);
+    els.timelineRange.value = state.day;
+    setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
+    onOriginDateChanged();
+  });
+  els.btnTimelinePlay.addEventListener("click", togglePlayback);
+}
+
+/* Pushes state.day out to the timeline strip's range/bubble -- called from
+   onOriginDateChanged() (so every existing state.day entry point, including
+   the play loop's per-frame update, reaches it for free). Writes are
+   skipped when the displayed value hasn't actually changed, matching the
+   spec's "cheap DOM writes only when the displayed value changes" during
+   playback. */
+function syncOriginTimeline(calReadout){
+  if(!els.timelineRange) return;
+  const v = state.day;
+  if(parseFloat(els.timelineRange.value) !== v) els.timelineRange.value = v;
+  if(els.timelineBubble.textContent !== calReadout) els.timelineBubble.textContent = calReadout;
+  const pct = clamp(v/365.25, 0, 1);
+  const left = "calc((100% - 16px) * " + pct.toFixed(5) + " + 8px)";
+  if(els.timelineBubble.style.left !== left) els.timelineBubble.style.left = left;
 }
 
 /* Origin tab's own Display-card toggles (Ghost Earths/Zodiac/Sun arcs/
@@ -3367,8 +3546,13 @@ function wireTabs(){
 }
 
 function updatePlayButton(){
-  els.btnPlay.innerHTML = state.playing ? "&#10074;&#10074;" : "&#9658;";
+  const glyph = state.playing ? "&#10074;&#10074;" : "&#9658;";
+  els.btnPlay.innerHTML = glyph;
   els.btnPlay.classList.toggle("active", state.playing);
+  // mirror onto the Origin tab's timeline strip's own play button (see
+  // togglePlayback()) so the two controls always show the same state.
+  els.btnTimelinePlay.innerHTML = glyph;
+  els.btnTimelinePlay.classList.toggle("active", state.playing);
 }
 
 function switchTab(tabId){
@@ -3460,6 +3644,7 @@ function switchTab(tabId){
   els.observerCard.style.display = isOrigin ? "none" : "";
   els.starCard.style.display = isOrigin ? "none" : "";
   els.dateCard.style.display = isOrigin ? "" : "none";
+  els.originTimeline.style.display = isOrigin ? "" : "none";
   els.displayTogglesNormal.style.display = isOrigin ? "none" : "";
   els.displayTogglesOrigin.style.display = isOrigin ? "" : "none";
 
@@ -3665,7 +3850,7 @@ function doGLResize(){
     applyCameraFromState();
   }
   resizeOverlayCanvas(w, h);
-  if(originStage) originStage.resize(w, h); // stage.resize() renders once itself when it (and its own visible flag) is live
+  if(originStage) originStage.resize(w, h, originHudInsetPx()); // stage.resize() renders once itself when it (and its own visible flag) is live
   requestRender();
 }
 function setupGLResize(){
@@ -3714,7 +3899,7 @@ function finishSplitterResize(){
       applyCameraFromState();
     }
     resizeOverlayCanvas(w, h);
-    if(originStage) originStage.resize(w, h);
+    if(originStage) originStage.resize(w, h, originHudInsetPx());
   }
   const stripCanvas = document.getElementById("stripCanvas");
   if(stripCanvas){
@@ -3927,6 +4112,7 @@ function init(){
   wireStripModeToggle();
   wirePlayback();
   wireOriginDate();
+  wireOriginTimeline();
   wireObserver();
   wireStar();
   wireFormulasCollapse();

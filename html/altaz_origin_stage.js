@@ -965,6 +965,7 @@ export function createOriginStage(deps) {
   const rectL = { x: 0, y: 0, w: 1, h: 1 }, rectR = { x: 0, y: 0, w: 1, h: 1 };
   let visible = true;
 
+  let hudInsetPx = 0; // CSS px reserved at the top of each viewport (host page's timeline strip)
   function positionHud(sprite, camera, heightPx, aspect) {
     if (!sprite || !heightPx) return;
     const fovRad = camera.fov * RAD;
@@ -974,7 +975,8 @@ export function createOriginStage(deps) {
     const halfW = halfH * aspect;
     const padWorld = 10 * zDist * k; // ~10 CSS px padding from the corner
     const halfSpriteW = sprite.scale.x / 2, halfSpriteH = sprite.scale.y / 2;
-    sprite.position.set(-halfW + padWorld + halfSpriteW, halfH - padWorld - halfSpriteH, -zDist);
+    const insetWorld = hudInsetPx * zDist * k;
+    sprite.position.set(-halfW + padWorld + halfSpriteW, halfH - padWorld - insetWorld - halfSpriteH, -zDist);
   }
 
   /* =======================================================================
@@ -1020,7 +1022,8 @@ export function createOriginStage(deps) {
     labelsR.forEach(function (s) { clampLabelToViewport(s, camR, rectR.w, rectR.h, LABEL_EDGE_MARGIN_PX); });
   }
 
-  function resize(cssW, cssH) {
+  function resize(cssW, cssH, topInsetPx) {
+    hudInsetPx = Math.max(0, topInsetPx || 0);
     canvasW = Math.max(2, Math.round(cssW));
     canvasH = Math.max(2, Math.round(cssH));
     layout = (canvasW / canvasH) >= 1.1 ? "row" : "col";
