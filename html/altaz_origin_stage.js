@@ -314,12 +314,14 @@ export function createOriginStage(deps) {
 
   function track(x) { disposables.push(x); return x; }
 
-  function makeFatLine(colorInt, opacity, widthPx, capacityPts, fatMatsArr) {
+  function makeFatLine(colorInt, opacity, widthPx, capacityPts, fatMatsArr, extraMatOpts) {
     const cap = capacityPts || (ARC_N + 1);
     const positions = new Float32Array(cap * 3);
     const geo = new LineGeometry();
     geo.setPositions(positions);
-    const mat = new LineMaterial({ color: colorInt, linewidth: widthPx, transparent: true, opacity: opacity, worldUnits: false, depthWrite: false });
+    const matOpts = { color: colorInt, linewidth: widthPx, transparent: true, opacity: opacity, worldUnits: false, depthWrite: false };
+    if (extraMatOpts) Object.assign(matOpts, extraMatOpts); // e.g. {dashed:true, dashSize, gapSize} for the line of nodes
+    const mat = new LineMaterial(matOpts);
     mat.resolution.set(1, 1);
     const line = new Line2(geo, mat);
     line.frustumCulled = false;
@@ -485,7 +487,7 @@ export function createOriginStage(deps) {
       }
       sphereGeo = buildEarthTemplate._ghostSphereGeo; // shared across all 4 ghosts
     }
-    const sphereMat = new THREE.MeshLambertMaterial({ color: 0x3b7dd8, transparent: opacity < 1, opacity: opacity });
+    const sphereMat = new THREE.MeshLambertMaterial({ color: 0x5aa6ff, transparent: opacity < 1, opacity: opacity });
     const sphere = new THREE.Mesh(sphereGeo, sphereMat);
     group.add(sphere);
     track({ dispose: function () { sphereMat.dispose(); } });
@@ -498,21 +500,53 @@ export function createOriginStage(deps) {
     group.add(ring);
     track({ dispose: function () { ringGeo.dispose(); ringMat.dispose(); } });
 
-    // extended equatorial-plane disk (translucent amber), same tilt
-    const diskR = 0.28;
-    const diskPts = ringPoints3(X_EQ3, Y_EQ3, diskR, 40);
-    const diskVerts = [0, 0, 0];
-    diskPts.forEach(function (p) { diskVerts.push(p.x, p.y, p.z); });
-    const diskIndex = [];
-    for (let i = 1; i < diskPts.length; i++) diskIndex.push(0, i, i + 1);
-    const diskGeo = new THREE.BufferGeometry();
-    diskGeo.setAttribute("position", new THREE.Float32BufferAttribute(diskVerts, 3));
-    diskGeo.setIndex(diskIndex);
-    diskGeo.computeVertexNormals();
-    const diskMat = new THREE.MeshBasicMaterial({ color: COLOR_INT.amber, transparent: true, opacity: 0.22 * opacity, side: THREE.DoubleSide, depthWrite: false });
-    const disk = new THREE.Mesh(diskGeo, diskMat);
-    group.add(disk);
-    track({ dispose: function () { diskGeo.dispose(); diskMat.dispose(); } });
+    // equatorial plane as a SQUARE patch (a disk here reads as Saturn's
+    // rings, not an orbital plane): side ~5 Earth radii (0.6 world units,
+    // Earth radius 0.12), centred on the Earth, lying in the (fixed)
+    // equatorial plane -- basis X_EQ3/Y_EQ3 (same pair the ring above uses)
+    // so the normal is exactly n_hat and one pair of edges runs along X_EQ3,
+    // the line-of-nodes / equinox direction. Current Earth gets a
+    // translucent fill + a crisp outline; ghost Earths get outline ONLY so
+    // four parallel squares around the orbit read clearly as "same tilt,
+    // same orientation" without stacking translucent fills on top of each
+    // other.
+    const SQUARE_HALF = 0.3; // side 0.6 = 5 * Earth radius 0.12
+    const sqCorners = [
+      { x: (X_EQ3.x + Y_EQ3.x) * SQUARE_HALF, y: (X_EQ3.y + Y_EQ3.y) * SQUARE_HALF, z: (X_EQ3.z + Y_EQ3.z) * SQUARE_HALF },
+      { x: (-X_EQ3.x + Y_EQ3.x) * SQUARE_HALF, y: (-X_EQ3.y + Y_EQ3.y) * SQUARE_HALF, z: (-X_EQ3.z + Y_EQ3.z) * SQUARE_HALF },
+      { x: (-X_EQ3.x - Y_EQ3.x) * SQUARE_HALF, y: (-X_EQ3.y - Y_EQ3.y) * SQUARE_HALF, z: (-X_EQ3.z - Y_EQ3.z) * SQUARE_HALF },
+      { x: (X_EQ3.x - Y_EQ3.x) * SQUARE_HALF, y: (X_EQ3.y - Y_EQ3.y) * SQUARE_HALF, z: (X_EQ3.z - Y_EQ3.z) * SQUARE_HALF }
+    ];
+    if (isMain) {
+      const sqVerts = [];
+      sqCorners.forEach(function (p) { sqVerts.push(p.x, p.y, p.z); });
+      const sqGeo = new THREE.BufferGeometry();
+      sqGeo.setAttribute("position", new THREE.Float32BufferAttribute(sqVerts, 3));
+      sqGeo.setIndex([0, 1, 2, 0, 2, 3]);
+      const sqMat = new THREE.MeshBasicMaterial({ color: COLOR_INT.amber, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false });
+      const sqMesh = new THREE.Mesh(sqGeo, sqMat);
+      group.add(sqMesh);
+      track({ dispose: function () { sqGeo.dispose(); sqMat.dispose(); } });
+    }
+    thinLoop(sqCorners, COLOR_INT.amber, isMain ? 0.7 : 0.35, group);
+
+    if (isMain) {
+      // line of nodes: the intersection of the equatorial plane with the
+      // ecliptic plane through the Earth's centre. X_EQ3 has zero Y
+      // (three.js up) component, so it already lies in that translated
+      // ecliptic plane as well as in the equatorial plane -- the node line
+      // is exactly +-X_EQ3 (== world +X), the same fixed direction as the
+      // arrow toward Aries, through the Earth's centre. Static endpoints
+      // (only the group's own position, updated per setDate(), moves it),
+      // so computeLineDistances() for the dash pattern runs once here.
+      const nodeHalfLen = 0.4; // full length 0.8
+      const nodeObj = makeFatLine(COLOR_INT.purple, 1, 2, 2, fatMatsL, { dashed: true, dashSize: 0.045, gapSize: 0.03 });
+      writePoint(nodeObj.positions, 0, { x: -X_EQ3.x * nodeHalfLen, y: -X_EQ3.y * nodeHalfLen, z: -X_EQ3.z * nodeHalfLen });
+      writePoint(nodeObj.positions, 1, { x: X_EQ3.x * nodeHalfLen, y: X_EQ3.y * nodeHalfLen, z: X_EQ3.z * nodeHalfLen });
+      setFatLinePoints(nodeObj, 2);
+      nodeObj.line.computeLineDistances();
+      group.add(nodeObj.line);
+    }
 
     // rotation axis, fixed direction n_hat, length 0.36, through the sphere
     const axisLen = 0.18;
@@ -526,16 +560,20 @@ export function createOriginStage(deps) {
   }
 
   function buildHelioScene() {
-    // lighting: point light at the Sun + a soft ambient fill so Earths shade correctly
-    const sunLight = new THREE.PointLight(0xffe9b0, 2.5, 0, 0); // decay 0 (no falloff)
+    // lighting: point light at the Sun + a soft ambient fill so Earths shade
+    // correctly -- intensity raised (and ambient lowered/darkened) so the
+    // sunward hemisphere reads clearly bright against a near-black night
+    // side (decay 0: no falloff, position kept at the origin/Sun).
+    const sunLight = new THREE.PointLight(0xffe9b0, 6.5, 0, 0); // decay 0 (no falloff)
     sceneL.add(sunLight);
-    sceneL.add(new THREE.AmbientLight(0x334455, 0.35));
+    sceneL.add(new THREE.AmbientLight(0x1a2230, 0.25));
 
-    // the Sun
-    const sunGeo = new THREE.SphereGeometry(0.09, 24, 16);
+    // the Sun -- sphere + glow scaled to ~60% of their original size
+    // (0.09 -> 0.055 radius, 0.5 -> 0.3 glow), light position unchanged
+    const sunGeo = new THREE.SphereGeometry(0.055, 24, 16);
     const sunMat = new THREE.MeshBasicMaterial({ color: COLOR_INT.amber });
     sceneL.add(new THREE.Mesh(sunGeo, sunMat));
-    sceneL.add(makeGlowSprite(COLOR_HEX.amber, 0.5, 0.8));
+    sceneL.add(makeGlowSprite(COLOR_HEX.amber, 0.3, 0.8));
     track({ dispose: function () { sunGeo.dispose(); sunMat.dispose(); } });
 
     // Earth's orbit (thin amber-white circle, r=1) + ecliptic-plane hint disk + faint radial grid

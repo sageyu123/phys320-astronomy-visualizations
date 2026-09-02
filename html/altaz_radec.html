@@ -191,6 +191,12 @@
   }
   .unit{ flex:0 0 auto; font-size:11px; color:var(--muted); }
 
+  /* ---------- Day-of-year slider: cardinal-date tick row (Origin tab) ---------- */
+  .doy-slider-wrap{ position:relative; flex:1 1 auto; min-width:0; }
+  .doy-slider-wrap input[type=range]{ width:100%; display:block; }
+  .doy-ticks{ position:absolute; left:0; right:0; top:100%; height:5px; margin-top:1px; pointer-events:none; }
+  .doy-tick{ position:absolute; top:0; width:2px; height:5px; background:var(--border-strong); border-radius:1px; transform:translateX(-1px); }
+
   select{
     width:100%; min-height:28px; background:var(--panel-raised);
     border:1px solid var(--border); border-radius:4px; color:var(--text);
@@ -431,7 +437,11 @@
         <div class="field">
           <label class="field-label" for="doyRange">Day of year</label>
           <div class="field-row">
-            <input type="range" id="doyRange" min="0" max="365" step="0.5" value="79">
+            <div class="doy-slider-wrap">
+              <input type="range" id="doyRange" min="0" max="365" step="0.5" value="79" list="doyCardinalTicks">
+              <div class="doy-ticks" id="doyTicks" aria-hidden="true"></div>
+              <datalist id="doyCardinalTicks"></datalist>
+            </div>
             <input type="number" id="doyNum" class="num-input" min="0" max="365" step="0.5" value="79">
           </div>
           <div class="unit" id="doyCalendarReadout" style="margin-top:6px">Mar 20</div>
@@ -2727,6 +2737,28 @@ function originSunRaDec(lambdaDeg){
 }
 const ORIGIN_ZODIAC_GLYPHS = ["♈︎","♉︎","♊︎","♋︎","♌︎","♍︎","♎︎","♏︎","♐︎","♑︎","♒︎","♓︎"];
 
+/* Day-of-year slider (Origin tab, Date card): exact day-of-year values for
+   lambda = 0/90/180/270 deg -- the SAME formula the cardinal-date buttons
+   use (79 + lambdaDeg*365.25/360, the inverse of altaz_origin_stage.js's
+   meanSunLongitudeDeg(d)), NOT the rounded calendar days 79/172/265/355.
+   Shared by the slider's snap-to-cardinal behavior, its tick marks, and the
+   calendar readout's landmark suffix (wireOriginDate()/onOriginDateChanged()
+   below). */
+const ORIGIN_CARDINAL_DAYS = [0,90,180,270].map(function(l){ return 79 + l*365.25/360; });
+const ORIGIN_CARDINAL_READOUTS = [
+  "Mar 20 · ♈ equinox", "Jun 21 · solstice", "Sep 22 · equinox", "Dec 21 · solstice"
+]; // same literal strings as the ghost-Earth labels in altaz_origin_stage.js
+const ORIGIN_SNAP_TOLERANCE_DAYS = 3;
+/* Date-card calendar readout: the plain calendar label, unless state.day
+   sits exactly on a cardinal longitude (a slider snap, a cardinal-button
+   click, or Reset), in which case the landmark is appended. */
+function originCalendarReadout(day, dateLabel){
+  for(let i=0;i<ORIGIN_CARDINAL_DAYS.length;i++){
+    if(Math.abs(day - ORIGIN_CARDINAL_DAYS[i]) < 1e-6) return ORIGIN_CARDINAL_READOUTS[i];
+  }
+  return dateLabel;
+}
+
 /* =========================================================================
    10b. ORIGIN-TAB STRIP MAP -- forced RA/Dec-style rectangular chart (no
    stripMode toggle, no observer/horizon curve): the ecliptic
@@ -2819,7 +2851,7 @@ function cacheEls(){
   ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum","speedUnit",
    "observerCard","locationField","locationSelect","phiRange","phiNum","lstRange","lstNum",
    "starCard","starSelect","raRange","raNum","decRange","decNum",
-   "dateCard","doyRange","doyNum","doyCalendarReadout","cardinalControl",
+   "dateCard","doyRange","doyNum","doyCalendarReadout","doyTicks","cardinalControl",
    "displayTogglesNormal","displayTogglesOrigin",
    "mainPanelTitle","readoutsDefault","readoutsHlst","readoutsOrigin",
    "readoutA","readoutAlt","readoutRA","readoutDec","readoutH",
@@ -2893,7 +2925,7 @@ function onObserverOrStarChanged(){
 function onOriginDateChanged(){
   if(!originStage) return;
   originStage.setDate(state.day);
-  els.doyCalendarReadout.textContent = originStage.getState().dateLabel;
+  els.doyCalendarReadout.textContent = originCalendarReadout(state.day, originStage.getState().dateLabel);
   updateReadouts();
   updateFormulas();
   state.stripDirty = true;
@@ -2951,11 +2983,66 @@ function wirePlayback(){
   });
 }
 
-function wireOriginDate(){
-  wireSliderNumber(els.doyRange, els.doyNum, {
-    min:0, max:365, step:0.5, fallback:function(){ return state.day; },
-    onCommit:function(v){ state.day = v; onOriginDateChanged(); }
+/* builds the Date card's cardinal-date tick marks (a CSS-positioned row
+   under the track, so it renders identically in every browser) and the
+   <datalist> the range input references (native-tick rendering, where a
+   browser supports it, is a bonus on top -- not load-bearing). Both are
+   generated from ORIGIN_CARDINAL_DAYS so there is exactly one source of
+   truth for the four positions. Called once from wireOriginDate(). */
+function buildDoyTicks(){
+  const dl = document.getElementById("doyCardinalTicks");
+  ORIGIN_CARDINAL_DAYS.forEach(function(day){
+    const pct = (day/365)*100;
+    const tick = document.createElement("span");
+    tick.className = "doy-tick";
+    tick.style.left = pct.toFixed(3) + "%";
+    els.doyTicks.appendChild(tick);
+    const opt = document.createElement("option");
+    opt.value = day;
+    dl.appendChild(opt);
   });
+}
+
+/* Day-of-year slider + number: unlike the generic wireSliderNumber() helper
+   used elsewhere, these two inputs need ASYMMETRIC behavior -- dragging the
+   RANGE input snaps to the nearest cardinal date within +-3 days (matching
+   the exact lambda=0/90/180/270 days the cardinal buttons use, not the
+   rounded calendar days), while typing in the NUMBER field never snaps -- so
+   they are wired by hand rather than sharing wireSliderNumber's single
+   onCommit path. */
+function wireOriginDate(){
+  buildDoyTicks();
+
+  els.doyRange.addEventListener("input", function(){
+    let v = parseFloat(els.doyRange.value);
+    let bestI = -1, bestDist = Infinity;
+    for(let i=0;i<ORIGIN_CARDINAL_DAYS.length;i++){
+      const d = Math.abs(v - ORIGIN_CARDINAL_DAYS[i]);
+      if(d < bestDist){ bestDist = d; bestI = i; }
+    }
+    if(bestDist <= ORIGIN_SNAP_TOLERANCE_DAYS){ v = ORIGIN_CARDINAL_DAYS[bestI]; els.doyRange.value = v; }
+    state.day = v;
+    els.doyNum.value = fmtNum(v, 0.5);
+    onOriginDateChanged();
+  });
+  els.doyNum.addEventListener("input", function(){
+    const v = parseFloat(els.doyNum.value);
+    if(isNaN(v)) return;
+    const c = clamp(v, 0, 365);
+    els.doyRange.value = c; // free movement -- no snapping while typing
+    state.day = c;
+    onOriginDateChanged();
+  });
+  els.doyNum.addEventListener("blur", function(){
+    let v = parseFloat(els.doyNum.value);
+    if(isNaN(v)) v = state.day;
+    v = clamp(v, 0, 365);
+    els.doyNum.value = fmtNum(v, 0.5);
+    els.doyRange.value = v;
+    state.day = v;
+    onOriginDateChanged();
+  });
+
   els.cardinalControl.querySelectorAll("button").forEach(function(btn){
     btn.addEventListener("click", function(){
       // sets the EXACT cardinal longitude (0/90/180/270 deg), not the
@@ -3418,7 +3505,7 @@ function switchTab(tabId){
 function updateOriginReadouts(){
   if(!originStage) return;
   const s = originStage.getState();
-  els.originDateLabel.textContent = s.dateLabel;
+  els.originDateLabel.textContent = originCalendarReadout(state.day, s.dateLabel);
   els.originDayNum.textContent = Math.round(s.day);
   els.originLambda.textContent = s.lambdaDeg.toFixed(1);
   els.originAlpha.textContent = s.raHours.toFixed(2);
