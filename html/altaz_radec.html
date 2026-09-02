@@ -103,7 +103,7 @@
   }
 
   /* ---------- movable splitters ---------- */
-  .splitter{ position:relative; background:transparent; z-index:2; }
+  .splitter{ position:relative; background:transparent; z-index:2; touch-action:none; }
   .splitter::after{
     content:""; position:absolute; background:var(--cyan); opacity:0; border-radius:2px;
     transition:opacity .12s ease;
@@ -211,6 +211,32 @@
   .toggle .dot{ width:8px; height:8px; border-radius:50%; background:var(--border-strong); flex:0 0 auto; }
   .toggle[aria-pressed="true"]{ background:var(--cyan); color:var(--on-accent); border-color:var(--cyan); font-weight:600; }
   .toggle[aria-pressed="true"] .dot{ background:var(--on-accent); }
+
+  /* ---------- shared tooltip (Display card toggles) ---------- */
+  .tip{
+    position:fixed; z-index:50; max-width:240px;
+    background:color-mix(in srgb, var(--cyan) 8%, var(--panel));
+    border:1px solid color-mix(in srgb, var(--cyan) 35%, var(--border));
+    border-radius:6px; padding:8px 10px; font-size:11.5px; line-height:1.4;
+    color:var(--text); box-shadow:0 8px 24px rgb(0 0 0/25%);
+    pointer-events:none; opacity:0; transform:translateY(-50%) translateX(-4px);
+    transition:opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible{ opacity:1; transform:translateY(-50%) translateX(0); }
+  .tip .math{ font-family:"STIX Two Math","Cambria Math","Times New Roman",serif; font-style:italic; }
+  .tip::after{
+    content:""; position:absolute; width:6px; height:6px;
+    background:inherit; border:inherit; border-right:none; border-top:none;
+    top:50%; left:-4px; transform:translateY(-50%) rotate(45deg);
+  }
+  .tip.tip-below{ transform:translateY(4px); }
+  .tip.tip-below.visible{ transform:translateY(0); }
+  .tip.tip-below::after{
+    top:-4px; left:16px; transform:rotate(135deg);
+  }
+  @media (prefers-reduced-motion: reduce){
+    .tip{ transition:none; }
+  }
 
   /* ---------- formulas card (collapsible) ---------- */
   .card-head-row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; cursor:pointer; }
@@ -460,6 +486,9 @@
   </div>
 </div>
 
+<div class="tip" role="tooltip" id="sharedTip" hidden></div>
+
+<script type="importmap">{"imports":{"three":"../vendor/three.module.js"}}</script>
 <script type="module">
 /* =========================================================================
    SKY COORDINATES — PHYS 320
@@ -467,9 +496,15 @@
    Main-panel rendering: three.js WebGL "sky dome", loaded from a vendored
    local copy (vendor/three.module.js, r168) so the page works fully offline.
    Strip panel (all-sky projection / RA-Dec chart) and the h-alpha-LST inset
-   dial are plain Canvas 2D.
+   dial are plain Canvas 2D. Coordinate/triangle/equator arcs use the fat-line
+   addon (vendor/addons/lines/Line2.js etc., also r168) for crisp thick lines;
+   those addon files import the bare specifier 'three', resolved above via an
+   import map to the same vendored three.module.js (still fully offline).
    ========================================================================= */
-import * as THREE from '../vendor/three.module.js';
+import * as THREE from 'three';
+import { Line2 } from '../vendor/addons/lines/Line2.js';
+import { LineGeometry } from '../vendor/addons/lines/LineGeometry.js';
+import { LineMaterial } from '../vendor/addons/lines/LineMaterial.js';
 
 /* =========================================================================
    1. CONSTANTS / DESIGN TOKENS
@@ -777,6 +812,14 @@ const state = {
   mainW: 0, mainH: 0, overlayW: 0, overlayH: 0, stripW: 0, stripH: 0,
   stripDirty: true,
   webglOK: true,
+  // splitter-drag state: while true, the GL/strip ResizeObservers record the
+  // pending size but skip the expensive reallocate-and-render path (see
+  // setupGLResize/setupStripResize/finishSplitterResize)
+  splitterDragging: false,
+  pendingMainW: null, pendingMainH: null, pendingStripW: null, pendingStripH: null,
+  // Display-toggle hover/focus highlight (Task C): null, or the toggle key
+  // currently hovered/focused ("hGrid","eGrid","diurnal","arcs","triangle","labels")
+  highlightKey: null,
   // cached readout strings (avoid redundant DOM writes)
   _lastReadout: null, _lastPoleAlt: null, _lastBadge: null,
   _lastHlstLST: null, _lastHlstH: null, _lastHlstAlpha: null
@@ -816,7 +859,20 @@ function recomputeDerived(){
 let renderer, scene, camera, glCanvas;
 let hGridGroup, meridianGroup, equatorialGroup, diurnalGroup;
 let starTorus, starSphere, starGlow, starLabel, starLabelText = null;
+let starHourCircle; // the star's own hour circle (great circle through both poles at native RA = alpha) — Task B
 const matRefs = { hGrid: [], eGrid: [] }; // {material, base} — opacity scaled by state.gridAlpha
+
+/* ---- fat lines (Task B): the didactic arcs/sides/equator/meridian use the
+   three.js "Line2" addon (LineMaterial + LineGeometry) instead of
+   LineBasicMaterial so they can have a true screen-space pixel width. Every
+   LineMaterial in use is tracked here so its `resolution` uniform (needed
+   for correct screen-space width) can be kept in sync with the renderer's
+   CSS size from the resize path. ---- */
+const fatLineMaterials = [];
+function updateFatLineResolution(w, h){
+  const rw = Math.max(1, w||1), rh = Math.max(1, h||1);
+  fatLineMaterials.forEach(function(m){ m.resolution.set(rw, rh); });
+}
 
 function applyGridAlpha(){
   matRefs.hGrid.forEach(function(r){ r.material.opacity = r.base * state.gridAlpha.h; });
@@ -824,12 +880,69 @@ function applyGridAlpha(){
   requestRender();
 }
 function applyDisplayVisibility(){
-  if(hGridGroup) hGridGroup.visible = !!state.display.hGrid;
+  // "|| highlightKey===..." previews an OFF layer while its toggle is hovered/focused (Task C)
+  const hk = state.highlightKey;
+  if(hGridGroup) hGridGroup.visible = !!state.display.hGrid || hk === "hGrid";
   if(equatorialGroup){
-    equatorialGroup.userData.eGridPart.visible = !!state.display.eGrid;
-    equatorialGroup.userData.equinoxPart.visible = !!state.display.eGrid;
+    equatorialGroup.userData.eGridPart.visible = !!state.display.eGrid || hk === "eGrid";
+    equatorialGroup.userData.equinoxPart.visible = !!state.display.eGrid || hk === "eGrid";
   }
-  if(diurnalGroup) diurnalGroup.visible = !!state.display.diurnal;
+  if(diurnalGroup) diurnalGroup.visible = !!state.display.diurnal || hk === "diurnal";
+  requestRender();
+}
+
+/* =========================================================================
+   TASK C — DISPLAY-TOGGLE HOVER/FOCUS HIGHLIGHT
+   state.highlightKey names the toggle currently hovered/focused (or null).
+   applyHighlight() is the single place that turns that into material changes:
+   the hovered layer's opacity is scaled up (x1.6, capped at 1) and its Line2
+   linewidth x1.4; every other layer's opacity drops to 35%; if the hovered
+   layer's own toggle is OFF, it is instead shown as a 50%-opacity preview
+   (made visible by the "|| highlightKey===..." checks added to
+   applyDisplayVisibility()/updateDynamicArcs()/updateTriangle() above).
+   Every material's TRUE normal opacity is looked up fresh each call (matRefs'
+   stored .base, x state.gridAlpha for the two grids; a literal for everything
+   else, matching that object's own construction call) rather than derived
+   from the material's current (possibly already-scaled) .opacity — so
+   repeated hovers never compound and leaving always restores exactly.
+   ========================================================================= */
+function highlightOpacity(base, group, hk){
+  if(!hk) return base;
+  if(group === hk) return state.display[hk] ? Math.min(1, base*1.6) : base*0.5;
+  return base*0.35;
+}
+function setHighlightedOpacity(material, base, group, hk, baseLinewidth){
+  material.opacity = highlightOpacity(base, group, hk);
+  if(baseLinewidth != null){
+    material.linewidth = baseLinewidth * ((hk && group === hk) ? 1.4 : 1);
+  }
+}
+function applyHighlight(){
+  if(!equatorialGroup) return; // scene not built yet
+  const hk = state.highlightKey;
+
+  matRefs.hGrid.forEach(function(r){ setHighlightedOpacity(r.material, r.base*state.gridAlpha.h, "hGrid", hk); });
+  matRefs.eGrid.forEach(function(r){ setHighlightedOpacity(r.material, r.base*state.gridAlpha.e, "eGrid", hk); });
+
+  diurnalGroup.children.forEach(function(o){
+    if(o.material && o.material.userData && o.material.userData.baseOpacity != null){
+      setHighlightedOpacity(o.material, o.material.userData.baseOpacity, "diurnal", hk);
+    }
+  });
+
+  [arcAz, arcAlt, arcDec, arcH, arcRA, starHourCircle].forEach(function(o){
+    setHighlightedOpacity(o.material, o.baseOpacity, "arcs", hk, o.baseLinewidth);
+  });
+  [arrowAz, arrowH].forEach(function(mesh){ setHighlightedOpacity(mesh.material, 1, "arcs", hk); });
+
+  [sideZP, sidePS, sideZS].forEach(function(o){
+    setHighlightedOpacity(o.material, o.baseOpacity, "triangle", hk, o.baseLinewidth);
+  });
+  setHighlightedOpacity(triFill.material, 0.10, "triangle", hk);
+  [angleArcA, angleArcH, angleArcQ].forEach(function(o){ setHighlightedOpacity(o.line.material, 0.8, "triangle", hk); });
+
+  labelRegistry.forEach(function(spr){ setHighlightedOpacity(spr.material, 1, "labels", hk); });
+
   requestRender();
 }
 
@@ -851,6 +964,61 @@ function makeLineStrip(points, colorInt, opacity, dashed){
     line = new THREE.Line(geo, mat);
   }
   return { line:line, material:mat };
+}
+
+/* ---- fat-line (Line2) constructors, parallel to makeLineLoop/makeLineStrip/
+   makeDynamicLine above. `linewidthPx` is a CSS-pixel screen-space width
+   (worldUnits:false). Raw variants build the Line2/LineMaterial/LineGeometry
+   trio without adding it to the scene (the caller places it, e.g. as a child
+   of a group that gets re-oriented as a whole); the "Loop"/"Strip"/"Dynamic"
+   wrappers mirror the thin-line helpers' own conventions. */
+function makeFatLineRaw(colorInt, opacity, linewidthPx, dashed, capacityPts){
+  const cap = capacityPts || (ARC_N+1);
+  const positions = new Float32Array(cap*3);
+  const geo = new LineGeometry();
+  geo.setPositions(positions); // degenerate seed; real points arrive via setLinePoints() before first visible use
+  const mat = new LineMaterial({
+    color: colorInt, linewidth: linewidthPx, transparent: true, opacity: opacity,
+    worldUnits: false, depthWrite: false, dashed: !!dashed
+  });
+  if(dashed){ mat.dashSize = 0.035; mat.gapSize = 0.025; }
+  mat.resolution.set(state.mainW||1, state.mainH||1);
+  const line = new Line2(geo, mat);
+  line.frustumCulled = false;
+  fatLineMaterials.push(mat);
+  return { line:line, geo:geo, material:mat, positions:positions, capacity:cap,
+           dashed:!!dashed, fat:true, baseOpacity:opacity, baseLinewidth:linewidthPx };
+}
+function makeFatDynamicLine(colorInt, opacity, linewidthPx, dashed, capacityPts){
+  const obj = makeFatLineRaw(colorInt, opacity, linewidthPx, dashed, capacityPts);
+  scene.add(obj.line); // dynamic arcs/sides are recomputed directly in world space every update
+  return obj;
+}
+function fatFlatFromPoints(points){
+  const flat = new Float32Array(points.length*3);
+  for(let i=0;i<points.length;i++){ flat[i*3]=points[i].x; flat[i*3+1]=points[i].y; flat[i*3+2]=points[i].z; }
+  return flat;
+}
+function makeFatLineLoop(points, colorInt, opacity, linewidthPx){
+  const closed = points.concat([points[0]]);
+  const geo = new LineGeometry();
+  geo.setPositions(fatFlatFromPoints(closed));
+  const mat = new LineMaterial({ color:colorInt, linewidth:linewidthPx, transparent:true, opacity:opacity, worldUnits:false, depthWrite:false });
+  mat.resolution.set(state.mainW||1, state.mainH||1);
+  const line = new Line2(geo, mat);
+  line.frustumCulled = false;
+  fatLineMaterials.push(mat);
+  return { line:line, material:mat, baseOpacity:opacity, baseLinewidth:linewidthPx };
+}
+function makeFatLineStrip(points, colorInt, opacity, linewidthPx){
+  const geo = new LineGeometry();
+  geo.setPositions(fatFlatFromPoints(points));
+  const mat = new LineMaterial({ color:colorInt, linewidth:linewidthPx, transparent:true, opacity:opacity, worldUnits:false, depthWrite:false });
+  mat.resolution.set(state.mainW||1, state.mainH||1);
+  const line = new Line2(geo, mat);
+  line.frustumCulled = false;
+  fatLineMaterials.push(mat);
+  return { line:line, material:mat, baseOpacity:opacity, baseLinewidth:linewidthPx };
 }
 
 /* ---- label sprites: text is fixed per label (never changes per frame), so
@@ -990,6 +1158,15 @@ function initThreeScene(){
   buildDynamicArcsGroup();   // defined in the DYNAMIC ARCS section below
   buildTriangleGroup();      // defined in the TRIANGLE section below
 
+  // seed the fat-line (Line2) resolution uniform from the panel's current
+  // size right away, so the very first frame isn't drawn with the
+  // LineMaterial default (1,1) resolution before the first ResizeObserver
+  // callback fires (setupGLResize() keeps it in sync from here on)
+  {
+    const rect0 = glCanvas.getBoundingClientRect();
+    updateFatLineResolution(Math.round(rect0.width), Math.round(rect0.height));
+  }
+
   resetCameraView();
   wireCameraControls();
 }
@@ -1077,8 +1254,8 @@ function buildStaticScene(){
   const nseg = 60;
   for(let i=0;i<=nseg;i++) upperPts.push(meridianPoint((i/nseg)*180));
   for(let i=0;i<=nseg;i++) lowerPts.push(meridianPoint(180 + (i/nseg)*180));
-  meridianGroup.add(makeLineStrip(upperPts, 0x979ea6, 0.5, false).line);
-  meridianGroup.add(makeLineStrip(lowerPts, 0x979ea6, 0.18, false).line);
+  meridianGroup.add(makeFatLineStrip(upperPts, 0x979ea6, 0.5, 2.5).line);
+  meridianGroup.add(makeFatLineStrip(lowerPts, 0x979ea6, 0.18, 2.5).line);
 }
 
 function buildEquatorialGroup(){
@@ -1093,9 +1270,11 @@ function buildEquatorialGroup(){
   equatorialGroup.userData = { eGridPart:eGridPart, polarAxisPart:polarAxisPart, equinoxPart:equinoxPart, starPart:starPart };
 
   // celestial equator — the brightest grid element, but still well below the
-  // coordinate-arc opacities (~1.0) so the didactic arcs stay dominant
+  // coordinate-arc opacities (~1.0) so the didactic arcs stay dominant; drawn
+  // as a fat (2.5px) Line2 so it reads as a named reference circle, distinct
+  // from the thin declination/hour-circle grid lines around it
   {
-    const r = makeLineLoop(nativeSmallCirclePoints(0), COLORI.amber, 0.45);
+    const r = makeFatLineLoop(nativeSmallCirclePoints(0), COLORI.amber, 0.45, 2.5);
     eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base:0.45 });
   }
   // declination circles +-30, +-60
@@ -1139,6 +1318,16 @@ function buildEquatorialGroup(){
     lab.position.copy(p.clone().multiplyScalar(1.13));
     equinoxPart.add(dot, lab);
   }
+
+  // the star's own hour circle: the great circle through both celestial poles
+  // at the star's native RA (fixed in the equatorial frame, so — unlike the
+  // diurnal circle below — it needs no per-LST rebuild, just a child of
+  // equatorialGroup like the rest of this group's contents). Rebuilt only
+  // when the star's RA changes (updateStarInGroup); shown/hidden alongside
+  // the coordinate arcs (state.display.arcs) since it is part of the same
+  // "star's own coordinates" didactic layer — see updateDynamicArcs().
+  starHourCircle = makeFatLineRaw(COLORI.amber, 0.6, 2.5, false, CIRCLE_N+1);
+  equatorialGroup.add(starHourCircle.line);
 
   // diurnal circle lives in world space (see rebuildDiurnalCircle) — NOT a
   // child of equatorialGroup, since it does not rotate with LST
@@ -1221,6 +1410,11 @@ function updateStarInGroup(){
   const starLabelMul = (distFromElevatedPole <= 3) ? 0.831 : 1.169;
   starLabel.position.copy(p.clone().multiplyScalar(starLabelMul));
 
+  // star's hour circle: full great circle through both native poles at the
+  // star's current RA — depends only on RA (not dec/phi/LST), so it is
+  // rebuilt here (on star/RA change) rather than per animation frame
+  setLinePoints(starHourCircle, nativeHourCirclePoints(state.ra*15, CIRCLE_N));
+
   rebuildDiurnalCircle();
   requestRender();
 }
@@ -1271,9 +1465,15 @@ function rebuildDiurnalCircle(){
     runs.pop();
   }
   runs.forEach(function(run){
+    const baseOp = run.above ? 0.55 : 0.22;
     const r = run.above
-      ? makeLineStrip(run.pts, COLORI.amber, 0.55, false)
-      : makeLineStrip(run.pts, COLORI.amber, 0.22, true);
+      ? makeLineStrip(run.pts, COLORI.amber, baseOp, false)
+      : makeLineStrip(run.pts, COLORI.amber, baseOp, true);
+    // this group is dispose+recreated on every phi/dec change (unlike matRefs'
+    // static grid materials), so the hover-highlight system (applyHighlight())
+    // reads each material's own true base opacity back off it directly here
+    // rather than keeping a separate registry that would go stale on rebuild
+    r.material.userData.baseOpacity = baseOp;
     diurnalGroup.add(r.line);
   });
   // rise/set tick marks, if they exist
@@ -1391,7 +1591,8 @@ let labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj;
 let hlstAlpha, hlstH, hlstLst;
 let hlstAlphaArrow, hlstHArrow, hlstLstArrow;
 let hlstAlphaLabel, hlstHLabel, hlstLstLabel;
-const coneGeoShared = new THREE.ConeGeometry(0.012, 0.044, 8);
+// scaled ~1.3x (from 0.012/0.044) so the arrowheads match the now-thicker (Task B) fat-line arcs
+const coneGeoShared = new THREE.ConeGeometry(0.012*1.3, 0.044*1.3, 8);
 
 function makeDynamicLine(colorInt, opacity, dashed, capacity){
   const cap = capacity || (ARC_N+1);
@@ -1420,7 +1621,7 @@ function setLinePoints(obj, pts){
   for(let i=0;i<n;i++){
     const p = pts[i];
     arr[i*3]=p.x; arr[i*3+1]=p.y; arr[i*3+2]=p.z;
-    if(obj.dashed){
+    if(obj.dashed && !obj.fat){
       if(i>0){
         const dx=p.x-pts[i-1].x, dy=p.y-pts[i-1].y, dz=p.z-pts[i-1].z;
         cum += Math.sqrt(dx*dx+dy*dy+dz*dz);
@@ -1428,12 +1629,22 @@ function setLinePoints(obj, pts){
       obj.distArr[i] = cum;
     }
   }
-  obj.geo.attributes.position.needsUpdate = true;
-  if(obj.dashed) obj.geo.attributes.lineDistance.needsUpdate = true;
-  obj.geo.setDrawRange(0, n);
+  if(obj.fat){
+    // Line2/LineGeometry: setPositions() builds a fresh instanced buffer sized
+    // to the array passed in, so pass only the first n*3 valid floats — this
+    // IS how a fat line's "active length" is controlled (there's no drawRange
+    // equivalent to the thin-line path below). Cheap at our arc sizes (<=121 pts).
+    const nn = Math.max(2, n);
+    obj.geo.setPositions(arr.subarray(0, nn*3));
+    if(obj.dashed) obj.line.computeLineDistances();
+  } else {
+    obj.geo.attributes.position.needsUpdate = true;
+    if(obj.dashed) obj.geo.attributes.lineDistance.needsUpdate = true;
+    obj.geo.setDrawRange(0, n);
+  }
 }
 function makeArrowCone(colorInt){
-  const mesh = new THREE.Mesh(coneGeoShared, new THREE.MeshBasicMaterial({ color:colorInt }));
+  const mesh = new THREE.Mesh(coneGeoShared, new THREE.MeshBasicMaterial({ color:colorInt, transparent:true, opacity:1 }));
   scene.add(mesh);
   return mesh;
 }
@@ -1466,11 +1677,11 @@ const ARC_LIFT = 1.012;
 function liftedThree(v){ return toThreeVec3(v).multiplyScalar(ARC_LIFT); }
 
 function buildDynamicArcsGroup(){
-  arcAz  = makeDynamicLine(COLORI.cyan, 1.0, false);
-  arcAlt = makeDynamicLine(COLORI.cyan, 1.0, false);
-  arcDec = makeDynamicLine(COLORI.amber, 1.0, false);
-  arcH   = makeDynamicLine(COLORI.magenta, 1.0, false);
-  arcRA  = makeDynamicLine(COLORI.amber, 0.95, true);
+  arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 3.5, false);
+  arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 3.5, false);
+  arcDec = makeFatDynamicLine(COLORI.amber, 1.0, 3.5, false);
+  arcH   = makeFatDynamicLine(COLORI.magenta, 1.0, 3.5, false);
+  arcRA  = makeFatDynamicLine(COLORI.amber, 0.95, 3.5, true);
   arrowAz = makeArrowCone(COLORI.cyan);
   arrowH  = makeArrowCone(COLORI.magenta);
   labelAObj   = makeTextSprite("Az", COLORS.cyan, { math:true, upright:true, pixelHeight:18 });
@@ -1480,9 +1691,9 @@ function buildDynamicArcsGroup(){
   labelRAObj  = makeTextSprite("α", COLORS.amber, { math:true, pixelHeight:18 });
   scene.add(labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj);
 
-  hlstAlpha = makeDynamicLine(COLORI.amber, 1.0, false);
-  hlstH     = makeDynamicLine(COLORI.magenta, 1.0, false);
-  hlstLst   = makeDynamicLine(COLORI.cyan, 1.0, false);
+  hlstAlpha = makeFatDynamicLine(COLORI.amber, 1.0, 3.5, false);
+  hlstH     = makeFatDynamicLine(COLORI.magenta, 1.0, 3.5, false);
+  hlstLst   = makeFatDynamicLine(COLORI.cyan, 1.0, 3.5, false);
   hlstAlphaArrow = makeArrowCone(COLORI.amber);
   hlstHArrow     = makeArrowCone(COLORI.magenta);
   hlstLstArrow   = makeArrowCone(COLORI.cyan);
@@ -1494,9 +1705,10 @@ function buildDynamicArcsGroup(){
 
 function updateDynamicArcs(){
   const d = state.derived;
-  const showArcs = state.tab !== "hlst" && !!state.display.arcs;
+  // "|| highlightKey===..." previews an OFF layer at hover/focus time (Task C)
+  const showArcs = state.tab !== "hlst" && (!!state.display.arcs || state.highlightKey === "arcs");
   const showHlst = state.tab === "hlst";
-  const showLabels = !!state.display.labels;
+  const showLabels = !!state.display.labels || state.highlightKey === "labels";
 
   if(showArcs){
     let pts = [];
@@ -1529,9 +1741,12 @@ function updateDynamicArcs(){
     }
     setLinePoints(arcRA, pts); arcRA.line.visible = true;
     labelAtMid(labelRAObj, pts); labelRAObj.visible = showLabels;
+
+    starHourCircle.line.visible = true;
   } else {
     hideAll([arcAz.line, arcAlt.line, arcDec.line, arcH.line, arcRA.line,
-             arrowAz, arrowH, labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj]);
+             arrowAz, arrowH, labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj,
+             starHourCircle.line]);
   }
 
   if(showHlst){
@@ -1562,6 +1777,7 @@ function updateDynamicArcs(){
   }
 
   updateTriangle();
+  applyHighlight();
   requestRender();
 }
 
@@ -1586,9 +1802,9 @@ function threeArc(A, B, n){
 }
 
 function buildTriangleGroup(){
-  sideZP = makeDynamicLine(COLORI.text, 0.85, false);
-  sidePS = makeDynamicLine(COLORI.amber, 0.85, false);
-  sideZS = makeDynamicLine(COLORI.cyan, 0.85, false);
+  sideZP = makeFatDynamicLine(COLORI.text, 0.85, 3.0, false);
+  sidePS = makeFatDynamicLine(COLORI.amber, 0.85, 3.0, false);
+  sideZS = makeFatDynamicLine(COLORI.cyan, 0.85, 3.0, false);
 
   const fanCap = 3*ARC_N; // triangles in the boundary fan
   triFillPositions = new Float32Array(fanCap*3*3);
@@ -1659,7 +1875,8 @@ function triangleSideLabel(sprite, pts, centroid, offsetScale){
 }
 
 function updateTriangle(){
-  const on = state.tab === "triangle" && !!state.display.triangle;
+  // "|| highlightKey==='triangle'" previews the layer at hover/focus when it's off (Task C)
+  const on = state.tab === "triangle" && (!!state.display.triangle || state.highlightKey === "triangle");
   const allObjs = [sideZP.line, sidePS.line, sideZS.line, triFill,
                     triLabelZP, triLabelPS, triLabelZS,
                     angleLabelH, angleLabelA, angleLabelQ,
@@ -1700,7 +1917,7 @@ function updateTriangle(){
   triFill.geometry.setDrawRange(0, useTri*3);
   triFill.visible = true;
 
-  const showLabels = !!state.display.labels;
+  const showLabels = !!state.display.labels || state.highlightKey === "labels";
   triangleSideLabel(triLabelZP, zp, C, 0.17); triLabelZP.visible = showLabels;
   triangleSideLabel(triLabelPS, ps, C, 0.17); triLabelPS.visible = showLabels;
   triangleSideLabel(triLabelZS, zs, C, 0.17); triLabelZS.visible = showLabels;
@@ -2190,7 +2407,68 @@ function wireStar(){
   });
 }
 
+/* Task C tooltip texts, verbatim (symbols wrapped in <span class="math">) */
+const TOGGLE_TIPS = {
+  hGrid: "Elevation circles and azimuth arcs fixed to your horizon — the observer's own grid. Cyan.",
+  eGrid: "Declination circles and hour circles fixed to the stars, turning with sidereal time. Amber.",
+  diurnal: "The star's daily path: a circle of constant declination about the celestial pole.",
+  arcs: 'The star\'s coordinates drawn as arcs: <span class="math">Az</span> and <span class="math">El</span> in cyan, <span class="math">&delta;</span> and <span class="math">&alpha;</span> in amber, hour angle <span class="math">h</span> in magenta.',
+  triangle: "The spherical triangle zenith–pole–star whose sides and angles convert between the two systems.",
+  labels: "Names and symbols for points, arcs and cardinal directions."
+};
+
 function wireDisplayToggles(){
+  const tip = document.getElementById("sharedTip");
+  const coarsePointer = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  let showTimer = null;
+
+  function reapplyHighlightLayer(){
+    // mirrors the click handler's own update sequence (minus the toggle's own
+    // state.display flip) so a hovered/focused OFF layer previews correctly
+    applyDisplayVisibility(); // also calls requestRender()
+    updateDynamicArcs();      // also updates the triangle + applyHighlight()
+  }
+
+  function hideTip(){
+    if(showTimer != null){ clearTimeout(showTimer); showTimer = null; }
+    tip.classList.remove("visible");
+    tip.hidden = true;
+  }
+  function positionTip(btn){
+    const r = btn.getBoundingClientRect();
+    const stacked = window.innerWidth <= 900;
+    tip.classList.toggle("tip-below", stacked);
+    if(stacked){
+      tip.style.left = clamp(r.left, 8, window.innerWidth - 248) + "px";
+      tip.style.top = (r.bottom + 8) + "px";
+    } else {
+      tip.style.left = (r.right + 10) + "px";
+      tip.style.top = (r.top + r.height/2) + "px";
+    }
+  }
+  function showTip(btn){
+    tip.innerHTML = TOGGLE_TIPS[btn.dataset.key] || "";
+    tip.hidden = false;
+    positionTip(btn);
+    btn.setAttribute("aria-describedby", "sharedTip");
+    requestAnimationFrame(function(){ tip.classList.add("visible"); }); // let 'hidden' removal land before animating in
+  }
+  function scheduleShowTip(btn){
+    if(coarsePointer) return; // "no tooltip on coarse pointers (touch), only the highlight on focus"
+    if(showTimer != null) clearTimeout(showTimer);
+    showTimer = setTimeout(function(){ showTimer = null; showTip(btn); }, 120);
+  }
+  function enterHighlight(btn){
+    state.highlightKey = btn.dataset.key;
+    reapplyHighlightLayer();
+  }
+  function leaveHighlight(btn){
+    state.highlightKey = null;
+    reapplyHighlightLayer();
+    hideTip();
+    btn.removeAttribute("aria-describedby");
+  }
+
   document.querySelectorAll(".toggle").forEach(function(btn){
     btn.addEventListener("click", function(){
       const key = btn.dataset.key;
@@ -2201,7 +2479,23 @@ function wireDisplayToggles(){
       state.stripDirty = true;
       requestRender();
     });
+    btn.addEventListener("pointerenter", function(ev){
+      if(ev.pointerType === "touch") return;
+      enterHighlight(btn);
+      scheduleShowTip(btn);
+    });
+    btn.addEventListener("pointerleave", function(){ leaveHighlight(btn); });
+    btn.addEventListener("focus", function(){
+      enterHighlight(btn);
+      scheduleShowTip(btn); // no-op on coarse pointers -- "only the highlight on focus"
+    });
+    btn.addEventListener("blur", function(){ leaveHighlight(btn); });
+    btn.addEventListener("keydown", function(ev){
+      if(ev.key === "Escape") btn.blur(); // triggers leaveHighlight() via the blur handler above
+    });
   });
+
+  window.addEventListener("resize", function(){ if(!tip.hidden) hideTip(); });
 }
 
 function wireStripModeToggle(){
@@ -2286,6 +2580,7 @@ function switchTab(tabId){
   onObserverOrStarChanged();
   applyDisplayVisibility();
   applyGridAlpha();
+  applyHighlight(); // re-applies on top of applyGridAlpha() in case a toggle is mid-hover during a tab switch
   // force an immediate synchronous paint of the new tab's state rather than
   // relying on startLoop()'s first rAF tick (which can be delayed by
   // throttling when the tab/page isn't the foreground-visible one) — a tab
@@ -2373,10 +2668,23 @@ function resizeOverlayCanvas(w, h){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   state.overlayW = w; state.overlayH = h;
 }
+/* setupGLResize/setupStripResize: while a splitter drag is in progress
+   (state.splitterDragging), skip the expensive reallocate-and-render path —
+   renderer.setSize() reallocates the retina WebGL backing store,
+   resizeOverlayCanvas()/the strip canvas reallocate their own backing
+   stores, and updateSpriteScales()+render() walk the whole scene; doing all
+   of that on every pointermove is what froze the page (Task A). Instead just
+   record the pending size; the canvases stretch via CSS in the meantime
+   (soft/blurry, briefly), and finishSplitterResize() performs this exact
+   path once, on drag end. */
 function setupGLResize(){
   const ro = new ResizeObserver(function(){
     const rect = glCanvas.getBoundingClientRect();
     const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
+    if(state.splitterDragging){
+      state.pendingMainW = w; state.pendingMainH = h;
+      return;
+    }
     state.mainW = w; state.mainH = h;
     if(state.webglOK && renderer){
       renderer.setSize(w, h, false);
@@ -2384,6 +2692,7 @@ function setupGLResize(){
       camera.updateProjectionMatrix();
     }
     updateSpriteScales(); // label pixel sizes depend on camera.fov + CSS height, both fixed except on resize
+    updateFatLineResolution(w, h); // Line2/LineMaterial screen-space width needs the CSS-pixel resolution
     if(state.cam.isDefault){
       // panel size/aspect changed while still at the default view -- re-fit rather than
       // leaving a manually-untouched camera looking wrong after e.g. a window resize
@@ -2402,6 +2711,10 @@ function setupStripResize(){
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     const cw = Math.max(1, Math.round(rect.width)), ch = Math.max(1, Math.round(rect.height));
+    if(state.splitterDragging){
+      state.pendingStripW = cw; state.pendingStripH = ch;
+      return;
+    }
     canvas.width = cw*dpr; canvas.height = ch*dpr;
     ctx.setTransform(dpr,0,0,dpr,0,0);
     state.stripW = cw; state.stripH = ch;
@@ -2409,6 +2722,43 @@ function setupStripResize(){
     requestRender();
   });
   ro.observe(canvas);
+}
+
+/* Performed once, on splitter drag end: the full resize path that
+   setupGLResize/setupStripResize skipped while state.splitterDragging was
+   true. Re-reads the panels' current CSS size directly (rather than trusting
+   state.pending*, in case a resize observer never got a chance to fire
+   mid-drag) so the final buffers always match the final layout exactly. */
+function finishSplitterResize(){
+  if(glCanvas){
+    const rect = glCanvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
+    state.mainW = w; state.mainH = h;
+    if(state.webglOK && renderer){
+      renderer.setSize(w, h, false);
+      camera.aspect = w / (h || 1);
+      camera.updateProjectionMatrix();
+    }
+    updateSpriteScales();
+    updateFatLineResolution(w, h);
+    if(state.cam.isDefault){
+      state.cam.radius = computeDefaultRadius();
+      applyCameraFromState();
+    }
+    resizeOverlayCanvas(w, h);
+  }
+  const stripCanvas = document.getElementById("stripCanvas");
+  if(stripCanvas){
+    const srect = stripCanvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.max(1, Math.round(srect.width)), ch = Math.max(1, Math.round(srect.height));
+    stripCanvas.width = cw*dpr; stripCanvas.height = ch*dpr;
+    stripCanvas.getContext("2d").setTransform(dpr,0,0,dpr,0,0);
+    state.stripW = cw; state.stripH = ch;
+  }
+  state.pendingMainW = state.pendingMainH = state.pendingStripW = state.pendingStripH = null;
+  state.stripDirty = true;
+  requestRender();
 }
 
 let railWidth = 300, stripPanelHeight = 190;
@@ -2420,17 +2770,78 @@ function applyStripHeight(px){
   stripPanelHeight = clamp(px, 120, 320);
   document.querySelector(".workspace").style.setProperty("--strip-h", stripPanelHeight+"px");
 }
+
+/* =========================================================================
+   Splitter drag (Task A): pointermove used to call opts.setSize() directly,
+   dozens of times per second, each one changing a CSS grid variable that
+   triggers the GL/strip ResizeObservers above -- on this page that meant a
+   full WebGL buffer reallocation + label rescale + overlay/strip canvas
+   reallocation + render, dozens of times a second, which saturated the main
+   thread and froze the page mid-drag (pointerup was then never processed,
+   leaving body.resizing-* latched with the resize cursor stuck on).
+   Fix: pointermove only records the latest pointer position and schedules
+   ONE requestAnimationFrame; that rAF callback is the only thing that calls
+   opts.setSize(). state.splitterDragging (true from pointerdown to drag end)
+   lets setupGLResize/setupStripResize skip their own heavy work entirely
+   while a drag is in progress (see above); finishSplitterResize() performs
+   it once, exactly on drag end.
+   Safety nets so a drag can never latch: pointerdown is ignored unless it's
+   the primary mouse button (or a touch/pen contact); the drag ends on
+   pointerup/pointercancel/lostpointercapture on the element, on a
+   window-level pointerup (capture phase, so it fires even if some other
+   handler stops propagation first), and on window blur (e.g. alt-tab away
+   mid-drag) -- and ending a drag always clears the .dragging class and BOTH
+   body.resizing-* classes, even if releasePointerCapture throws. ---- */
 function setupSplitter(el, opts){
-  let dragging = false, startPos = 0, startSize = 0;
+  let dragging = false, startPos = 0, startSize = 0, activePointerId = null;
+  let pendingPos = null, rafScheduled = false;
+
   function updateAria(){
     el.setAttribute("aria-valuemin", String(opts.min));
     el.setAttribute("aria-valuemax", String(opts.max));
     el.setAttribute("aria-valuenow", String(Math.round(opts.getSize())));
   }
   updateAria();
+
+  function applyPending(){
+    rafScheduled = false;
+    if(pendingPos == null) return;
+    const pos = pendingPos;
+    pendingPos = null;
+    let delta = pos - startPos;
+    if(opts.invert) delta = -delta;
+    opts.setSize(clamp(startSize + delta, opts.min, opts.max));
+    updateAria();
+  }
+  function scheduleApply(pos){
+    pendingPos = pos;
+    if(!rafScheduled){
+      rafScheduled = true;
+      requestAnimationFrame(applyPending);
+    }
+  }
+
+  function endDrag(){
+    const wasDragging = dragging;
+    dragging = false;
+    state.splitterDragging = false;
+    pendingPos = null;
+    if(activePointerId != null){
+      try{ el.releasePointerCapture(activePointerId); }catch(e){ /* already released/invalid -- ignore */ }
+      activePointerId = null;
+    }
+    el.classList.remove("dragging");
+    document.body.classList.remove("resizing-col");
+    document.body.classList.remove("resizing-row");
+    if(wasDragging && opts.onDragEnd) opts.onDragEnd();
+  }
+
   el.addEventListener("pointerdown", function(ev){
+    if(ev.button !== 0 && ev.pointerType !== "touch" && ev.pointerType !== "pen") return;
     dragging = true;
-    try{ el.setPointerCapture(ev.pointerId); }catch(e){}
+    state.splitterDragging = true;
+    activePointerId = ev.pointerId;
+    try{ el.setPointerCapture(ev.pointerId); }catch(e){ /* ignore */ }
     startPos = opts.axis === "x" ? ev.clientX : ev.clientY;
     startSize = opts.getSize();
     el.classList.add("dragging");
@@ -2439,25 +2850,14 @@ function setupSplitter(el, opts){
   });
   el.addEventListener("pointermove", function(ev){
     if(!dragging) return;
-    const pos = opts.axis === "x" ? ev.clientX : ev.clientY;
-    let delta = pos - startPos;
-    if(opts.invert) delta = -delta;
-    opts.setSize(clamp(startSize + delta, opts.min, opts.max));
-    updateAria();
-    // the CSS var change reflows the canvases and their ResizeObservers will fire
-    // (each already calls requestRender()), but schedule one directly too so a
-    // slow/batched observer callback never leaves a stale frame showing mid-drag
-    requestRender();
+    scheduleApply(opts.axis === "x" ? ev.clientX : ev.clientY);
   });
-  function endDrag(ev){
-    if(!dragging) return;
-    dragging = false;
-    try{ el.releasePointerCapture(ev.pointerId); }catch(e){}
-    el.classList.remove("dragging");
-    document.body.classList.remove(opts.axis === "x" ? "resizing-col" : "resizing-row");
-  }
   el.addEventListener("pointerup", endDrag);
   el.addEventListener("pointercancel", endDrag);
+  el.addEventListener("lostpointercapture", endDrag);
+  window.addEventListener("pointerup", endDrag, true); // capture phase: fires even if some other handler stops propagation
+  window.addEventListener("blur", endDrag);
+
   el.addEventListener("keydown", function(ev){
     const step = 10;
     let dirKey = null;
@@ -2474,8 +2874,8 @@ function setupSplitter(el, opts){
   });
 }
 function wireSplitters(){
-  setupSplitter(document.getElementById("vSplitter"), { axis:"x", invert:false, min:230, max:420, getSize:function(){ return railWidth; }, setSize:applyRailWidth });
-  setupSplitter(document.getElementById("hSplitter"), { axis:"y", invert:true, min:120, max:320, getSize:function(){ return stripPanelHeight; }, setSize:applyStripHeight });
+  setupSplitter(document.getElementById("vSplitter"), { axis:"x", invert:false, min:230, max:420, getSize:function(){ return railWidth; }, setSize:applyRailWidth, onDragEnd:finishSplitterResize });
+  setupSplitter(document.getElementById("hSplitter"), { axis:"y", invert:true, min:120, max:320, getSize:function(){ return stripPanelHeight; }, setSize:applyStripHeight, onDragEnd:finishSplitterResize });
 }
 
 /* =========================================================================
@@ -2554,6 +2954,9 @@ function init(){
   setupStripResize();
 
   switchTab(state.tab); // seeds all controls/about/formulas and renders once
+
+  const requestedTab = new URLSearchParams(location.search).get("tab");
+  if(requestedTab && TAB_CONFIG[requestedTab]) switchTab(requestedTab);
 }
 
 if(document.readyState === "loading"){

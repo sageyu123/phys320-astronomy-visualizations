@@ -102,7 +102,7 @@
   }
 
   /* ---------- movable splitters ---------- */
-  .splitter{ position:relative; background:transparent; z-index:2; }
+  .splitter{ position:relative; background:transparent; z-index:2; touch-action:none; }
   .splitter::after{
     content:""; position:absolute; background:var(--cyan); opacity:0; border-radius:2px;
     transition:opacity .12s ease;
@@ -192,6 +192,32 @@
   .toggle .dot{ width:8px; height:8px; border-radius:50%; background:var(--border-strong); flex:0 0 auto; }
   .toggle[aria-pressed="true"]{ background:var(--cyan); color:var(--on-accent); border-color:var(--cyan); font-weight:600; }
   .toggle[aria-pressed="true"] .dot{ background:var(--on-accent); }
+
+  /* ---------- shared tooltip (Display card toggles) ---------- */
+  .tip{
+    position:fixed; z-index:50; max-width:240px;
+    background:color-mix(in srgb, var(--cyan) 8%, var(--panel));
+    border:1px solid color-mix(in srgb, var(--cyan) 35%, var(--border));
+    border-radius:6px; padding:8px 10px; font-size:11.5px; line-height:1.4;
+    color:var(--text); box-shadow:0 8px 24px rgb(0 0 0/25%);
+    pointer-events:none; opacity:0; transform:translateY(-50%) translateX(-4px);
+    transition:opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible{ opacity:1; transform:translateY(-50%) translateX(0); }
+  .tip .math{ font-family:"STIX Two Math","Cambria Math","Times New Roman",serif; font-style:italic; }
+  .tip::after{
+    content:""; position:absolute; width:6px; height:6px;
+    background:inherit; border:inherit; border-right:none; border-top:none;
+    top:50%; left:-4px; transform:translateY(-50%) rotate(45deg);
+  }
+  .tip.tip-below{ transform:translateY(4px); }
+  .tip.tip-below.visible{ transform:translateY(0); }
+  .tip.tip-below::after{
+    top:-4px; left:16px; transform:rotate(135deg);
+  }
+  @media (prefers-reduced-motion: reduce){
+    .tip{ transition:none; }
+  }
 
   /* ---------- about card ---------- */
   .about h3{ font-size:12px; font-weight:700; margin:0 0 8px; }
@@ -338,6 +364,8 @@
   </div>
 </div>
 
+<div class="tip" role="tooltip" id="sharedTip" hidden></div>
+
 <script>
 (function(){
 "use strict";
@@ -372,6 +400,27 @@ function hexToRgb(hex){
   return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
 }
 function hexAlpha(hex, a){ const c = hexToRgb(hex); return "rgba("+c.r+","+c.g+","+c.b+","+a+")"; }
+function mixWhite(hex, t){ // blend a hex color toward white by fraction t -- used for the Labels hover "brighter" treatment
+  const c = hexToRgb(hex);
+  const r = Math.round(c.r + (255-c.r)*t), g = Math.round(c.g + (255-c.g)*t), b = Math.round(c.b + (255-c.b)*t);
+  return "rgb("+r+","+g+","+b+")";
+}
+
+/* Task C: hover/focus highlight style for one Display-toggle layer (trace,
+   markers, sight, vectors -- "labels" is handled separately in drawLabel()
+   below, since its treatment is a color/halo change rather than alpha/width).
+   .show gates whether the layer draws at all (true when its own toggle is
+   on, OR it is the currently hovered/focused OFF layer being previewed);
+   .alpha/.mul are multipliers applied on top of each shape's own normal
+   alpha/line-width/marker-size -- computed fresh from state.display/
+   state.highlightKey every call, never compounded across repeated hovers. */
+function layerStyle(key){
+  const on = !!state.display[key];
+  const hk = state.highlightKey;
+  if(!hk) return { show:on, alpha:1, mul:1 };
+  if(hk === key) return { show:true, alpha: on ? 1 : 0.5, mul:1.5 };
+  return { show:on, alpha:0.35, mul:1 };
+}
 function clamp(v,lo,hi){ return Math.min(hi, Math.max(lo, v)); }
 function norm360(d){ d = d % 360; if(d<0) d += 360; return d; }
 function wrapDiff(d){ // normalize an angle difference to (-180, 180]
@@ -780,7 +829,14 @@ const state = {
   stripDirty: true,
   mainW: 0, mainH: 0, stripW: 0, stripH: 0,
   _lastT: null, _lastDirect: null, _lastLambdaStr: null, _lastDdtStr: null,
-  _lastGeoStr: null, _lastHelioStr: null, _lastDeltaStr: null
+  _lastGeoStr: null, _lastHelioStr: null, _lastDeltaStr: null,
+  // splitter-drag flag (Task A) -- this page's own resize path is cheap (2D
+  // canvas only), so nothing gates on it besides the splitter's own rAF
+  // coalescing, but it's kept for parity/testability with the sky page
+  splitterDragging: false,
+  // Display-toggle hover/focus highlight (Task C): null, or the hovered/
+  // focused toggle's key ("trace","markers","sight","labels","vectors")
+  highlightKey: null
 };
 
 function computeModel(tab, t, params){ return TAB_CONFIG[tab].computeModel(t, params); }
@@ -1111,7 +1167,60 @@ function applyDisplayDefaults(){
   });
 }
 
+/* Task C tooltip texts, verbatim (symbols wrapped in <span class="math">) */
+const TOGGLE_TIPS = {
+  trace: "The planet's path as seen from Earth, fading with age — loops are retrograde episodes.",
+  markers: "Positions at equal time intervals: bunched where the motion is slow, spread where it is fast.",
+  sight: "The Earth–planet direction — the only thing an ancient observer could measure.",
+  labels: 'Names for Earth, the centers <span class="math">C</span> and <span class="math">D</span>, the equant <span class="math">Q</span>, and the planet.',
+  vectors: "The two commuted vectors — Sun→planet in amber, Earth→Sun in cyan — and the green line of sight."
+};
+
 function wireDisplayToggles(){
+  const tip = document.getElementById("sharedTip");
+  const coarsePointer = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  let showTimer = null;
+
+  function hideTip(){
+    if(showTimer != null){ clearTimeout(showTimer); showTimer = null; }
+    tip.classList.remove("visible");
+    tip.hidden = true;
+  }
+  function positionTip(btn){
+    const r = btn.getBoundingClientRect();
+    const stacked = window.innerWidth <= 900;
+    tip.classList.toggle("tip-below", stacked);
+    if(stacked){
+      tip.style.left = clamp(r.left, 8, window.innerWidth - 248) + "px";
+      tip.style.top = (r.bottom + 8) + "px";
+    } else {
+      tip.style.left = (r.right + 10) + "px";
+      tip.style.top = (r.top + r.height/2) + "px";
+    }
+  }
+  function showTip(btn){
+    tip.innerHTML = TOGGLE_TIPS[btn.dataset.key] || "";
+    tip.hidden = false;
+    positionTip(btn);
+    btn.setAttribute("aria-describedby", "sharedTip");
+    requestAnimationFrame(function(){ tip.classList.add("visible"); }); // let 'hidden' removal land before animating in
+  }
+  function scheduleShowTip(btn){
+    if(coarsePointer) return; // "no tooltip on coarse pointers (touch), only the highlight on focus"
+    if(showTimer != null) clearTimeout(showTimer);
+    showTimer = setTimeout(function(){ showTimer = null; showTip(btn); }, 120);
+  }
+  function enterHighlight(btn){
+    state.highlightKey = btn.dataset.key;
+    render(); // drawMain() consults state.highlightKey directly; the strip panel doesn't, so no need to mark it dirty
+  }
+  function leaveHighlight(btn){
+    state.highlightKey = null;
+    render();
+    hideTip();
+    btn.removeAttribute("aria-describedby");
+  }
+
   document.querySelectorAll(".toggle").forEach(function(btn){
     btn.addEventListener("click", function(){
       const key = btn.dataset.key;
@@ -1120,7 +1229,23 @@ function wireDisplayToggles(){
       state.stripDirty = true;
       render();
     });
+    btn.addEventListener("pointerenter", function(ev){
+      if(ev.pointerType === "touch") return;
+      enterHighlight(btn);
+      scheduleShowTip(btn);
+    });
+    btn.addEventListener("pointerleave", function(){ leaveHighlight(btn); });
+    btn.addEventListener("focus", function(){
+      enterHighlight(btn);
+      scheduleShowTip(btn); // no-op on coarse pointers -- "only the highlight on focus"
+    });
+    btn.addEventListener("blur", function(){ leaveHighlight(btn); });
+    btn.addEventListener("keydown", function(ev){
+      if(ev.key === "Escape") btn.blur(); // triggers leaveHighlight() via the blur handler above
+    });
   });
+
+  window.addEventListener("resize", function(){ if(!tip.hidden) hideTip(); });
 }
 
 function wireStripModeToggle(){
@@ -1257,8 +1382,23 @@ function applyStripHeight(px){
   document.querySelector(".workspace").style.setProperty("--strip-h", stripPanelHeight+"px");
 }
 
+/* Splitter drag (Task A): pointermove used to call opts.setSize() directly,
+   dozens of times per second while dragging -- on this page each resulting
+   CSS-grid-variable change re-triggers the main/strip canvas ResizeObservers,
+   which call render() (drawMain()+drawStrip()). That path is cheap here (2D
+   canvas, no WebGL buffer reallocation), so the fix needed on this page is
+   just the rAF coalescing: pointermove records only the latest pointer
+   position and schedules ONE requestAnimationFrame, which is the only thing
+   that calls opts.setSize(). The same safety nets as the sky page are added
+   so a drag can never latch: pointerdown is ignored unless it's the primary
+   mouse button (or a touch/pen contact); the drag ends on
+   pointerup/pointercancel/lostpointercapture on the element, on a
+   window-level pointerup (capture phase), and on window blur -- and ending a
+   drag always clears the .dragging class and BOTH body.resizing-* classes,
+   even if releasePointerCapture throws. */
 function setupSplitter(el, opts){
-  let dragging = false, startPos = 0, startSize = 0;
+  let dragging = false, startPos = 0, startSize = 0, activePointerId = null;
+  let pendingPos = null, rafScheduled = false;
 
   function updateAria(){
     el.setAttribute("aria-valuemin", String(opts.min));
@@ -1267,8 +1407,44 @@ function setupSplitter(el, opts){
   }
   updateAria();
 
+  function applyPending(){
+    rafScheduled = false;
+    if(pendingPos == null) return;
+    const pos = pendingPos;
+    pendingPos = null;
+    let delta = pos - startPos;
+    if(opts.invert) delta = -delta;
+    opts.setSize(clamp(startSize + delta, opts.min, opts.max));
+    updateAria();
+  }
+  function scheduleApply(pos){
+    pendingPos = pos;
+    if(!rafScheduled){
+      rafScheduled = true;
+      requestAnimationFrame(applyPending);
+    }
+  }
+
+  function endDrag(){
+    const wasDragging = dragging;
+    dragging = false;
+    state.splitterDragging = false;
+    pendingPos = null;
+    if(activePointerId != null){
+      try{ el.releasePointerCapture(activePointerId); }catch(e){ /* already released/invalid -- ignore */ }
+      activePointerId = null;
+    }
+    el.classList.remove("dragging");
+    document.body.classList.remove("resizing-col");
+    document.body.classList.remove("resizing-row");
+    if(wasDragging && opts.onDragEnd) opts.onDragEnd();
+  }
+
   el.addEventListener("pointerdown", function(ev){
+    if(ev.button !== 0 && ev.pointerType !== "touch" && ev.pointerType !== "pen") return;
     dragging = true;
+    state.splitterDragging = true;
+    activePointerId = ev.pointerId;
     try{ el.setPointerCapture(ev.pointerId); }catch(e){ /* ignore */ }
     startPos = opts.axis === "x" ? ev.clientX : ev.clientY;
     startSize = opts.getSize();
@@ -1278,21 +1454,13 @@ function setupSplitter(el, opts){
   });
   el.addEventListener("pointermove", function(ev){
     if(!dragging) return;
-    const pos = opts.axis === "x" ? ev.clientX : ev.clientY;
-    let delta = pos - startPos;
-    if(opts.invert) delta = -delta;
-    opts.setSize(clamp(startSize + delta, opts.min, opts.max));
-    updateAria();
+    scheduleApply(opts.axis === "x" ? ev.clientX : ev.clientY);
   });
-  function endDrag(ev){
-    if(!dragging) return;
-    dragging = false;
-    try{ el.releasePointerCapture(ev.pointerId); }catch(e){ /* ignore */ }
-    el.classList.remove("dragging");
-    document.body.classList.remove(opts.axis === "x" ? "resizing-col" : "resizing-row");
-  }
   el.addEventListener("pointerup", endDrag);
   el.addEventListener("pointercancel", endDrag);
+  el.addEventListener("lostpointercapture", endDrag);
+  window.addEventListener("pointerup", endDrag, true); // capture phase: fires even if some other handler stops propagation
+  window.addEventListener("blur", endDrag);
 
   el.addEventListener("keydown", function(ev){
     const step = 10;
@@ -1331,30 +1499,61 @@ function outwardDir(sx, sy, cx, cy){
   return { dx: vx/len, dy: vy/len };
 }
 
+/* Task C: gates on the "Labels" layer itself (state.display.labels, or a
+   hover/focus preview of it while off) and, when that layer's toggle is
+   hovered/focused, draws with a brighter color and a subtle dark halo
+   instead of the generic dim/brighten-opacity treatment used for the other
+   toggles (labels are text, not a translucent shape, so "opacity x1.6" reads
+   poorly -- a halo is the equivalent "pop" for text). When some OTHER layer
+   is hovered, labels dim to 35% alpha like every other non-hovered layer. */
+function labelsLayerStyle(){
+  const on = !!state.display.labels;
+  const hk = state.highlightKey;
+  if(!hk) return { show:on, boost:false, dimAlpha:1 };
+  if(hk === "labels") return { show:true, boost:true, dimAlpha:1 };
+  return { show:on, boost:false, dimAlpha:0.35 };
+}
 function drawLabel(ctx, sx, sy, text, dir, opts){
   opts = opts || {};
-  const color = opts.color || COLORS.text;
+  const ls = labelsLayerStyle();
+  if(!ls.show) return;
+  let color = opts.color || COLORS.text;
+  let size = opts.size || 11;
   const italic = opts.italic ? "italic " : "";
-  const size = opts.size || 11;
+  if(ls.boost){
+    color = mixWhite(color, 0.35);
+    size = size * 1.1;
+  } else if(ls.dimAlpha < 1){
+    color = hexAlpha(color, ls.dimAlpha);
+  }
   ctx.font = italic + size + "px Inter, sans-serif";
-  ctx.fillStyle = color;
   const offset = opts.offset || 11;
   const x = sx + dir.dx * offset;
   const y = sy + dir.dy * offset;
   ctx.textAlign = dir.dx > 0.15 ? "left" : (dir.dx < -0.15 ? "right" : "center");
   ctx.textBaseline = dir.dy > 0.15 ? "top" : (dir.dy < -0.15 ? "bottom" : "middle");
+  if(ls.boost){
+    ctx.save();
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(5,6,7,0.85)"; // subtle halo so the brightened text still reads over any background
+    ctx.strokeText(text, x, y);
+    ctx.restore();
+  }
+  ctx.fillStyle = color;
   ctx.fillText(text, x, y);
 }
 
-function drawArrow(ctx, from, to, colorHex, alpha){
+function drawArrow(ctx, from, to, colorHex, alpha, widthMul){
   alpha = (alpha==null) ? 1 : alpha;
+  widthMul = (widthMul==null) ? 1 : widthMul;
   ctx.save();
   ctx.strokeStyle = hexAlpha(colorHex, alpha);
   ctx.fillStyle = hexAlpha(colorHex, alpha);
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2*widthMul;
   ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke();
   const ang = Math.atan2(to.y-from.y, to.x-from.x);
-  const headLen = 8, headAngle = Math.PI/7;
+  const headLen = 8*widthMul, headAngle = Math.PI/7;
   ctx.beginPath();
   ctx.moveTo(to.x, to.y);
   ctx.lineTo(to.x - headLen*Math.cos(ang-headAngle), to.y - headLen*Math.sin(ang-headAngle));
@@ -1364,30 +1563,33 @@ function drawArrow(ctx, from, to, colorHex, alpha){
   ctx.restore();
 }
 
-function drawExtendedDashed(ctx, A, B, colorHex, alpha, extendFrac){
+function drawExtendedDashed(ctx, A, B, colorHex, alpha, extendFrac, widthMul){
+  widthMul = (widthMul==null) ? 1 : widthMul;
   const dx = B.x-A.x, dy = B.y-A.y;
   const ex = B.x + dx*extendFrac, ey = B.y + dy*extendFrac;
   ctx.save();
   ctx.setLineDash([4,4]);
   ctx.strokeStyle = hexAlpha(colorHex, alpha);
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1*widthMul;
   ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(ex,ey); ctx.stroke();
   ctx.restore();
 }
 
 // Zero-allocation bucketed trace stroke: 8 contiguous index slices, one path
 // each, adjacent slices overlap by one index so the polyline stays unbroken.
-function drawTrace(ctx, toScreen, trace){
+function drawTrace(ctx, toScreen, trace, alphaMul, widthMul){
+  alphaMul = (alphaMul==null) ? 1 : alphaMul;
+  widthMul = (widthMul==null) ? 1 : widthMul;
   const n = trace.length;
   if(n < 2) return;
   const buckets = 8;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1.5*widthMul;
   for(let b=0;b<buckets;b++){
     const i0 = Math.floor(n*b/buckets);
     const i1 = Math.floor(n*(b+1)/buckets);
     if(i1 <= i0) continue;
     const startIdx = Math.max(0, i0-1);
-    const alpha = 0.05 + 0.85*((b+0.5)/buckets);
+    const alpha = (0.05 + 0.85*((b+0.5)/buckets)) * alphaMul;
     ctx.strokeStyle = hexAlpha(COLORS.amber, alpha);
     ctx.beginPath();
     let first = true;
@@ -1439,29 +1641,31 @@ function drawStandardMain(ctx, w, h){
   }
 
   // equal-time markers
-  if(disp.markers && m.markers.length){
-    ctx.fillStyle = hexAlpha(COLORS.text, 0.55);
+  const markersStyle = layerStyle("markers");
+  if(markersStyle.show && m.markers.length){
+    ctx.fillStyle = hexAlpha(COLORS.text, 0.55*markersStyle.alpha);
     m.markers.forEach(function(pt){
       const s = toScreen(pt);
       ctx.beginPath();
-      ctx.arc(s.x, s.y, 2.5, 0, TAU);
+      ctx.arc(s.x, s.y, 2.5*markersStyle.mul, 0, TAU);
       ctx.fill();
     });
   }
 
   // line of sight
-  if(disp.sight){
+  const sightStyle = layerStyle("sight");
+  if(sightStyle.show){
     ctx.save();
     ctx.setLineDash([4,4]);
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.6);
+    ctx.lineWidth = 1*sightStyle.mul;
+    ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.6*sightStyle.alpha);
     ctx.beginPath();
     ctx.moveTo(earthS.x, earthS.y);
     ctx.lineTo(planetS.x, planetS.y);
     ctx.stroke();
 
     if(state.tab === "eccentric" && m.markers.length){
-      ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.2);
+      ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.2*sightStyle.alpha);
       m.markers.forEach(function(pt){
         const s = toScreen(pt);
         ctx.beginPath();
@@ -1474,7 +1678,8 @@ function drawStandardMain(ctx, w, h){
   }
 
   // trace
-  if(disp.trace) drawTrace(ctx, toScreen, state.trace);
+  const traceStyle = layerStyle("trace");
+  if(traceStyle.show) drawTrace(ctx, toScreen, state.trace, traceStyle.alpha, traceStyle.mul);
 
   // equant hand + mini sweep dial
   if(m.equantHand){
@@ -1520,7 +1725,7 @@ function drawStandardMain(ctx, w, h){
     ctx.moveTo(cS.x-hs, cS.y-hs); ctx.lineTo(cS.x+hs, cS.y+hs);
     ctx.moveTo(cS.x-hs, cS.y+hs); ctx.lineTo(cS.x+hs, cS.y-hs);
     ctx.stroke();
-    if(disp.labels){
+    {
       const dir = outwardDir(cS.x, cS.y, cx, cy);
       drawLabel(ctx, cS.x, cS.y, "C", dir, { color: COLORS.muted, size:11 });
     }
@@ -1534,7 +1739,7 @@ function drawStandardMain(ctx, w, h){
     ctx.beginPath();
     ctx.arc(qS.x, qS.y, 5, 0, TAU);
     ctx.stroke();
-    if(disp.labels){
+    {
       const dir = outwardDir(qS.x, qS.y, cx, cy);
       drawLabel(ctx, qS.x, qS.y, "Q", dir, { color: COLORS.magenta, size:11 });
     }
@@ -1547,14 +1752,14 @@ function drawStandardMain(ctx, w, h){
     ctx.beginPath();
     ctx.arc(dS.x, dS.y, 4, 0, TAU);
     ctx.fill();
-    if(disp.labels){
+    {
       const dir = outwardDir(dS.x, dS.y, cx, cy);
       drawLabel(ctx, dS.x, dS.y, "D", dir, { color: COLORS.purple, size:11 });
     }
   }
 
   // fast / slow labels (eccentric only)
-  if(state.tab === "eccentric" && disp.labels && m.fastSlowLabels){
+  if(state.tab === "eccentric" && m.fastSlowLabels){
     const fS = toScreen(m.fastSlowLabels.fast);
     const sS = toScreen(m.fastSlowLabels.slow);
     const fDir = outwardDir(fS.x, fS.y, cx, cy);
@@ -1568,7 +1773,7 @@ function drawStandardMain(ctx, w, h){
   ctx.beginPath();
   ctx.arc(earthS.x, earthS.y, 5.5, 0, TAU);
   ctx.fill();
-  if(disp.labels){
+  {
     const dir = outwardDir(earthS.x, earthS.y, cx, cy);
     drawLabel(ctx, earthS.x, earthS.y, "Earth", dir, { color: COLORS.cyan, size:11 });
   }
@@ -1579,7 +1784,7 @@ function drawStandardMain(ctx, w, h){
   ctx.beginPath();
   ctx.arc(planetS.x, planetS.y, 6, 0, TAU);
   ctx.fill();
-  if(disp.labels){
+  {
     const dir = outwardDir(planetS.x, planetS.y, cx, cy);
     drawLabel(ctx, planetS.x, planetS.y, m.planetLabel, dir, { color: COLORS.amber, size:11 });
   }
@@ -1664,15 +1869,18 @@ function drawGeoViewport(ctx, cell, m, disp){
   ctx.beginPath(); ctx.arc(DS.x, DS.y, m.earthScale*scale, 0, TAU); ctx.stroke();
 
   // line of sight — green, extended beyond the planet
-  if(disp.sight) drawExtendedDashed(ctx, earthS, PS, COLORS.green, 0.7, 0.15);
+  const geoSightStyle = layerStyle("sight");
+  if(geoSightStyle.show) drawExtendedDashed(ctx, earthS, PS, COLORS.green, 0.7*geoSightStyle.alpha, 0.15, geoSightStyle.mul);
 
   // trace of the looping geocentric path
-  if(disp.trace) drawTrace(ctx, toS, state.trace);
+  const geoTraceStyle = layerStyle("trace");
+  if(geoTraceStyle.show) drawTrace(ctx, toS, state.trace, geoTraceStyle.alpha, geoTraceStyle.mul);
 
   // the commuted vector pair
-  if(disp.vectors){
-    drawArrow(ctx, earthS, DS, COLORS.amber, 0.95);   // Sun->Mars, drawn as Earth->D
-    drawArrow(ctx, DS, PS, COLORS.cyan, 0.95);        // Earth->Sun, drawn as D->P
+  const geoVectorsStyle = layerStyle("vectors");
+  if(geoVectorsStyle.show){
+    drawArrow(ctx, earthS, DS, COLORS.amber, 0.95*geoVectorsStyle.alpha, geoVectorsStyle.mul);   // Sun->Mars, drawn as Earth->D
+    drawArrow(ctx, DS, PS, COLORS.cyan, 0.95*geoVectorsStyle.alpha, geoVectorsStyle.mul);        // Earth->Sun, drawn as D->P
   }
 
   // equant hand + C/Q markers -- hidden until eccentricity is visible (matches the plain
@@ -1687,33 +1895,33 @@ function drawGeoViewport(ctx, cell, m, disp){
     ctx.moveTo(CgS.x-hs, CgS.y-hs); ctx.lineTo(CgS.x+hs, CgS.y+hs);
     ctx.moveTo(CgS.x-hs, CgS.y+hs); ctx.lineTo(CgS.x+hs, CgS.y-hs);
     ctx.stroke();
-    if(disp.labels) drawLabel(ctx, CgS.x, CgS.y, "C", outwardDir(CgS.x,CgS.y,cx,cy), {color:COLORS.muted, size:10});
+    drawLabel(ctx, CgS.x, CgS.y, "C", outwardDir(CgS.x,CgS.y,cx,cy), {color:COLORS.muted, size:10});
 
     ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(QgS.x, QgS.y, 5, 0, TAU); ctx.stroke();
-    if(disp.labels) drawLabel(ctx, QgS.x, QgS.y, "Q equant", outwardDir(QgS.x,QgS.y,cx,cy), {color:COLORS.magenta, size:10});
+    drawLabel(ctx, QgS.x, QgS.y, "Q equant", outwardDir(QgS.x,QgS.y,cx,cy), {color:COLORS.magenta, size:10});
   }
 
   // Sun marker
   ctx.fillStyle = COLORS.amber;
   ctx.beginPath(); ctx.arc(sunGeoS.x, sunGeoS.y, 4, 0, TAU); ctx.fill();
-  if(disp.labels) drawLabel(ctx, sunGeoS.x, sunGeoS.y, "Sun", outwardDir(sunGeoS.x,sunGeoS.y,cx,cy), {color:COLORS.amber, size:10});
+  drawLabel(ctx, sunGeoS.x, sunGeoS.y, "Sun", outwardDir(sunGeoS.x,sunGeoS.y,cx,cy), {color:COLORS.amber, size:10});
 
   // D marker
   ctx.fillStyle = COLORS.purple;
   ctx.beginPath(); ctx.arc(DS.x, DS.y, 4, 0, TAU); ctx.fill();
-  if(disp.labels) drawLabel(ctx, DS.x, DS.y, "D", outwardDir(DS.x,DS.y,cx,cy), {color:COLORS.purple, size:10});
+  drawLabel(ctx, DS.x, DS.y, "D", outwardDir(DS.x,DS.y,cx,cy), {color:COLORS.purple, size:10});
 
   // Earth marker
   ctx.fillStyle = COLORS.cyan;
   ctx.beginPath(); ctx.arc(earthS.x, earthS.y, 5.5, 0, TAU); ctx.fill();
-  if(disp.labels) drawLabel(ctx, earthS.x, earthS.y, "Earth", outwardDir(earthS.x,earthS.y,cx,cy), {color:COLORS.cyan, size:10});
+  drawLabel(ctx, earthS.x, earthS.y, "Earth", outwardDir(earthS.x,earthS.y,cx,cy), {color:COLORS.cyan, size:10});
 
   // planet marker
   drawGlow(ctx, glowSprite, PS.x, PS.y, 22);
   ctx.fillStyle = COLORS.amber;
   ctx.beginPath(); ctx.arc(PS.x, PS.y, 6, 0, TAU); ctx.fill();
-  if(disp.labels) drawLabel(ctx, PS.x, PS.y, m.planetLabel, outwardDir(PS.x,PS.y,cx,cy), {color:COLORS.amber, size:10});
+  drawLabel(ctx, PS.x, PS.y, m.planetLabel, outwardDir(PS.x,PS.y,cx,cy), {color:COLORS.amber, size:10});
 }
 
 function drawHelioViewport(ctx, cell, m, disp){
@@ -1740,12 +1948,14 @@ function drawHelioViewport(ctx, cell, m, disp){
   ctx.beginPath(); ctx.arc(marsOrbitCenterS.x, marsOrbitCenterS.y, m.planetScale*scale, 0, TAU); ctx.stroke();
 
   // line of sight — green, extended beyond the planet
-  if(disp.sight) drawExtendedDashed(ctx, earthHS, marsHS, COLORS.green, 0.7, 0.15);
+  const helioSightStyle = layerStyle("sight");
+  if(helioSightStyle.show) drawExtendedDashed(ctx, earthHS, marsHS, COLORS.green, 0.7*helioSightStyle.alpha, 0.15, helioSightStyle.mul);
 
   // the commuted vector pair
-  if(disp.vectors){
-    drawArrow(ctx, sunS, marsHS, COLORS.amber, 0.95);   // Sun->Mars
-    drawArrow(ctx, earthHS, sunS, COLORS.cyan, 0.95);   // Earth->Sun
+  const helioVectorsStyle = layerStyle("vectors");
+  if(helioVectorsStyle.show){
+    drawArrow(ctx, sunS, marsHS, COLORS.amber, 0.95*helioVectorsStyle.alpha, helioVectorsStyle.mul);   // Sun->Mars
+    drawArrow(ctx, earthHS, sunS, COLORS.cyan, 0.95*helioVectorsStyle.alpha, helioVectorsStyle.mul);   // Earth->Sun
   }
 
   // equant hand + C'/Q' markers -- hidden until eccentricity is visible
@@ -1759,29 +1969,29 @@ function drawHelioViewport(ctx, cell, m, disp){
     ctx.moveTo(CpS.x-hs, CpS.y-hs); ctx.lineTo(CpS.x+hs, CpS.y+hs);
     ctx.moveTo(CpS.x-hs, CpS.y+hs); ctx.lineTo(CpS.x+hs, CpS.y-hs);
     ctx.stroke();
-    if(disp.labels) drawLabel(ctx, CpS.x, CpS.y, "C′", outwardDir(CpS.x,CpS.y,cx,cy), {color:COLORS.muted, size:10});
+    drawLabel(ctx, CpS.x, CpS.y, "C′", outwardDir(CpS.x,CpS.y,cx,cy), {color:COLORS.muted, size:10});
 
     ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(QpS.x, QpS.y, 5, 0, TAU); ctx.stroke();
-    if(disp.labels) drawLabel(ctx, QpS.x, QpS.y, "Q′ (empty focus)", outwardDir(QpS.x,QpS.y,cx,cy), {color:COLORS.magenta, size:10});
+    drawLabel(ctx, QpS.x, QpS.y, "Q′ (empty focus)", outwardDir(QpS.x,QpS.y,cx,cy), {color:COLORS.magenta, size:10});
   }
 
   // Sun marker — larger, stronger glow
   drawGlow(ctx, glowSprite, sunS.x, sunS.y, 42);
   ctx.fillStyle = COLORS.amber;
   ctx.beginPath(); ctx.arc(sunS.x, sunS.y, 8, 0, TAU); ctx.fill();
-  if(disp.labels) drawLabel(ctx, sunS.x, sunS.y, "Sun", outwardDir(sunS.x,sunS.y,cx,cy), {color:COLORS.amber, size:10});
+  drawLabel(ctx, sunS.x, sunS.y, "Sun", outwardDir(sunS.x,sunS.y,cx,cy), {color:COLORS.amber, size:10});
 
   // Earth marker
   ctx.fillStyle = COLORS.cyan;
   ctx.beginPath(); ctx.arc(earthHS.x, earthHS.y, 5.5, 0, TAU); ctx.fill();
-  if(disp.labels) drawLabel(ctx, earthHS.x, earthHS.y, "Earth", outwardDir(earthHS.x,earthHS.y,cx,cy), {color:COLORS.cyan, size:10});
+  drawLabel(ctx, earthHS.x, earthHS.y, "Earth", outwardDir(earthHS.x,earthHS.y,cx,cy), {color:COLORS.cyan, size:10});
 
   // planet marker
   drawGlow(ctx, glowSprite, marsHS.x, marsHS.y, 22);
   ctx.fillStyle = COLORS.amber;
   ctx.beginPath(); ctx.arc(marsHS.x, marsHS.y, 6, 0, TAU); ctx.fill();
-  if(disp.labels) drawLabel(ctx, marsHS.x, marsHS.y, m.planetLabel, outwardDir(marsHS.x,marsHS.y,cx,cy), {color:COLORS.amber, size:10});
+  drawLabel(ctx, marsHS.x, marsHS.y, m.planetLabel, outwardDir(marsHS.x,marsHS.y,cx,cy), {color:COLORS.amber, size:10});
 }
 
 /* ---- Sky atlas: cached offscreen star field + gridlines/zodiac, redrawn as one
@@ -2152,6 +2362,9 @@ function init(){
 
   switchTab(state.tab); // builds params/about cards, seeds history, renders once
   updatePlayButton();
+
+  const requestedTab = new URLSearchParams(location.search).get("tab");
+  if(requestedTab && TAB_CONFIG[requestedTab]) switchTab(requestedTab);
 }
 
 if(document.readyState === "loading"){
