@@ -1866,7 +1866,7 @@ function buildDynamicArcsGroup(){
   // standard cyan; alpha a paler gold, delta the standard amber. Opacities
   // raised from the original 0.10-0.16 range (unreadable on near-black) to
   // 0.20-0.28.
-  const AZ_TINT = 0x9fe3ee, EL_TINT = COLORI.cyan, DEC_TINT = COLORI.amber, ALPHA_TINT = 0xffe3a3;
+  const AZ_TINT = 0x7aa2ff, EL_TINT = COLORI.cyan, DEC_TINT = COLORI.amber, ALPHA_TINT = 0xff9d4d;
   sectorAz    = makeSectorFan(AZ_TINT,    0.20);
   sectorEl    = makeSectorFan(EL_TINT,    0.26);
   sectorDec   = makeSectorFan(DEC_TINT,   0.28);
@@ -1884,10 +1884,10 @@ function buildDynamicArcsGroup(){
   edgeAlphaStart = makeSectorEdge(ALPHA_TINT);
   edgeAlphaEnd   = makeSectorEdge(ALPHA_TINT);
 
-  wedgeLabelAz    = makeTextSprite("Az", "#9fe3ee", { math:true, upright:true, pixelHeight:15 });
+  wedgeLabelAz    = makeTextSprite("Az", "#7aa2ff", { math:true, upright:true, pixelHeight:15 });
   wedgeLabelEl    = makeTextSprite("El", COLORS.cyan, { math:true, upright:true, pixelHeight:15 });
   wedgeLabelDec   = makeTextSprite("δ", COLORS.amber, { math:true, pixelHeight:15 });
-  wedgeLabelAlpha = makeTextSprite("α", "#ffe3a3", { math:true, pixelHeight:15 });
+  wedgeLabelAlpha = makeTextSprite("α", "#ff9d4d", { math:true, pixelHeight:15 });
   scene.add(wedgeLabelAz, wedgeLabelEl, wedgeLabelDec, wedgeLabelAlpha);
 
   hlstAlpha = makeFatDynamicLine(COLORI.amber, 1.0, 3.5, false);
