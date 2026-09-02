@@ -1278,7 +1278,7 @@ function buildStaticScene(){
   scene.add(domeBack, domeFront);
 
   // horizon ring
-  const ringGeo = new THREE.TorusGeometry(1, 0.006, 8, 160);
+  const ringGeo = new THREE.TorusGeometry(1, 0.0035, 8, 160);
   const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color:0x69717a, transparent:true, opacity:0.6 }));
   ring.rotation.x = Math.PI/2;
   scene.add(ring);
