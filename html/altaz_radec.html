@@ -288,6 +288,18 @@
     .panel-header{ padding:0 8px; }
     .drag-hint{ display:none; }
   }
+
+  /* ---------- embed mode (?embed=1): dome only, no chrome ---------- */
+  body.embed .topbar,
+  body.embed .rail,
+  body.embed .splitter,
+  body.embed #stripPanel,
+  body.embed .panel-header,
+  body.embed .drag-hint{ display:none; }
+  body.embed #app{ grid-template-rows:1fr; }
+  body.embed .body{ grid-template-columns:1fr; }
+  body.embed .workspace{ padding:0; grid-template-rows:1fr; }
+  body.embed #mainPanel{ width:100vw; height:100vh; border:none; border-radius:0; box-shadow:none; }
 </style>
 </head>
 <body>
@@ -408,8 +420,10 @@
         <div class="eyebrow">Display</div>
         <button type="button" class="toggle" data-key="hGrid" aria-pressed="true"><span>Horizontal grid</span><span class="dot"></span></button>
         <button type="button" class="toggle" data-key="eGrid" aria-pressed="true"><span>Equatorial grid</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="meridian" aria-pressed="true"><span>Meridian</span><span class="dot"></span></button>
         <button type="button" class="toggle" data-key="diurnal" aria-pressed="true"><span>Diurnal circle</span><span class="dot"></span></button>
         <button type="button" class="toggle" data-key="arcs" aria-pressed="true"><span>Coordinate arcs</span><span class="dot"></span></button>
+        <button type="button" class="toggle" data-key="sectors" aria-pressed="true"><span>Coordinate sectors</span><span class="dot"></span></button>
         <button type="button" class="toggle" data-key="triangle" aria-pressed="false"><span>Astronomical triangle</span><span class="dot"></span></button>
         <button type="button" class="toggle" data-key="labels" aria-pressed="true"><span>Labels</span><span class="dot"></span></button>
       </div>
@@ -725,7 +739,7 @@ const TAB_CONFIG = {
     tint: "cyan",
     phi: 40.7, lst: 15.0, star: "vega", // El~49 deg, Az~74 deg (up in the east, all arcs short & clear)
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, sectors:true, triangle:false, labels:true },
     gridAlpha: { h:1, e:1 },
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "Two grids on one sphere",
@@ -739,7 +753,7 @@ const TAB_CONFIG = {
     // LST works, and 8h separates the "S"/coordinate-arc labels from a screen-space overlap
     // that lst=6 produced at the default camera vantage
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, sectors:false, triangle:false, labels:true },
     gridAlpha: { h:1, e:1 },
     badge: "none", poleReadout:true, locationHighlight:true, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "One tilt explains everything",
@@ -751,7 +765,7 @@ const TAB_CONFIG = {
     tint: "magenta",
     phi: 40.7, lst: 5.0, star: "sirius", // h~-1.75h, just before transit -- play shows it culminate then set
     playing: true, speed: 1.0,
-    display: { hGrid:false, eGrid:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    display: { hGrid:false, eGrid:true, meridian:true, diurnal:true, arcs:true, sectors:false, triangle:false, labels:true },
     gridAlpha: { h:1, e:1 },
     badge: "diurnal", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "The sky turns about the pole",
@@ -763,7 +777,7 @@ const TAB_CONFIG = {
     tint: "green",
     phi: 40.7, lst: 21.0, star: "vega",
     playing: false, speed: 0.5,
-    display: { hGrid:false, eGrid:true, diurnal:false, arcs:false, triangle:false, labels:true },
+    display: { hGrid:false, eGrid:true, meridian:true, diurnal:false, arcs:false, sectors:false, triangle:false, labels:true },
     gridAlpha: { h:1, e:0.5 },
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:true, formulasExpanded:false,
     aboutTitle: "Hour angle, right ascension, sidereal time",
@@ -779,7 +793,7 @@ const TAB_CONFIG = {
     // numeric check against computeDerived().
     phi: 40.7, lst: 18.5, star: "arcturus",
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, diurnal:false, arcs:true, triangle:true, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:false, arcs:true, sectors:false, triangle:true, labels:true },
     // viewpoint above the SW horizon (camera azimuth 225 deg) looking back toward
     // the NE, elevation 20 deg -- spreads Z (top), P (north, El 40.7) and S (WSW,
     // El~32) across the frame instead of viewing the triangle edge-on; see report
@@ -802,7 +816,7 @@ const state = {
   lst: 6,                    // hours, continuous display value
   starKey: "vega", ra: 18.615, dec: 38.78,
   playing: false, speed: 1.0,
-  display: { hGrid:true, eGrid:true, diurnal:true, arcs:true, triangle:false, labels:true },
+  display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, sectors:true, triangle:false, labels:true },
   gridAlpha: { h:1, e:1 },
   stripMode: "allsky",        // "allsky" | "radec"
   derived: null,              // computeDerived(...) result for the current instant
@@ -858,6 +872,7 @@ function recomputeDerived(){
    ========================================================================= */
 let renderer, scene, camera, glCanvas;
 let hGridGroup, meridianGroup, equatorialGroup, diurnalGroup;
+let meridianUpper, meridianLower; // {line,material,baseOpacity,baseLinewidth} wrappers, for applyHighlight()
 let starTorus, starSphere, starGlow, starLabel, starLabelText = null;
 let starHourCircle; // the star's own hour circle (great circle through both poles at native RA = alpha) — Task B
 const matRefs = { hGrid: [], eGrid: [] }; // {material, base} — opacity scaled by state.gridAlpha
@@ -888,6 +903,7 @@ function applyDisplayVisibility(){
     equatorialGroup.userData.equinoxPart.visible = !!state.display.eGrid || hk === "eGrid";
   }
   if(diurnalGroup) diurnalGroup.visible = !!state.display.diurnal || hk === "diurnal";
+  if(meridianGroup) meridianGroup.visible = !!state.display.meridian || hk === "meridian";
   requestRender();
 }
 
@@ -917,6 +933,16 @@ function setHighlightedOpacity(material, base, group, hk, baseLinewidth){
     material.linewidth = baseLinewidth * ((hk && group === hk) ? 1.4 : 1);
   }
 }
+/* Coordinate-sector fans (Task 3) belong to TWO highlight groups at once: their
+   own "sectors" toggle, AND the "arcs" toggle (hovering Coordinate arcs should
+   reinforce the fans too, since they illustrate the same four angles) — hence
+   a dedicated helper rather than the single-group highlightOpacity() above. */
+function sectorHighlightOpacity(base, hk){
+  if(!hk) return base;
+  if(hk === "sectors") return state.display.sectors ? Math.min(1, base*1.6) : base*0.5;
+  if(hk === "arcs")    return state.display.arcs    ? Math.min(1, base*1.6) : base*0.5;
+  return base*0.35;
+}
 function applyHighlight(){
   if(!equatorialGroup) return; // scene not built yet
   const hk = state.highlightKey;
@@ -930,10 +956,18 @@ function applyHighlight(){
     }
   });
 
+  [meridianUpper, meridianLower].forEach(function(o){
+    setHighlightedOpacity(o.material, o.baseOpacity, "meridian", hk, o.baseLinewidth);
+  });
+
   [arcAz, arcAlt, arcDec, arcH, arcRA, starHourCircle].forEach(function(o){
     setHighlightedOpacity(o.material, o.baseOpacity, "arcs", hk, o.baseLinewidth);
   });
-  [arrowAz, arrowH].forEach(function(mesh){ setHighlightedOpacity(mesh.material, 1, "arcs", hk); });
+  [arrowAz, arrowAlt, arrowDec, arrowH, arrowRA].forEach(function(mesh){ setHighlightedOpacity(mesh.material, 1, "arcs", hk); });
+
+  [sectorAz, sectorEl, sectorDec, sectorAlpha].forEach(function(s){
+    s.material.opacity = sectorHighlightOpacity(s.baseOpacity, hk);
+  });
 
   [sideZP, sidePS, sideZS].forEach(function(o){
     setHighlightedOpacity(o.material, o.baseOpacity, "triangle", hk, o.baseLinewidth);
@@ -981,7 +1015,7 @@ function makeFatLineRaw(colorInt, opacity, linewidthPx, dashed, capacityPts){
     color: colorInt, linewidth: linewidthPx, transparent: true, opacity: opacity,
     worldUnits: false, depthWrite: false, dashed: !!dashed
   });
-  if(dashed){ mat.dashSize = 0.035; mat.gapSize = 0.025; }
+  if(dashed){ mat.dashSize = 0.045; mat.gapSize = 0.025; mat.dashScale = 1; }
   mat.resolution.set(state.mainW||1, state.mainH||1);
   const line = new Line2(geo, mat);
   line.frustumCulled = false;
@@ -1232,6 +1266,7 @@ function buildStaticScene(){
   });
   for(let k=0;k<12;k++){
     const A0 = k*30;
+    if(A0 === 0 || A0 === 180) continue; // N-Z and S-Z already drawn by the fat meridian line -- skip the thin duplicate (z-fighting)
     const pts = [];
     const nseg = 32;
     for(let i=0;i<=nseg;i++) pts.push(toThreeVec3(hzToVec(A0, (i/nseg)*90)));
@@ -1254,8 +1289,18 @@ function buildStaticScene(){
   const nseg = 60;
   for(let i=0;i<=nseg;i++) upperPts.push(meridianPoint((i/nseg)*180));
   for(let i=0;i<=nseg;i++) lowerPts.push(meridianPoint(180 + (i/nseg)*180));
-  meridianGroup.add(makeFatLineStrip(upperPts, 0x979ea6, 0.5, 2.5).line);
-  meridianGroup.add(makeFatLineStrip(lowerPts, 0x979ea6, 0.18, 2.5).line);
+  meridianUpper = makeFatLineStrip(upperPts, COLORI.purple, 0.7, 2.0);
+  meridianLower = makeFatLineStrip(lowerPts, COLORI.purple, 0.25, 2.0);
+  meridianGroup.add(meridianUpper.line, meridianLower.line);
+
+  // "meridian" label just above the south point (th=165, 15 deg up from the
+  // horizon along the meridian), nudged radially outward off the sphere
+  {
+    const p = meridianPoint(165);
+    const lab = makeTextSprite("meridian", COLORS.purple, { pixelHeight:16 });
+    lab.position.copy(p.clone().multiplyScalar(1.15));
+    meridianGroup.add(lab);
+  }
 }
 
 function buildEquatorialGroup(){
@@ -1269,13 +1314,15 @@ function buildEquatorialGroup(){
   equatorialGroup.add(eGridPart, polarAxisPart, equinoxPart, starPart);
   equatorialGroup.userData = { eGridPart:eGridPart, polarAxisPart:polarAxisPart, equinoxPart:equinoxPart, starPart:starPart };
 
-  // celestial equator — the brightest grid element, but still well below the
-  // coordinate-arc opacities (~1.0) so the didactic arcs stay dominant; drawn
-  // as a fat (2.5px) Line2 so it reads as a named reference circle, distinct
-  // from the thin declination/hour-circle grid lines around it
+  // celestial equator — a named reference circle, kept THIN (1.5px) and DIM
+  // (opacity 0.45) so the bright 4px coordinate arcs (alpha/delta, drawn ON
+  // this same circle/its hour circles) always read as the dominant overlay
   {
-    const r = makeFatLineLoop(nativeSmallCirclePoints(0), COLORI.amber, 0.45, 2.5);
+    const r = makeFatLineLoop(nativeSmallCirclePoints(0), COLORI.amber, 0.45, 1.5);
     eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base:0.45 });
+    const lab = makeTextSprite("celestial equator", COLORS.amber, { pixelHeight:12 });
+    lab.position.copy(nativePointFromRA(90,0).multiplyScalar(1.06)); // near the east end of the equator
+    eGridPart.add(lab);
   }
   // declination circles +-30, +-60
   [30,-30,60,-60].forEach(function(d){
@@ -1326,7 +1373,7 @@ function buildEquatorialGroup(){
   // when the star's RA changes (updateStarInGroup); shown/hidden alongside
   // the coordinate arcs (state.display.arcs) since it is part of the same
   // "star's own coordinates" didactic layer — see updateDynamicArcs().
-  starHourCircle = makeFatLineRaw(COLORI.amber, 0.6, 2.5, false, CIRCLE_N+1);
+  starHourCircle = makeFatLineRaw(COLORI.amber, 0.35, 1.25, false, CIRCLE_N+1);
   equatorialGroup.add(starHourCircle.line);
 
   // diurnal circle lives in world space (see rebuildDiurnalCircle) — NOT a
@@ -1586,13 +1633,14 @@ function renderThree(){
       change — never from the per-frame path.)
    ========================================================================= */
 let arcAz, arcAlt, arcDec, arcH, arcRA;
-let arrowAz, arrowH;
+let arrowAz, arrowAlt, arrowDec, arrowH, arrowRA;
 let labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj;
+let sectorAz, sectorEl, sectorDec, sectorAlpha; // coordinate-sector fans (Task 3)
 let hlstAlpha, hlstH, hlstLst;
 let hlstAlphaArrow, hlstHArrow, hlstLstArrow;
 let hlstAlphaLabel, hlstHLabel, hlstLstLabel;
-// scaled ~1.3x (from 0.012/0.044) so the arrowheads match the now-thicker (Task B) fat-line arcs
-const coneGeoShared = new THREE.ConeGeometry(0.012*1.3, 0.044*1.3, 8);
+// scaled ~1.45x (from 0.012/0.044) so the arrowheads match the now-thicker 4px fat-line arcs
+const coneGeoShared = new THREE.ConeGeometry(0.012*1.45, 0.044*1.45, 8);
 
 function makeDynamicLine(colorInt, opacity, dashed, capacity){
   const cap = capacity || (ARC_N+1);
@@ -1675,15 +1723,54 @@ function hideAll(objs){ objs.forEach(function(o){ if(o) o.visible = false; }); }
    staying italic. */
 const ARC_LIFT = 1.012;
 function liftedThree(v){ return toThreeVec3(v).multiplyScalar(ARC_LIFT); }
+// the h arc sits on the small circle delta=-4 deg (see updateDynamicArcs), and is
+// lifted by its own smaller amount so it never shares pixels with the alpha arc
+// (drawn ON the equator at ARC_LIFT) even where the two circles are angularly close
+const ARC_LIFT_H = 1.006;
+function liftedThreeAt(v, k){ return toThreeVec3(v).multiplyScalar(k); }
+
+/* Coordinate-sector fans (Task 3): translucent triangle fans from the observer
+   (world origin) out to the same sampled arc points the fat lines use — a
+   preallocated position buffer (capacity ARC_N triangles = ARC_N*9 floats),
+   rewritten in place by updateSectorFan() every update, never reallocated. */
+function makeSectorFan(colorInt, opacity){
+  const cap = ARC_N;
+  const positions = new Float32Array(cap*9);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geo.setDrawRange(0,0);
+  const mat = new THREE.MeshBasicMaterial({ color:colorInt, transparent:true, opacity:opacity, side:THREE.DoubleSide, depthWrite:false });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -1; // draw below the coordinate-arc lines (renderOrder 0)
+  scene.add(mesh);
+  return { mesh:mesh, geo:geo, positions:positions, capacity:cap, material:mat, baseOpacity:opacity };
+}
+function updateSectorFan(sector, pts){
+  const n = Math.min(pts.length-1, sector.capacity);
+  const arr = sector.positions;
+  for(let i=0;i<n;i++){
+    const p0 = pts[i], p1 = pts[i+1];
+    const o = i*9;
+    arr[o]=0; arr[o+1]=0; arr[o+2]=0; // observer sits at the world origin
+    arr[o+3]=p0.x; arr[o+4]=p0.y; arr[o+5]=p0.z;
+    arr[o+6]=p1.x; arr[o+7]=p1.y; arr[o+8]=p1.z;
+  }
+  sector.geo.attributes.position.needsUpdate = true;
+  sector.geo.setDrawRange(0, n*3);
+}
 
 function buildDynamicArcsGroup(){
-  arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 3.5, false);
-  arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 3.5, false);
-  arcDec = makeFatDynamicLine(COLORI.amber, 1.0, 3.5, false);
-  arcH   = makeFatDynamicLine(COLORI.magenta, 1.0, 3.5, false);
-  arcRA  = makeFatDynamicLine(COLORI.amber, 0.95, 3.5, true);
-  arrowAz = makeArrowCone(COLORI.cyan);
-  arrowH  = makeArrowCone(COLORI.magenta);
+  arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 4.0, false);
+  arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 4.0, false);
+  arcDec = makeFatDynamicLine(COLORI.amber, 1.0, 4.0, false);
+  arcH   = makeFatDynamicLine(COLORI.magenta, 1.0, 4.0, true);  // dashed hour-angle arc, on delta=-4
+  arcRA  = makeFatDynamicLine(COLORI.amber, 1.0, 4.0, false);   // solid right-ascension arc, on the equator
+  arrowAz  = makeArrowCone(COLORI.cyan);
+  arrowAlt = makeArrowCone(COLORI.cyan);
+  arrowDec = makeArrowCone(COLORI.amber);
+  arrowH   = makeArrowCone(COLORI.magenta);
+  arrowRA  = makeArrowCone(COLORI.amber);
   labelAObj   = makeTextSprite("Az", COLORS.cyan, { math:true, upright:true, pixelHeight:18 });
   labelAltObj = makeTextSprite("El", COLORS.cyan, { math:true, upright:true, pixelHeight:18 });
   labelDecObj = makeTextSprite("δ", COLORS.amber, { math:true, pixelHeight:18 });
@@ -1691,8 +1778,15 @@ function buildDynamicArcsGroup(){
   labelRAObj  = makeTextSprite("α", COLORS.amber, { math:true, pixelHeight:18 });
   scene.add(labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj);
 
+  // coordinate-sector fans: Az/El in cyan (horizon/vertical planes), alpha/delta
+  // in amber (equatorial/hour-circle planes) -- see Task 3
+  sectorAz    = makeSectorFan(COLORI.cyan, 0.10);
+  sectorEl    = makeSectorFan(COLORI.cyan, 0.14);
+  sectorDec   = makeSectorFan(COLORI.amber, 0.16);
+  sectorAlpha = makeSectorFan(COLORI.amber, 0.12);
+
   hlstAlpha = makeFatDynamicLine(COLORI.amber, 1.0, 3.5, false);
-  hlstH     = makeFatDynamicLine(COLORI.magenta, 1.0, 3.5, false);
+  hlstH     = makeFatDynamicLine(COLORI.magenta, 1.0, 3.5, true); // dashed, matching the main h arc
   hlstLst   = makeFatDynamicLine(COLORI.cyan, 1.0, 3.5, false);
   hlstAlphaArrow = makeArrowCone(COLORI.amber);
   hlstHArrow     = makeArrowCone(COLORI.magenta);
@@ -1705,48 +1799,68 @@ function buildDynamicArcsGroup(){
 
 function updateDynamicArcs(){
   const d = state.derived;
+  const hk = state.highlightKey;
   // "|| highlightKey===..." previews an OFF layer at hover/focus time (Task C)
-  const showArcs = state.tab !== "hlst" && (!!state.display.arcs || state.highlightKey === "arcs");
+  const arcsRelevant = state.tab !== "hlst"; // Az/El/delta/h/alpha arcs don't exist on the hlst tab (its own stepped arcs take over)
+  const showArcs = arcsRelevant && (!!state.display.arcs || hk === "arcs");
+  // sectors belong to their OWN toggle, but also preview alongside a hovered "arcs" toggle (Task 3)
+  const showSectors = arcsRelevant && (!!state.display.sectors || hk === "sectors" || hk === "arcs");
+  const computeArcs = showArcs || showSectors; // sectors reuse the exact same sampled arc points
   const showHlst = state.tab === "hlst";
-  const showLabels = !!state.display.labels || state.highlightKey === "labels";
+  const showLabels = !!state.display.labels || hk === "labels";
 
-  if(showArcs){
+  if(computeArcs){
     let pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec((i/ARC_N)*d.A_deg, 0)));
-    setLinePoints(arcAz, pts); arcAz.line.visible = true;
-    placeArrowAtEnd(arrowAz, pts);
-    labelAtMid(labelAObj, pts); labelAObj.visible = showLabels;
+    setLinePoints(arcAz, pts); arcAz.line.visible = showArcs; arrowAz.visible = showArcs;
+    if(showArcs) placeArrowAtEnd(arrowAz, pts);
+    labelAtMid(labelAObj, pts); labelAObj.visible = showArcs && showLabels;
+    updateSectorFan(sectorAz, pts); sectorAz.mesh.visible = showSectors;
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec(d.A_deg, (i/ARC_N)*d.a_deg)));
-    setLinePoints(arcAlt, pts); arcAlt.line.visible = true;
-    labelAtMid(labelAltObj, pts); labelAltObj.visible = showLabels;
+    setLinePoints(arcAlt, pts); arcAlt.line.visible = showArcs; arrowAlt.visible = showArcs;
+    if(showArcs) placeArrowAtEnd(arrowAlt, pts);
+    labelAtMid(labelAltObj, pts); labelAltObj.visible = showArcs && showLabels;
+    updateSectorFan(sectorEl, pts); sectorEl.mesh.visible = showSectors;
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(eqToVec(d.H_deg, (i/ARC_N)*state.dec, state.phi)));
-    setLinePoints(arcDec, pts); arcDec.line.visible = true;
-    labelAtMid(labelDecObj, pts); labelDecObj.visible = showLabels;
+    setLinePoints(arcDec, pts); arcDec.line.visible = showArcs; arrowDec.visible = showArcs;
+    if(showArcs) placeArrowAtEnd(arrowDec, pts);
+    labelAtMid(labelDecObj, pts); labelDecObj.visible = showArcs && showLabels;
+    updateSectorFan(sectorDec, pts); sectorDec.mesh.visible = showSectors;
 
+    // h: dashed, on the small circle delta=-4 (a parallel just below the equator)
+    // so it never shares pixels with the alpha arc drawn ON the equator itself
     pts = [];
-    for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(eqToVec((i/ARC_N)*d.H_deg, 0, state.phi)));
-    setLinePoints(arcH, pts); arcH.line.visible = true;
-    placeArrowAtEnd(arrowH, pts);
-    labelAtMid(labelHObj, pts); labelHObj.visible = showLabels;
+    for(let i=0;i<=ARC_N;i++){
+      const Hh = (i/ARC_N)*d.H_deg;
+      pts.push(liftedThreeAt(eqToVec(Hh, -4, state.phi), ARC_LIFT_H));
+    }
+    setLinePoints(arcH, pts); arcH.line.visible = showArcs; arrowH.visible = showArcs;
+    if(showArcs) placeArrowAtEnd(arrowH, pts);
+    labelAtMid(labelHObj, pts); labelHObj.visible = showArcs && showLabels;
 
+    // alpha: solid, ON the celestial equator from the equinox to the star's hour circle
     pts = [];
     const alphaDeg = state.ra*15, lstDeg = state.lst*15;
     for(let i=0;i<=ARC_N;i++){
       const Hh = lstDeg - (i/ARC_N)*alphaDeg;
       pts.push(liftedThree(eqToVec(Hh, 0, state.phi)));
     }
-    setLinePoints(arcRA, pts); arcRA.line.visible = true;
-    labelAtMid(labelRAObj, pts); labelRAObj.visible = showLabels;
+    setLinePoints(arcRA, pts); arcRA.line.visible = showArcs; arrowRA.visible = showArcs;
+    if(showArcs) placeArrowAtEnd(arrowRA, pts);
+    labelAtMid(labelRAObj, pts); labelRAObj.visible = showArcs && showLabels;
+    updateSectorFan(sectorAlpha, pts); sectorAlpha.mesh.visible = showSectors;
 
-    starHourCircle.line.visible = true;
+    starHourCircle.line.visible = showArcs;
   } else {
     hideAll([arcAz.line, arcAlt.line, arcDec.line, arcH.line, arcRA.line,
-             arrowAz, arrowH, labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj,
-             starHourCircle.line]);
+             arrowAz, arrowAlt, arrowDec, arrowH, arrowRA,
+             labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj,
+             starHourCircle.line,
+             sectorAz.mesh, sectorEl.mesh, sectorDec.mesh, sectorAlpha.mesh]);
   }
 
   if(showHlst){
@@ -2411,8 +2525,10 @@ function wireStar(){
 const TOGGLE_TIPS = {
   hGrid: "Elevation circles and azimuth arcs fixed to your horizon — the observer's own grid. Cyan.",
   eGrid: "Declination circles and hour circles fixed to the stars, turning with sidereal time. Amber.",
+  meridian: 'The great circle through the north point, zenith and south point — where every star culminates and where hour angle <span class="math">h</span> is zero.',
   diurnal: "The star's daily path: a circle of constant declination about the celestial pole.",
   arcs: 'The star\'s coordinates drawn as arcs: <span class="math">Az</span> and <span class="math">El</span> in cyan, <span class="math">&delta;</span> and <span class="math">&alpha;</span> in amber, hour angle <span class="math">h</span> in magenta.',
+  sectors: 'Translucent sectors from the observer out to each arc — the planes in which <span class="math">Az</span>, <span class="math">El</span>, <span class="math">&alpha;</span> and <span class="math">&delta;</span> are measured.',
   triangle: "The spherical triangle zenith–pole–star whose sides and angles convert between the two systems.",
   labels: "Names and symbols for points, arcs and cardinal directions."
 };
@@ -2934,6 +3050,10 @@ function loop(ts){
    15. BOOTSTRAP
    ========================================================================= */
 function init(){
+  // ?embed=1 strips all chrome (topbar/rail/strip panel/splitters/panel header)
+  // so the dome fills the viewport -- for embedding the page in an iframe/slide
+  if(new URLSearchParams(location.search).get("embed")) document.body.classList.add("embed");
+
   cacheEls();
   loadColors();
   glowSprite = makeGlowSprite(COLORS.amber, 48);
