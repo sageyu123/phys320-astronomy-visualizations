@@ -224,6 +224,30 @@
     .tip{ transition:none; }
   }
 
+  /* ---------- formulas card (collapsible; mirrors the Sky Coordinates page) ---------- */
+  .card-head-row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; cursor:pointer; }
+  .card-head-row .eyebrow{ margin:0; }
+  .chevron{ color:var(--muted); font-size:10px; transition:transform .15s ease; flex:0 0 auto; }
+  .formulas-card.collapsed .chevron{ transform:rotate(-90deg); }
+  .formulas-card.collapsed .formulas-body{ display:none; }
+  .formula-line{ margin-bottom:10px; }
+  .formula-line:last-child{ margin-bottom:0; }
+  .formula-def{ font-size:12.5px; margin-bottom:3px; }
+  .formula-sub{ font-size:11.5px; color:var(--muted); word-break:break-word; }
+  .formula-sub b{ color:var(--text); font-weight:600; }
+
+  /* ---------- KaTeX typesetting (vendored, offline -- vendor/katex/) ----------
+     Formulas/About cards render real math when window.katex loaded; every
+     .ktx target starts hidden and .ktx-fallback (the plain HTML/entity text
+     already in the markup) stands in until a render call flips them, so the
+     page still teaches correctly if the vendored library is missing/blocked. */
+  .ktx{ display:none; }
+  .card .katex{ font-size:1.05em; color:inherit; }
+  .card .katex-display{ margin:6px 0; text-align:left; overflow-x:auto; overflow-y:hidden; }
+  .formula-note{ font-size:11.5px; color:var(--muted); }
+  .formula-def .formula-note{ margin-top:2px; display:block; }
+  .formula-sub .formula-note{ margin-left:4px; }
+
   /* ---------- about card ---------- */
   .about h3{ font-size:12px; font-weight:700; margin:0 0 8px; }
   .about p{ margin:0 0 8px; color:var(--text); }
@@ -274,6 +298,9 @@
   body.embed .workspace{ padding:0; grid-template-rows:1fr; }
   body.embed #mainPanel{ width:100vw; height:100vh; border:none; border-radius:0; box-shadow:none; }
 </style>
+<link rel="stylesheet" href="../vendor/katex/katex.min.css">
+<script defer src="../vendor/katex/katex.min.js"></script>
+<script defer src="../vendor/katex/contrib/auto-render.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -337,6 +364,14 @@
         <button type="button" class="toggle" data-key="vectors" id="toggleVectors" aria-pressed="true" style="display:none"><span>Show vectors</span><span class="dot"></span></button>
       </div>
 
+      <div class="card formulas-card collapsed" id="formulasCard" style="display:none">
+        <div class="card-head-row" id="formulasHead">
+          <div class="eyebrow">Formulas</div>
+          <span class="chevron">&#9660;</span>
+        </div>
+        <div class="formulas-body" id="formulasBody"></div>
+      </div>
+
       <div class="card about tint-cyan" id="aboutCard">
         <div class="eyebrow">About this device</div>
         <h3 id="aboutTitle"></h3>
@@ -354,9 +389,9 @@
           <div class="panel-readouts">
             <span>t = <b id="readoutT" class="tabular">0</b> d</span>
             <span id="lambdaReadout">&lambda; = <b id="readoutLambda" class="tabular">0.0</b>&deg;</span>
-            <span id="lambdaQReadout" style="display:none"><span class="math">&lambda;<sub>Q</sub></span> = <b id="readoutLambdaQ" class="tabular">0.0</b>&deg;</span>
+            <span id="lambdaQReadout" style="display:none"><span class="math" data-latex="\lambda_Q">&lambda;<sub>Q</sub></span> = <b id="readoutLambdaQ" class="tabular">0.0</b>&deg;</span>
             <span id="ddtReadout" style="display:none">d&lambda;/dt = <b class="tabular">0.00</b> &deg;/d</span>
-            <span id="sunReadouts" style="display:none"><span class="math">&delta;&#9737;</span> = <b id="readoutSunDecl" class="tabular">+0.0</b>&deg; &nbsp; noon El (<b id="readoutLat" class="tabular">40.7&deg; N</b>) = <b id="readoutNoonEl" class="tabular">49.3</b>&deg; &nbsp; EoT = <b id="readoutEoT" class="tabular">+0.0</b> min</span>
+            <span id="sunReadouts" style="display:none"><span class="math" data-latex="\delta_\odot">&delta;&#9737;</span> = <b id="readoutSunDecl" class="tabular">+0.0</b>&deg; &nbsp; noon El (<b id="readoutLat" class="tabular">40.7&deg; N</b>) = <b id="readoutNoonEl" class="tabular">49.3</b>&deg; &nbsp; EoT = <b id="readoutEoT" class="tabular">+0.0</b> min</span>
             <span id="compareReadouts" style="display:none">&lambda;<sub>geo</sub> = <b id="readoutLambdaGeo" class="tabular">0.0</b>&deg; &nbsp; &lambda;<sub>helio</sub> = <b id="readoutLambdaHelio" class="tabular">0.0</b>&deg; &nbsp; &Delta;&lambda; = <b id="readoutDeltaLambda" class="tabular">0.00</b>&deg;</span>
             <span id="motionBadge" class="pill pill-direct">DIRECT</span>
           </div>
@@ -495,6 +530,46 @@ function drawGlow(ctx, sprite, x, y, destSize){
 }
 
 /* =========================================================================
+   1b. KATEX TYPESETTING (vendored, offline -- vendor/katex/, loaded via
+       <script defer> in <head>). Every call below is defensive: if the
+       vendored library failed to load or throws, the pre-existing plain-
+       text/HTML content already in the DOM (the ".ktx-fallback" sibling, or
+       the element's own original entity glyph for inline About/param-label
+       spans) is left on screen untouched -- the page still teaches
+       correctly. Mirrors the Sky Coordinates page's own helpers verbatim.
+   ========================================================================= */
+function katexReady(){ return !!(window.katex && typeof window.katex.render === "function"); }
+const _katexSig = new WeakMap(); // ktx element -> last-rendered "mode:latex" signature (perf: skip unchanged re-renders)
+function katexInto(ktxEl, fallbackEl, latex, displayMode){
+  if(!ktxEl) return;
+  if(!katexReady()){
+    ktxEl.style.display = "none";
+    if(fallbackEl) fallbackEl.style.display = "";
+    return;
+  }
+  const sig = (displayMode ? "D:" : "I:") + latex;
+  if(_katexSig.get(ktxEl) !== sig){
+    try{
+      window.katex.render(latex, ktxEl, { throwOnError:false, displayMode: !!displayMode });
+      _katexSig.set(ktxEl, sig);
+    }catch(e){
+      ktxEl.style.display = "none";
+      if(fallbackEl) fallbackEl.style.display = "";
+      return;
+    }
+  }
+  ktxEl.style.display = "block"; // .ktx{display:none} in CSS is the default -- must set an explicit non-none value to override it
+  if(fallbackEl) fallbackEl.style.display = "none";
+}
+function renderMathSpans(root){
+  if(!root || !katexReady()) return;
+  root.querySelectorAll("[data-latex]").forEach(function(el){
+    try{ window.katex.render(el.dataset.latex, el, { throwOnError:false, displayMode:false }); }
+    catch(e){ /* leave the original glyph content on error */ }
+  });
+}
+
+/* =========================================================================
    2. MODEL  (pure functions: t [days], params -> scene descriptor)
    ========================================================================= */
 
@@ -572,8 +647,8 @@ const PLANET_ORDER_EPICYCLE = ["mercury","venus","mars","jupiter","saturn"];
 const PLANET_ORDER_FULL = ["mars","jupiter","saturn"];
 const PLANET_ORDER_COMPARE = ["mercury","venus","mars","jupiter","saturn"];
 
-const RE_LABEL_SUPERIOR = 'Earth orbit radius <span class="math">r<sub>E</sub>/a<sub>p</sub></span>';
-const RE_LABEL_INFERIOR = 'Planet orbit radius <span class="math">a<sub>p</sub>/a<sub>E</sub></span>';
+const RE_LABEL_SUPERIOR = 'Earth orbit radius <span class="math" data-latex="r_E/a_p">r<sub>E</sub>/a<sub>p</sub></span>';
+const RE_LABEL_INFERIOR = 'Planet orbit radius <span class="math" data-latex="a_p/a_E">a<sub>p</sub>/a<sub>E</sub></span>';
 
 function computeWindowDays(S){ return clamp(Math.round(2.4*S), 800, 2000); }
 
@@ -792,17 +867,17 @@ const TAB_CONFIG = {
     inclinationDeg: 0, // the Sun defines the ecliptic -- its atlas track is a straight line
     computeModel: modelEccentric,
     params: [
-      { key:"e", label:'Eccentricity <span class="math">e</span>', min:0, max:0.40, step:0.001, def:0.20 },
-      { key:"lambdaA", label:'Apogee longitude <span class="math">&lambda;<sub>A</sub></span>', min:0, max:360, step:1, def:102 }
+      { key:"e", label:'Eccentricity <span class="math" data-latex="e">e</span>', min:0, max:0.40, step:0.001, def:0.20 },
+      { key:"lambdaA", label:'Apogee longitude <span class="math" data-latex="\\lambda_A">&lambda;<sub>A</sub></span>', min:0, max:360, step:1, def:102 }
     ],
     displayDefaults: { trace:false, markers:true, sight:true, labels:true },
     aboutTitle: "The Eccentric — an off-center circle",
     aboutHTML:
       '<p>The Sun drifts through the zodiac at an uneven rate: Hipparchus knew the seasons have unequal lengths (spring &asymp; 94.5 days, autumn &asymp; 88.5). Yet Greek astronomy demanded perfectly uniform circular motion.</p>' +
-      '<p>The eccentric keeps the motion uniform on the circle &mdash; but displaces Earth from the circle\'s center by a distance <span class="math">e</span>. Seen from Earth, the Sun then appears fastest at perigee and slowest at apogee, with no actual change of speed.</p>' +
-      '<p>Hipparchus (&sim;150 BCE) fit the Sun with <span class="math">e</span> &asymp; 1/24 of the radius; the slider here is exaggerated so the effect is easy to see.</p>' +
+      '<p>The eccentric keeps the motion uniform on the circle &mdash; but displaces Earth from the circle\'s center by a distance <span class="math" data-latex="e">e</span>. Seen from Earth, the Sun then appears fastest at perigee and slowest at apogee, with no actual change of speed.</p>' +
+      '<p>Hipparchus (&sim;150 BCE) fit the Sun with <span class="math" data-latex="e">e</span> &asymp; 1/24 of the radius; the slider here is exaggerated so the effect is easy to see.</p>' +
       '<p>In an equatorial chart the Sun\'s yearly path is the ecliptic, a sine wave 23.4&deg; high: north in summer, south in winter &mdash; the seasons, and the reason the noon Sun stands 47&deg; higher in June than in December. The uneven spacing of the dots along the wave is the eccentric at work: the Sun really does cross the summer half of the sky more slowly than the winter half &mdash; a few days\' difference in the lengths of the seasons that Hipparchus measured and this device reproduces.</p>' +
-      '<p>Photograph the Sun at the same clock time every few days and it traces a figure 8 &mdash; the analemma. Up and down is the declination (the obliquity); left and right is the equation of time, the Sun running ahead of or behind the clock. Half of that comes from this very device: the eccentric makes the true Sun move non-uniformly along the ecliptic while clocks keep mean time. Set <span class="math">e</span> to the real 0.017 for the real analemma &mdash; with the exaggerated default the loop grows accordingly &mdash; and move the clock time to see the 8 tilt, as in a 9 a.m. or 3 p.m. photograph.</p>'
+      '<p>Photograph the Sun at the same clock time every few days and it traces a figure 8 &mdash; the analemma. Up and down is the declination (the obliquity); left and right is the equation of time, the Sun running ahead of or behind the clock. Half of that comes from this very device: the eccentric makes the true Sun move non-uniformly along the ecliptic while clocks keep mean time. Set <span class="math" data-latex="e">e</span> to the real 0.017 for the real analemma &mdash; with the exaggerated default the loop grows accordingly &mdash; and move the clock time to see the 8 tilt, as in a 9 a.m. or 3 p.m. photograph.</p>'
   },
   epicycle: {
     label: "Epicycle",
@@ -814,15 +889,15 @@ const TAB_CONFIG = {
     defaultPlanet: "mars",
     computeModel: modelEpicycle,
     params: [
-      { key:"r", label:'Epicycle radius <span class="math">r/R</span>', min:0.05, max:0.90, step:0.01, def:0.66 },
-      { key:"ratio", label:'Speed ratio <span class="math">&omega;<sub>e</sub>/&omega;<sub>d</sub></span>', min:1.0, max:30.0, step:0.001, def:1.881 }
+      { key:"r", label:'Epicycle radius <span class="math" data-latex="r/R">r/R</span>', min:0.05, max:0.90, step:0.01, def:0.66 },
+      { key:"ratio", label:'Speed ratio <span class="math" data-latex="\\omega_e/\\omega_d">&omega;<sub>e</sub>/&omega;<sub>d</sub></span>', min:1.0, max:30.0, step:0.001, def:1.881 }
     ],
     displayDefaults: { trace:true, markers:false, sight:true, labels:true },
     aboutTitle: "The Epicycle — a circle riding a circle",
     aboutHTML:
       '<p>Planets sometimes halt against the stars, move backward for weeks (<em>retrograde</em>), then resume &mdash; and they are brightest in mid-retrograde.</p>' +
-      '<p>In this device the planet rides a small circle (the epicycle) whose center <span class="math">D</span> rides a large circle (the deferent) around Earth. Near the epicycle\'s inner point the planet\'s epicyclic motion outruns the deferent\'s, so from Earth it appears to reverse &mdash; precisely when it is closest, hence brightest.</p>' +
-      '<p>The geometry is due to Apollonius (&sim;200 BCE). Defaults here are Mars-like: <span class="math">r/R</span> &asymp; 0.66 with periods 687&nbsp;d (deferent) and 365&nbsp;d (epicycle) &mdash; Earth\'s own orbit hidden inside the geocentric model. Use the Planet selector to load the other classical planets &mdash; for Mercury and Venus the disguise inverts: the deferent is Earth\'s orbit and the epicycle is the planet\'s own.</p>'
+      '<p>In this device the planet rides a small circle (the epicycle) whose center <span class="math" data-latex="D">D</span> rides a large circle (the deferent) around Earth. Near the epicycle\'s inner point the planet\'s epicyclic motion outruns the deferent\'s, so from Earth it appears to reverse &mdash; precisely when it is closest, hence brightest.</p>' +
+      '<p>The geometry is due to Apollonius (&sim;200 BCE). Defaults here are Mars-like: <span class="math" data-latex="r/R">r/R</span> &asymp; 0.66 with periods 687&nbsp;d (deferent) and 365&nbsp;d (epicycle) &mdash; Earth\'s own orbit hidden inside the geocentric model. Use the Planet selector to load the other classical planets &mdash; for Mercury and Venus the disguise inverts: the deferent is Earth\'s orbit and the epicycle is the planet\'s own.</p>'
   },
   equant: {
     label: "Equant",
@@ -831,14 +906,14 @@ const TAB_CONFIG = {
     windowDays: 4 * PERIOD_MARS_DEF,
     inclinationDeg: 1.85,
     computeModel: modelEquant,
-    params: [ { key:"e", label:'Equant offset <span class="math">e</span>', min:0, max:0.40, step:0.01, def:0.20 } ],
+    params: [ { key:"e", label:'Equant offset <span class="math" data-latex="e">e</span>', min:0, max:0.40, step:0.01, def:0.20 } ],
     displayDefaults: { trace:false, markers:true, sight:true, labels:true },
     aboutTitle: "The Equant — uniform as seen from where?",
     aboutHTML:
-      '<p>Even an eccentric circle cannot match the planets\' uneven drift around the zodiac. Ptolemy\'s fix: let the motion be uniform neither about the center <span class="math">C</span> nor about Earth, but about the equant point <span class="math">Q</span> &mdash; Earth\'s mirror image across the center.</p>' +
-      '<p>The magenta hand sweeps at a constant rate, so the planet must genuinely travel faster along the circle on Earth\'s side and slower opposite &mdash; closely mimicking what we now call Kepler\'s equal-area law (<span class="math">Q</span> sits nearly at the ellipse\'s empty focus).</p>' +
+      '<p>Even an eccentric circle cannot match the planets\' uneven drift around the zodiac. Ptolemy\'s fix: let the motion be uniform neither about the center <span class="math" data-latex="C">C</span> nor about Earth, but about the equant point <span class="math" data-latex="Q">Q</span> &mdash; Earth\'s mirror image across the center.</p>' +
+      '<p>The magenta hand sweeps at a constant rate, so the planet must genuinely travel faster along the circle on Earth\'s side and slower opposite &mdash; closely mimicking what we now call Kepler\'s equal-area law (<span class="math" data-latex="Q">Q</span> sits nearly at the ellipse\'s empty focus).</p>' +
       '<p>Introduced in the <em>Almagest</em> (&sim;150 CE), the equant quietly abandoned uniform circular motion &mdash; the flaw Copernicus called intolerable, and set out to repair.</p>' +
-      '<p>In the <span class="math">&lambda;</span>&ndash;<span class="math">t</span> plot the magenta line is the motion as seen from <span class="math">Q</span> &mdash; perfectly uniform, a straight line &mdash; while the amber curve is what the sky actually shows from Earth. The equant kept the Greek ideal of uniform circular motion alive in the bookkeeping, at the price of the motion no longer being uniform about the circle\'s own centre; that compromise is exactly what Copernicus refused to accept.</p>'
+      '<p>In the <span class="math" data-latex="\\lambda">&lambda;</span>&ndash;<span class="math" data-latex="t">t</span> plot the magenta line is the motion as seen from <span class="math" data-latex="Q">Q</span> &mdash; perfectly uniform, a straight line &mdash; while the amber curve is what the sky actually shows from Earth. The equant kept the Greek ideal of uniform circular motion alive in the bookkeeping, at the price of the motion no longer being uniform about the circle\'s own centre; that compromise is exactly what Copernicus refused to accept.</p>'
   },
   full: {
     label: "Full Model",
@@ -850,8 +925,8 @@ const TAB_CONFIG = {
     defaultPlanet: "mars",
     computeModel: modelFull,
     params: [
-      { key:"e", label:'Eccentricity / equant offset <span class="math">e</span>', min:0, max:0.30, step:0.01, def:0.093 },
-      { key:"r", label:'Epicycle radius <span class="math">r/R</span>', min:0.05, max:0.90, step:0.01, def:0.66 }
+      { key:"e", label:'Eccentricity / equant offset <span class="math" data-latex="e">e</span>', min:0, max:0.30, step:0.01, def:0.093 },
+      { key:"r", label:'Epicycle radius <span class="math" data-latex="r/R">r/R</span>', min:0.05, max:0.90, step:0.01, def:0.66 }
     ],
     displayDefaults: { trace:true, markers:false, sight:true, labels:true },
     aboutTitle: "The full Ptolemaic planet",
@@ -870,15 +945,15 @@ const TAB_CONFIG = {
     computeModel: modelCompare,
     params: [
       { key:"rE", label: RE_LABEL_SUPERIOR, min:0.10, max:0.90, step:0.01, def:0.66 },
-      { key:"e", label:'Orbit eccentricity <span class="math">e</span>', min:0, max:0.25, step:0.01, def:0.093 }
+      { key:"e", label:'Orbit eccentricity <span class="math" data-latex="e">e</span>', min:0, max:0.25, step:0.01, def:0.093 }
     ],
     displayDefaults: { trace:true, markers:false, sight:true, labels:true, vectors:true },
     aboutTitle: "Two models, one sky",
     aboutHTML:
-      '<p>Why did Ptolemy\'s model work for 1,400 years? Because for a superior planet it is the heliocentric model in disguise. The planet\'s apparent position is the vector <span class="math">Earth&rarr;Mars</span> = <span class="math">Earth&rarr;Sun</span> + <span class="math">Sun&rarr;Mars</span>.</p>' +
-      '<p>Ptolemy\'s deferent vector (Earth to <span class="math">D</span>) is exactly the <span class="math">Sun&rarr;Mars</span> vector, and his epicycle vector (<span class="math">D</span> to the planet) is exactly the <span class="math">Earth&rarr;Sun</span> vector &mdash; the same two arrows, added in the opposite order. Vector addition commutes, so the direction from Earth to the planet is identical in both models at every instant &mdash; and direction was all Ptolemy could measure.</p>' +
+      '<p>Why did Ptolemy\'s model work for 1,400 years? Because for a superior planet it is the heliocentric model in disguise. The planet\'s apparent position is the vector <span class="math" data-latex="\\text{Earth}\\rightarrow\\text{Mars}">Earth&rarr;Mars</span> = <span class="math" data-latex="\\text{Earth}\\rightarrow\\text{Sun}">Earth&rarr;Sun</span> + <span class="math" data-latex="\\text{Sun}\\rightarrow\\text{Mars}">Sun&rarr;Mars</span>.</p>' +
+      '<p>Ptolemy\'s deferent vector (Earth to <span class="math" data-latex="D">D</span>) is exactly the <span class="math" data-latex="\\text{Sun}\\rightarrow\\text{Mars}">Sun&rarr;Mars</span> vector, and his epicycle vector (<span class="math" data-latex="D">D</span> to the planet) is exactly the <span class="math" data-latex="\\text{Earth}\\rightarrow\\text{Sun}">Earth&rarr;Sun</span> vector &mdash; the same two arrows, added in the opposite order. Vector addition commutes, so the direction from Earth to the planet is identical in both models at every instant &mdash; and direction was all Ptolemy could measure.</p>' +
       '<p>Watch the epicycle arrow: it stays perfectly parallel to the Earth&rarr;Sun line, with the planet brightest and retrograde exactly at opposition &mdash; heliocentrism hiding inside the epicycle. Distinguishing the two took observations beyond angles: stellar parallax, the phases of Venus, and physical distances.</p>' +
-      '<p>And where does the equant live in this picture? Raise the eccentricity <span class="math">e</span>: Ptolemy\'s off-center deferent and equant reappear unchanged inside the heliocentric panel &mdash; as the planet\'s own eccentric orbit around the Sun, with <span class="math">Q&prime;</span> the point about which it sweeps at a uniform rate: very nearly the empty focus of its elliptical orbit. The equant was never really about Earth &mdash; it is a circle-based approximation to Kepler\'s second law, found fourteen centuries early. The two magenta hands sweep in perfect lockstep because they are one construction, viewed from two vantage points.</p>' +
+      '<p>And where does the equant live in this picture? Raise the eccentricity <span class="math" data-latex="e">e</span>: Ptolemy\'s off-center deferent and equant reappear unchanged inside the heliocentric panel &mdash; as the planet\'s own eccentric orbit around the Sun, with <span class="math" data-latex="Q^{\\prime}">Q&prime;</span> the point about which it sweeps at a uniform rate: very nearly the empty focus of its elliptical orbit. The equant was never really about Earth &mdash; it is a circle-based approximation to Kepler\'s second law, found fourteen centuries early. The two magenta hands sweep in perfect lockstep because they are one construction, viewed from two vantage points.</p>' +
       '<p>For Mercury and Venus the two arrows swap roles &mdash; the deferent is Earth\'s orbit and the epicycle is the planet\'s own &mdash; which is why Ptolemy found their epicycle centers forever chained to the Sun\'s direction.</p>'
   }
 };
@@ -1045,6 +1120,7 @@ const els = {};
 function cacheEls(){
   ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum",
    "paramsFields","displayCard","aboutCard","aboutTitle","aboutBody",
+   "formulasCard","formulasHead","formulasBody",
    "mainPanelTitle","readoutT","readoutLambda","ddtReadout","motionBadge",
    "lambdaReadout","lambdaQReadout","readoutLambdaQ","compareReadouts","readoutLambdaGeo","readoutLambdaHelio","readoutDeltaLambda",
    "sunReadouts","readoutSunDecl","readoutNoonEl","readoutLat","readoutEoT",
@@ -1168,6 +1244,8 @@ function buildParamsCard(){
   if(state.tab === "eccentric"){
     buildEccentricExtraControls(container);
   }
+
+  renderMathSpans(container); // typeset the param labels' <span class="math"> symbols (falls back to the plain glyphs above if KaTeX didn't load)
 }
 
 // Eccentric tab only: Clock time + Latitude controls for the Analemma chart. These are
@@ -1179,7 +1257,7 @@ function buildEccentricExtraControls(container){
     onChange: function(v){ state.clockTime = v; state.stripDirty = true; render(); }
   });
   buildCustomSliderField(container, {
-    label: 'Latitude <span class="math">&phi;</span>', value: state.latPhi, min:-90, max:90, step:0.1, unit:"",
+    label: 'Latitude <span class="math" data-latex="\\varphi">&phi;</span>', value: state.latPhi, min:-90, max:90, step:0.1, unit:"",
     onChange: function(v){ state.latPhi = v; state.stripDirty = true; render(); }
   });
 }
@@ -1408,6 +1486,7 @@ function buildAboutCard(){
   els.aboutCard.className = "card about tint-" + cfg.tint;
   els.aboutTitle.textContent = cfg.aboutTitle;
   els.aboutBody.innerHTML = cfg.aboutHTML;
+  renderMathSpans(els.aboutBody); // typeset the About card's <span class="math"> symbols (falls back to the plain glyphs above if KaTeX didn't load)
 }
 
 function applyDisplayDefaults(){
@@ -1541,6 +1620,7 @@ function switchTab(tabId){
   applyDisplayDefaults();
   buildParamsCard();
   buildAboutCard();
+  buildFormulasCard();
 
   els.tabBar.querySelectorAll("button").forEach(function(b){
     const active = b.dataset.tab === tabId;
@@ -3090,9 +3170,131 @@ function updateReadouts(){
   }
 }
 
+/* =========================================================================
+   FORMULAS CARD (equant + eccentric/Sun tabs only -- see buildFormulasCard()).
+   Skeleton pattern mirrors the Sky Coordinates page: each formula-line has a
+   def + sub slot, each slot a plain-HTML fallback span plus an empty KaTeX
+   target div toggled by katexInto() (see the "1b. KATEX TYPESETTING" helpers
+   above). buildFormulasCard() (called once per tab switch, from switchTab())
+   rebuilds the persistent elements; updateFormulas() -- called every frame
+   from render() -- only refills them, so katexInto()'s signature cache
+   actually skips real work on frames where the substituted numbers haven't
+   changed.
+   ========================================================================= */
+let fEls = null;
+function formulaLineSkeleton(id){
+  return '<div class="formula-line">' +
+      '<div class="formula-def"><span class="ktx-fallback" id="' + id + 'DefFallback"></span><div class="ktx" id="' + id + 'DefKtx"></div><span class="formula-note" id="' + id + 'DefNote"></span></div>' +
+      '<div class="formula-sub"><span class="ktx-fallback" id="' + id + 'SubFallback"></span><div class="ktx" id="' + id + 'SubKtx"></div><span class="formula-note" id="' + id + 'SubNote"></span></div>' +
+    '</div>';
+}
+function fillFormulaLine(line, defPlainHTML, defLatex, defNoteHTML, subPlainHTML, subLatex, subNoteHTML){
+  line.defFallback.innerHTML = defPlainHTML;
+  katexInto(line.defKtx, line.defFallback, defLatex, true);
+  line.defNote.innerHTML = defNoteHTML || "";
+  line.subFallback.innerHTML = subPlainHTML;
+  katexInto(line.subKtx, line.subFallback, subLatex, true);
+  line.subNote.innerHTML = subNoteHTML || "";
+}
+// Only the Equant tab (rho(phi), the equant's radial law) and the Eccentric/Sun
+// tab (its analemma/EoT relations) have formulas worth showing; every other
+// tab hides the card entirely (structural -- decided once per tab switch).
+function buildFormulasCard(){
+  const tab = state.tab;
+  const show = (tab === "equant" || tab === "eccentric");
+  els.formulasCard.style.display = show ? "" : "none";
+  if(!show){ fEls = null; els.formulasBody.innerHTML = ""; return; }
+  els.formulasCard.classList.remove("collapsed");
+  const ids = (tab === "eccentric") ? ["fA","fB","fC"] : ["fA"];
+  els.formulasBody.innerHTML = ids.map(formulaLineSkeleton).join("");
+  fEls = {};
+  ids.forEach(function(id){
+    fEls[id] = {
+      defFallback: document.getElementById(id+"DefFallback"), defKtx: document.getElementById(id+"DefKtx"), defNote: document.getElementById(id+"DefNote"),
+      subFallback: document.getElementById(id+"SubFallback"), subKtx: document.getElementById(id+"SubKtx"), subNote: document.getElementById(id+"SubNote")
+    };
+  });
+}
+function wireFormulasCollapse(){
+  els.formulasHead.addEventListener("click", function(){
+    els.formulasCard.classList.toggle("collapsed");
+  });
+}
+// Equant tab: rho(phi) = -e cos(phi) + sqrt(R^2 - e^2 sin^2(phi)), R=1 (the
+// deferent's own radius in this model -- see rho()/modelEquant() above).
+function updateEquantFormulas(){
+  if(!fEls || !fEls.fA) return;
+  const m = state.currentModel;
+  if(!m || m.equantPhi == null) return;
+  const e = state.params.e;
+  const phiDeg = norm360(m.equantPhi * DEG);
+  const rr = rho(e, m.equantPhi);
+  const eStr = fmtNum(e, 0.01), phiStr = phiDeg.toFixed(1), rhoStr = rr.toFixed(3);
+
+  fillFormulaLine(fEls.fA,
+    '&rho;(&phi;) = &minus;<i>e</i>&nbsp;cos&nbsp;&phi; + &radic;(<i>R</i><sup>2</sup> &minus; <i>e</i><sup>2</sup>sin<sup>2</sup>&phi;)',
+    String.raw`\rho(\varphi) = -e\cos\varphi + \sqrt{R^2 - e^2\sin^2\varphi}`,
+    "(the point on the deferent reached by sweeping a uniform angle &phi; about the equant)",
+    '&rho;(' + phiStr + '&deg;) = &minus;(' + eStr + ')cos(' + phiStr + '&deg;) + &radic;(1 &minus; (' + eStr + ')<sup>2</sup>sin<sup>2</sup>(' + phiStr + '&deg;)) = <b>' + rhoStr + '</b>',
+    String.raw`\rho(${phiStr}^\circ) = -(${eStr})\cos(${phiStr}^\circ) + \sqrt{1 - (${eStr})^2\sin^2(${phiStr}^\circ)} = \mathbf{${rhoStr}}`,
+    "(<i>R</i> = 1, the deferent radius)"
+  );
+}
+// Eccentric/Sun tab: the same ecliptic-to-equatorial + equation-of-time
+// relations used for the header readouts (eclipticToEquatorial(), equationOfTimeDeg()
+// above), typeset with the live substituted numbers.
+function updateEccentricFormulas(){
+  if(!fEls || !fEls.fA) return;
+  const m = state.currentModel;
+  if(!m) return;
+  const epsStr = OBLIQUITY_DEG.toFixed(2), lamStr = m.lambda.toFixed(1);
+  const eq = eclipticToEquatorial(m.lambda);
+  const sinDeltaVal = Math.sin(OBLIQUITY_DEG*RAD) * Math.sin(m.lambda*RAD);
+
+  fillFormulaLine(fEls.fA,
+    'sin <span class="math">&delta;</span>&#9737; = sin <span class="math">&epsilon;</span> sin <span class="math">&lambda;</span>&#9737;',
+    String.raw`\sin\delta_\odot = \sin\epsilon\sin\lambda_\odot`,
+    "",
+    'sin ' + epsStr + '&deg; sin ' + lamStr + '&deg; = <b>' + sinDeltaVal.toFixed(3) + '</b> &rarr; <span class="math">&delta;</span>&#9737; = <b>' + fmtSigned(eq.delta,1) + '&deg;</b>',
+    String.raw`\sin ${epsStr}^\circ \sin ${lamStr}^\circ = \mathbf{${sinDeltaVal.toFixed(3)}} \Rightarrow \delta_\odot = \mathbf{${fmtSigned(eq.delta,1)}^\circ}`,
+    ""
+  );
+
+  const defPlainB = 'tan <span class="math">&alpha;</span>&#9737; = cos <span class="math">&epsilon;</span> tan <span class="math">&lambda;</span>&#9737; (<span class="math">&alpha;</span>&#9737; in the same quadrant as <span class="math">&lambda;</span>&#9737;)';
+  const defLatexB = String.raw`\tan\alpha_\odot = \cos\epsilon\tan\lambda_\odot\ \ (\alpha_\odot\text{ in the same quadrant as }\lambda_\odot)`;
+  const cosLambda = Math.cos(m.lambda*RAD);
+  let subPlainB, subLatexB;
+  if(Math.abs(cosLambda) < 1e-6){
+    subPlainB = 'undefined here (cos &lambda;&#9737; &asymp; 0, a solstice) &mdash; <span class="math">&alpha;</span>&#9737; = <b>' + eq.alpha.toFixed(2) + 'h</b> directly';
+    subLatexB = String.raw`\text{undefined here }(\cos\lambda_\odot \approx 0\text{, a solstice}) \Rightarrow \alpha_\odot = \mathbf{${eq.alpha.toFixed(2)}\text{h}}\text{ directly}`;
+  } else {
+    const tanAlpha = Math.cos(OBLIQUITY_DEG*RAD) * Math.tan(m.lambda*RAD);
+    subPlainB = 'cos ' + epsStr + '&deg; tan ' + lamStr + '&deg; = <b>' + tanAlpha.toFixed(3) + '</b> &rarr; <span class="math">&alpha;</span>&#9737; = <b>' + eq.alpha.toFixed(2) + 'h</b>';
+    subLatexB = String.raw`\cos ${epsStr}^\circ \tan ${lamStr}^\circ = \mathbf{${tanAlpha.toFixed(3)}} \Rightarrow \alpha_\odot = \mathbf{${eq.alpha.toFixed(2)}\text{h}}`;
+  }
+  fillFormulaLine(fEls.fB, defPlainB, defLatexB, "", subPlainB, subLatexB, "");
+
+  const alphaDeg = eq.alpha * 15;
+  const eotDeg = equationOfTimeDeg(m.lambda, m.L);
+  const eotMin = 4 * eotDeg;
+  fillFormulaLine(fEls.fC,
+    'EoT = <i>L</i> &minus; <span class="math">&alpha;</span>&#9737;',
+    String.raw`\text{EoT} = L - \alpha_\odot`,
+    "(degrees of right ascension &times; 4 = minutes of time)",
+    '<i>L</i> &minus; <span class="math">&alpha;</span>&#9737; = ' + m.L.toFixed(1) + '&deg; &minus; ' + alphaDeg.toFixed(1) + '&deg; = <b>' + fmtSigned(eotDeg,2) + '&deg;</b> &rarr; EoT = <b>' + fmtSigned(eotMin,1) + ' min</b>',
+    String.raw`L - \alpha_\odot = ${m.L.toFixed(1)}^\circ - ${alphaDeg.toFixed(1)}^\circ = \mathbf{${fmtSigned(eotDeg,2)}^\circ} \Rightarrow \text{EoT} = \mathbf{${fmtSigned(eotMin,1)}\ \text{min}}`,
+    ""
+  );
+}
+function updateFormulas(){
+  if(state.tab === "equant") updateEquantFormulas();
+  else if(state.tab === "eccentric") updateEccentricFormulas();
+}
+
 function render(){
   if(!state.currentModel) return;
   updateReadouts();
+  updateFormulas();
   drawMain();
   if(state.stripDirty){
     drawStrip();
@@ -3136,10 +3338,13 @@ function init(){
   wireDisplayToggles();
   wireStripModeToggle();
   wirePlayback();
+  wireFormulasCollapse();
   wireSplitters();
 
   setupCanvasResize(els.mainCanvas, function(w,h){ state.mainW = w; state.mainH = h; });
   setupCanvasResize(els.stripCanvas, function(w,h){ state.stripW = w; state.stripH = h; state.stripDirty = true; });
+
+  renderMathSpans(document.getElementById("mainPanel")); // static header-readout math symbols (lambda_Q, delta_sun) -- present in the DOM from load, just display:none until their tab is active
 
   switchTab(state.tab); // builds params/about cards, seeds history, renders once
   updatePlayButton();

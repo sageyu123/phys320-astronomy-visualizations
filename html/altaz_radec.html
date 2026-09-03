@@ -334,6 +334,18 @@
   .formula-sub{ font-size:11.5px; color:var(--muted); word-break:break-word; }
   .formula-sub b{ color:var(--text); font-weight:600; }
 
+  /* ---------- KaTeX typesetting (vendored, offline -- vendor/katex/) ----------
+     Formulas/About cards render real math when window.katex loaded; every
+     .ktx target starts hidden and .ktx-fallback (the plain HTML/entity text
+     already in the markup) stands in until a render call flips them, so the
+     page still teaches correctly if the vendored library is missing/blocked. */
+  .ktx{ display:none; }
+  .card .katex{ font-size:1.05em; color:inherit; }
+  .card .katex-display{ margin:6px 0; text-align:left; overflow-x:auto; overflow-y:hidden; }
+  .formula-note{ font-size:11.5px; color:var(--muted); }
+  .formula-def .formula-note{ margin-top:2px; display:block; }
+  .formula-sub .formula-note{ margin-left:4px; }
+
   /* ---------- about card ---------- */
   .about h3{ font-size:12px; font-weight:700; margin:0 0 8px; }
   .about p{ margin:0 0 8px; color:var(--text); }
@@ -387,6 +399,9 @@
   body.embed .workspace{ padding:0; grid-template-rows:1fr; }
   body.embed #mainPanel{ width:100vw; height:100vh; border:none; border-radius:0; box-shadow:none; }
 </style>
+<link rel="stylesheet" href="../vendor/katex/katex.min.css">
+<script defer src="../vendor/katex/katex.min.js"></script>
+<script defer src="../vendor/katex/contrib/auto-render.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -451,7 +466,7 @@
           </select>
         </div>
         <div class="field">
-          <label class="field-label" for="phiRange">Latitude <span class="math">&phi;</span></label>
+          <label class="field-label" for="phiRange">Latitude <span class="math" data-latex="\varphi">&phi;</span></label>
           <div class="field-row">
             <input type="range" id="phiRange" min="-90" max="90" step="0.1" value="40.7">
             <input type="number" id="phiNum" class="num-input" min="-90" max="90" step="0.1" value="40.7">
@@ -487,7 +502,7 @@
           </select>
         </div>
         <div class="field">
-          <label class="field-label" for="raRange">Right ascension <span class="math">&alpha;</span></label>
+          <label class="field-label" for="raRange">Right ascension <span class="math" data-latex="\alpha">&alpha;</span></label>
           <div class="field-row">
             <input type="range" id="raRange" min="0" max="24" step="0.01" value="18.615">
             <input type="number" id="raNum" class="num-input" min="0" max="24" step="0.01" value="18.615">
@@ -495,7 +510,7 @@
           </div>
         </div>
         <div class="field">
-          <label class="field-label" for="decRange">Declination <span class="math">&delta;</span></label>
+          <label class="field-label" for="decRange">Declination <span class="math" data-latex="\delta">&delta;</span></label>
           <div class="field-row">
             <input type="range" id="decRange" min="-90" max="90" step="0.1" value="38.78">
             <input type="number" id="decNum" class="num-input" min="-90" max="90" step="0.1" value="38.78">
@@ -517,7 +532,7 @@
             <input type="number" id="doyNum" class="num-input" min="0" max="365" step="0.5" value="79">
           </div>
           <div class="unit" id="doyCalendarReadout" style="margin-top:6px">Mar 20</div>
-          <div class="unit" style="margin-top:2px">mean Sun, circular orbit (uniform <span class="math">&lambda;</span>&#9737;)</div>
+          <div class="unit" style="margin-top:2px">mean Sun, circular orbit (uniform <span class="math" data-latex="\lambda">&lambda;</span>&#9737;)</div>
         </div>
         <div class="field sectors-field">
           <label class="field-label">Cardinal dates</label>
@@ -537,7 +552,7 @@
           </div>
         </div>
         <div class="field">
-          <label class="field-label" for="originPhiRange">Latitude <span class="math">&phi;</span></label>
+          <label class="field-label" for="originPhiRange">Latitude <span class="math" data-latex="\varphi">&phi;</span></label>
           <div class="field-row">
             <input type="range" id="originPhiRange" min="-90" max="90" step="0.1" value="40.7">
             <input type="number" id="originPhiNum" class="num-input" min="-90" max="90" step="0.1" value="40.7">
@@ -559,7 +574,7 @@
             <div class="segmented sectors-segmented" id="sectorsControl" role="tablist" aria-label="Coordinate sectors">
               <button type="button" data-pair="none" data-tip="sectorsControl" class="active" role="tab" aria-selected="true">None</button>
               <button type="button" data-pair="azel" data-key="azel" data-tip="sectorsControl" role="tab" aria-selected="false">Az &middot; El</button>
-              <button type="button" data-pair="radec" data-key="radec" data-tip="sectorsControl" role="tab" aria-selected="false"><span class="math">&alpha;</span> &middot; <span class="math">&delta;</span></button>
+              <button type="button" data-pair="radec" data-key="radec" data-tip="sectorsControl" role="tab" aria-selected="false"><span class="math" data-latex="\alpha">&alpha;</span> &middot; <span class="math" data-latex="\delta">&delta;</span></button>
             </div>
           </div>
           <button type="button" class="toggle" data-key="triangle" aria-pressed="false"><span>Astronomical triangle</span><span class="dot"></span></button>
@@ -597,35 +612,35 @@
         <div class="panel-header">
           <div class="panel-title" id="mainPanelTitle">Celestial sphere</div>
           <div class="panel-readouts" id="readoutsDefault">
-            <span><span class="math-upright">Az</span> = <b id="readoutA" class="tabular">&mdash;</b>&deg;&nbsp; <span class="math-upright">El</span> = <b id="readoutAlt" class="tabular">&mdash;</b>&deg;</span>
+            <span><span class="math-upright" data-latex="\text{Az}">Az</span> = <b id="readoutA" class="tabular">&mdash;</b>&deg;&nbsp; <span class="math-upright" data-latex="\text{El}">El</span> = <b id="readoutAlt" class="tabular">&mdash;</b>&deg;</span>
             <span>|</span>
-            <span><span class="math">&alpha;</span> = <b id="readoutRA" class="tabular">&mdash;</b>h&nbsp; <span class="math">&delta;</span> = <b id="readoutDec" class="tabular">&mdash;</b>&deg;</span>
+            <span><span class="math" data-latex="\alpha">&alpha;</span> = <b id="readoutRA" class="tabular">&mdash;</b>h&nbsp; <span class="math" data-latex="\delta">&delta;</span> = <b id="readoutDec" class="tabular">&mdash;</b>&deg;</span>
             <span>|</span>
             <span>h = <b id="readoutH" class="tabular">&mdash;</b>h</span>
-            <span id="poleReadout" style="display:none">&nbsp;&nbsp;pole elevation = <span class="math">&phi;</span> = <b id="readoutPoleAlt" class="tabular">&mdash;</b>&deg;</span>
+            <span id="poleReadout" style="display:none">&nbsp;&nbsp;pole elevation = <span class="math" data-latex="\varphi">&phi;</span> = <b id="readoutPoleAlt" class="tabular">&mdash;</b>&deg;</span>
             <span id="badgeWrap" style="display:none">
-              <span id="diurnalExtra">transit <span class="math-upright">El</span> = <b id="readoutTransitEl" class="tabular">&mdash;</b>&deg;&nbsp; h&#8320; = <b id="readoutH0" class="tabular">&mdash;</b>h&nbsp;&nbsp;</span>
+              <span id="diurnalExtra">transit <span class="math-upright" data-latex="\text{El}">El</span> = <b id="readoutTransitEl" class="tabular">&mdash;</b>&deg;&nbsp; h&#8320; = <b id="readoutH0" class="tabular">&mdash;</b>h&nbsp;&nbsp;</span>
               <span id="riseBadge" class="pill pill-rises">RISES &amp; SETS</span>
             </span>
           </div>
           <div class="panel-readouts" id="readoutsHlst" style="display:none">
-            <span>LST = h + <span class="math">&alpha;</span> &rarr; <b id="hlstLST" class="tabular">&mdash;</b>h = <b id="hlstH" class="tabular">&mdash;</b>h + <b id="hlstAlpha" class="tabular">&mdash;</b>h</span>
+            <span>LST = h + <span class="math" data-latex="\alpha">&alpha;</span> &rarr; <b id="hlstLST" class="tabular">&mdash;</b>h = <b id="hlstH" class="tabular">&mdash;</b>h + <b id="hlstAlpha" class="tabular">&mdash;</b>h</span>
             <span class="unit" id="hlstCulminateNote">culminates when LST = &alpha;</span>
           </div>
           <div class="panel-readouts" id="readoutsOrigin" style="display:none">
             <span><b id="originDateLabel" class="tabular">&mdash;</b> (day <b id="originDayNum" class="tabular">&mdash;</b>)</span>
             <span>&middot;</span>
-            <span><span class="math">&lambda;</span>&#9737; = <b id="originLambda" class="tabular">&mdash;</b>&deg;</span>
+            <span><span class="math" data-latex="\lambda">&lambda;</span>&#9737; = <b id="originLambda" class="tabular">&mdash;</b>&deg;</span>
             <span>&middot;</span>
-            <span><span class="math">&alpha;</span>&#9737; = <b id="originAlpha" class="tabular">&mdash;</b>h</span>
+            <span><span class="math" data-latex="\alpha">&alpha;</span>&#9737; = <b id="originAlpha" class="tabular">&mdash;</b>h</span>
             <span>&middot;</span>
-            <span><span class="math">&delta;</span>&#9737; = <b id="originDelta" class="tabular">&mdash;</b>&deg;</span>
+            <span><span class="math" data-latex="\delta">&delta;</span>&#9737; = <b id="originDelta" class="tabular">&mdash;</b>&deg;</span>
             <span>&middot;</span>
             <span>N <b id="originSeasonN" class="tabular">&mdash;</b> / S <b id="originSeasonS" class="tabular">&mdash;</b></span>
             <span>&middot;</span>
             <span>EoT = <b id="originEot" class="tabular">&mdash;</b> min</span>
             <span>&middot;</span>
-            <span>noon <span class="math-upright">El</span> (<span class="math">&phi;</span>) = <b id="originNoonEl" class="tabular">&mdash;</b>&deg;</span>
+            <span>noon <span class="math-upright" data-latex="\text{El}">El</span> (<span class="math" data-latex="\varphi">&phi;</span>) = <b id="originNoonEl" class="tabular">&mdash;</b>&deg;</span>
           </div>
           <div class="panel-header-right">
             <button type="button" class="btn icon-btn" id="btnResetView" title="Reset camera view">&#8962;</button>
@@ -787,6 +802,52 @@ function drawGlow(ctx, sprite, x, y, destSize){
 let glowSprite = null; // amber, used by the strip panel
 
 /* =========================================================================
+   1b. KATEX TYPESETTING (vendored, offline -- vendor/katex/, loaded via
+       <script defer> in <head>). Every call below is defensive: if the
+       vendored library failed to load or throws, the pre-existing plain-
+       text/HTML content already in the DOM (the ".ktx-fallback" sibling, or
+       the element's own original entity glyph for inline About-card spans)
+       is left on screen untouched -- the page still teaches correctly.
+   ========================================================================= */
+function katexReady(){ return !!(window.katex && typeof window.katex.render === "function"); }
+const _katexSig = new WeakMap(); // ktx element -> last-rendered "mode:latex" signature (perf: skip unchanged re-renders)
+/* Renders `latex` into `ktxEl` (display or inline) and toggles visibility
+   against its `.ktx-fallback` sibling. Safe to call every frame -- a frame
+   where the substituted string hasn't changed costs one WeakMap lookup. */
+function katexInto(ktxEl, fallbackEl, latex, displayMode){
+  if(!ktxEl) return;
+  if(!katexReady()){
+    ktxEl.style.display = "none";
+    if(fallbackEl) fallbackEl.style.display = "";
+    return;
+  }
+  const sig = (displayMode ? "D:" : "I:") + latex;
+  if(_katexSig.get(ktxEl) !== sig){
+    try{
+      window.katex.render(latex, ktxEl, { throwOnError:false, displayMode: !!displayMode });
+      _katexSig.set(ktxEl, sig);
+    }catch(e){
+      // render failed even with throwOnError:false (shouldn't happen) -- keep showing the fallback
+      ktxEl.style.display = "none";
+      if(fallbackEl) fallbackEl.style.display = "";
+      return;
+    }
+  }
+  ktxEl.style.display = "block"; // .ktx{display:none} in CSS is the default -- must set an explicit non-none value to override it
+  if(fallbackEl) fallbackEl.style.display = "none";
+}
+/* One-time inline conversion for static prose: every descendant of `root`
+   carrying data-latex gets its (plain-glyph) content replaced by rendered
+   KaTeX; if katex isn't ready the original glyph content is left as-is. */
+function renderMathSpans(root){
+  if(!root || !katexReady()) return;
+  root.querySelectorAll("[data-latex]").forEach(function(el){
+    try{ window.katex.render(el.dataset.latex, el, { throwOnError:false, displayMode:false }); }
+    catch(e){ /* leave the original glyph content on error */ }
+  });
+}
+
+/* =========================================================================
    2. MODEL MATH  (all "_deg"/"_h" params in degrees/hours; internal work in
       radians; vectors on the unit celestial sphere, model frame:
       x = East, y = North, z = Up. Verified against a standalone Node
@@ -932,7 +993,7 @@ const TAB_CONFIG = {
     aboutHTML:
       '<p>Right ascension needs a zero point on the celestial equator, and nothing on the equator is special &mdash; except where the Sun\'s yearly path crosses it. Earth\'s axis keeps a fixed direction in space as Earth orbits, so Earth\'s equatorial plane and its orbital plane (the ecliptic) are tilted 23.4&deg; to each other and intersect along one fixed line. Seen from Earth that line marks two points on the sky: the Sun sits at one of them around March 20, crossing the equator northward &mdash; the vernal equinox &#9800; &mdash; and at the other around September 22. So &#9800; is a direction, not a place: the direction from Earth to the Sun at the moment of the March equinox. Right ascension is measured eastward from it along the equator; declination from the equator itself. Watch the arrow toward &#9800; stay parallel through the year while the Sun slides along the ecliptic, and read the Sun\'s coordinates: 0h / 0&deg; in March, 6h / +23.4&deg; in June, 12h / 0&deg; in September, 18h / &minus;23.4&deg; in December.</p>' +
       '<p>The zodiac ring shows the twelve signs, 30&deg; each counted eastward from &#9800; &mdash; the Sun appears in the sign on the far side of the Sun from Earth. The zero point drifts slowly westward through the constellations (precession, one turn in 26,000 years), which is why catalogue coordinates carry an epoch such as J2000.</p>' +
-      '<p>Photograph the Sun at the same clock time every few days and it traces a figure 8, the analemma. Its height is the declination swing &mdash; the 23.4&deg; tilt seen from the ground. Its width is the equation of time: the Sun runs ahead of or behind the clock because its motion along the equator is uneven, partly from the tilt itself and partly from Earth\'s slightly eccentric orbit (<span class="math">e</span> = 0.017), which is why the two lobes are unequal. Change the clock time to tilt the 8, as in a morning or afternoon photograph.</p>',
+      '<p>Photograph the Sun at the same clock time every few days and it traces a figure 8, the analemma. Its height is the declination swing &mdash; the 23.4&deg; tilt seen from the ground. Its width is the equation of time: the Sun runs ahead of or behind the clock because its motion along the equator is uneven, partly from the tilt itself and partly from Earth\'s slightly eccentric orbit (<span class="math" data-latex="e">e</span> = 0.017), which is why the two lobes are unequal. Change the clock time to tilt the 8, as in a morning or afternoon photograph.</p>',
     clockHr: 12.00 // Origin tab's own default clock time (h) for the analemma
   },
   grids: {
@@ -950,7 +1011,7 @@ const TAB_CONFIG = {
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "Two grids on one sphere",
     aboutHTML:
-      '<p>The sky behaves like a sphere centred on you. There are two natural ways to say where a star is. The horizontal system uses your own horizon: azimuth <span class="math-upright">Az</span>, measured from North through East along the horizon, and elevation <span class="math-upright">El</span> (altitude), measured up from the horizon toward the zenith. It is easy to measure — but it changes minute by minute and differs from city to city. The equatorial system uses the sky\'s own grid: declination <span class="math">&delta;</span>, measured from the celestial equator toward the poles, and right ascension <span class="math">&alpha;</span>, measured eastward along the equator from the vernal equinox &#9800;. It is fixed to the stars, identical for every observer, and is what catalogues print. Both grids are drawn here; the star wears both addresses at once.</p>'
+      '<p>The sky behaves like a sphere centred on you. There are two natural ways to say where a star is. The horizontal system uses your own horizon: azimuth <span class="math-upright" data-latex="\\text{Az}">Az</span>, measured from North through East along the horizon, and elevation <span class="math-upright" data-latex="\\text{El}">El</span> (altitude), measured up from the horizon toward the zenith. It is easy to measure — but it changes minute by minute and differs from city to city. The equatorial system uses the sky\'s own grid: declination <span class="math" data-latex="\\delta">&delta;</span>, measured from the celestial equator toward the poles, and right ascension <span class="math" data-latex="\\alpha">&alpha;</span>, measured eastward along the equator from the vernal equinox &#9800;. It is fixed to the stars, identical for every observer, and is what catalogues print. Both grids are drawn here; the star wears both addresses at once.</p>'
   },
   latitude: {
     label: "Latitude",
@@ -965,7 +1026,7 @@ const TAB_CONFIG = {
     badge: "none", poleReadout:true, locationHighlight:true, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "One tilt explains everything",
     aboutHTML:
-      '<p>The celestial pole stands due north at an elevation equal to your latitude <span class="math">&phi;</span>. That single fact fixes the relation between the two grids: the celestial equator crosses the meridian due south at elevation 90&deg; &minus; <span class="math">&phi;</span>, and the whole equatorial grid is tilted by 90&deg; &minus; <span class="math">&phi;</span> from the zenith. Drag the latitude. At the North Pole the grids coincide — the pole is overhead, the equator lies on the horizon, and elevation simply equals declination. At the equator the pole lies on the horizon and every star rises and sets vertically. In between, every star\'s path is slanted by the same tilt.</p>'
+      '<p>The celestial pole stands due north at an elevation equal to your latitude <span class="math" data-latex="\\varphi">&phi;</span>. That single fact fixes the relation between the two grids: the celestial equator crosses the meridian due south at elevation 90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span>, and the whole equatorial grid is tilted by 90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span> from the zenith. Drag the latitude. At the North Pole the grids coincide — the pole is overhead, the equator lies on the horizon, and elevation simply equals declination. At the equator the pole lies on the horizon and every star rises and sets vertically. In between, every star\'s path is slanted by the same tilt.</p>'
   },
   diurnal: {
     label: "Diurnal motion",
@@ -978,7 +1039,7 @@ const TAB_CONFIG = {
     badge: "diurnal", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "The sky turns about the pole",
     aboutHTML:
-      '<p>Earth\'s rotation turns the whole equatorial grid about the polar axis once per sidereal day (23&nbsp;h&nbsp;56&nbsp;m). A star\'s <span class="math">&alpha;</span> and <span class="math">&delta;</span> never change; it simply rides its circle of constant declination — its diurnal circle — while its azimuth and elevation sweep continuously. The hour angle h = LST &minus; <span class="math">&alpha;</span> measures how far the star has turned past the meridian; it culminates (highest, at elevation 90&deg; &minus; |<span class="math">&phi;</span> &minus; <span class="math">&delta;</span>|) when h = 0. Stars with <span class="math">&delta;</span> &gt; 90&deg; &minus; <span class="math">&phi;</span> never dip below the horizon: they are circumpolar. Stars with <span class="math">&delta;</span> &lt; &minus;(90&deg; &minus; <span class="math">&phi;</span>) never rise at all.</p>'
+      '<p>Earth\'s rotation turns the whole equatorial grid about the polar axis once per sidereal day (23&nbsp;h&nbsp;56&nbsp;m). A star\'s <span class="math" data-latex="\\alpha">&alpha;</span> and <span class="math" data-latex="\\delta">&delta;</span> never change; it simply rides its circle of constant declination — its diurnal circle — while its azimuth and elevation sweep continuously. The hour angle h = LST &minus; <span class="math" data-latex="\\alpha">&alpha;</span> measures how far the star has turned past the meridian; it culminates (highest, at elevation 90&deg; &minus; |<span class="math" data-latex="\\varphi">&phi;</span> &minus; <span class="math" data-latex="\\delta">&delta;</span>|) when h = 0. Stars with <span class="math" data-latex="\\delta">&delta;</span> &gt; 90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span> never dip below the horizon: they are circumpolar. Stars with <span class="math" data-latex="\\delta">&delta;</span> &lt; &minus;(90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span>) never rise at all.</p>'
   },
   hlst: {
     label: "h · α · LST",
@@ -991,8 +1052,8 @@ const TAB_CONFIG = {
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:true, formulasExpanded:false,
     aboutTitle: "Hour angle, right ascension, sidereal time",
     aboutHTML:
-      '<p>Three angles live on the celestial equator. Right ascension <span class="math">&alpha;</span> belongs to the star: measured eastward from the vernal equinox &#9800; to the star\'s hour circle, it never changes. The hour angle h belongs to you: measured westward from your meridian to that same hour circle, it grows steadily as the sky turns — it is the star\'s time since culmination (negative before it). Local sidereal time LST is the hour angle of &#9800; itself — equivalently, the right ascension that is on your meridian right now. Lay the arcs end to end and the bookkeeping is LST = h + <span class="math">&alpha;</span>. So a star culminates when LST = <span class="math">&alpha;</span>, and knowing the sidereal time tells you at once which stars are up: those with <span class="math">&alpha;</span> within a few hours of LST.</p>' +
-      '<p>The dial at the lower right is the same bookkeeping seen from above the north celestial pole: the meridian is pinned at the top, the right-ascension ticks turn with the sky, and the arcs <span class="math">h</span> (meridian to star) and then <span class="math">&alpha;</span> (star to &#9800;) add up to LST.</p>'
+      '<p>Three angles live on the celestial equator. Right ascension <span class="math" data-latex="\\alpha">&alpha;</span> belongs to the star: measured eastward from the vernal equinox &#9800; to the star\'s hour circle, it never changes. The hour angle h belongs to you: measured westward from your meridian to that same hour circle, it grows steadily as the sky turns — it is the star\'s time since culmination (negative before it). Local sidereal time LST is the hour angle of &#9800; itself — equivalently, the right ascension that is on your meridian right now. Lay the arcs end to end and the bookkeeping is LST = h + <span class="math" data-latex="\\alpha">&alpha;</span>. So a star culminates when LST = <span class="math" data-latex="\\alpha">&alpha;</span>, and knowing the sidereal time tells you at once which stars are up: those with <span class="math" data-latex="\\alpha">&alpha;</span> within a few hours of LST.</p>' +
+      '<p>The dial at the lower right is the same bookkeeping seen from above the north celestial pole: the meridian is pinned at the top, the right-ascension ticks turn with the sky, and the arcs <span class="math" data-latex="h">h</span> (meridian to star) and then <span class="math" data-latex="\\alpha">&alpha;</span> (star to &#9800;) add up to LST.</p>'
   },
   triangle: {
     label: "Astronomical triangle",
@@ -1014,7 +1075,7 @@ const TAB_CONFIG = {
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:true,
     aboutTitle: "The astronomical triangle",
     aboutHTML:
-      '<p>Zenith <span class="math">Z</span>, celestial pole <span class="math">P</span>, and star <span class="math">S</span> form a spherical triangle. Its sides are 90&deg; &minus; <span class="math">&phi;</span> (<span class="math">Z</span> to <span class="math">P</span>), 90&deg; &minus; <span class="math">&delta;</span> (<span class="math">P</span> to <span class="math">S</span>) and 90&deg; &minus; <span class="math-upright">El</span> (<span class="math">Z</span> to <span class="math">S</span>); its angles are the hour angle h at the pole, the azimuth <span class="math-upright">Az</span> at the zenith (measured from north), and the parallactic angle <span class="math">q</span> at the star. The spherical law of cosines applied to side <span class="math">Z&ndash;S</span> gives sin <span class="math-upright">El</span> = sin <span class="math">&phi;</span> sin <span class="math">&delta;</span> + cos <span class="math">&phi;</span> cos <span class="math">&delta;</span> cos h, and applied to side <span class="math">P&ndash;S</span> gives the azimuth. Every conversion between the two systems is this one triangle, solved.</p>'
+      '<p>Zenith <span class="math" data-latex="Z">Z</span>, celestial pole <span class="math" data-latex="P">P</span>, and star <span class="math" data-latex="S">S</span> form a spherical triangle. Its sides are 90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span> (<span class="math" data-latex="Z">Z</span> to <span class="math" data-latex="P">P</span>), 90&deg; &minus; <span class="math" data-latex="\\delta">&delta;</span> (<span class="math" data-latex="P">P</span> to <span class="math" data-latex="S">S</span>) and 90&deg; &minus; <span class="math-upright" data-latex="\\text{El}">El</span> (<span class="math" data-latex="Z">Z</span> to <span class="math" data-latex="S">S</span>); its angles are the hour angle h at the pole, the azimuth <span class="math-upright" data-latex="\\text{Az}">Az</span> at the zenith (measured from north), and the parallactic angle <span class="math" data-latex="q">q</span> at the star. The spherical law of cosines applied to side <span class="math" data-latex="Z-S">Z&ndash;S</span> gives sin <span class="math-upright" data-latex="\\text{El}">El</span> = sin <span class="math" data-latex="\\varphi">&phi;</span> sin <span class="math" data-latex="\\delta">&delta;</span> + cos <span class="math" data-latex="\\varphi">&phi;</span> cos <span class="math" data-latex="\\delta">&delta;</span> cos h, and applied to side <span class="math" data-latex="P-S">P&ndash;S</span> gives the azimuth. Every conversion between the two systems is this one triangle, solved.</p>'
   }
 };
 
@@ -3971,8 +4032,10 @@ function switchTab(tabId){
   els.aboutCard.className = "card about tint-" + cfg.tint;
   els.aboutTitle.textContent = cfg.aboutTitle;
   els.aboutBody.innerHTML = cfg.aboutHTML;
+  renderMathSpans(els.aboutBody); // typeset the About card's <span class="math"> symbols (falls back to the plain glyphs above if KaTeX didn't load)
 
   els.formulasCard.classList.toggle("collapsed", !cfg.formulasExpanded);
+  buildFormulasSkeleton(); // fresh persistent def/sub elements for this tab; updateFormulas()/updateOriginFormulas() (below) fill them every frame
 
   els.poleReadout.style.display = cfg.poleReadout ? "" : "none";
   els.badgeWrap.style.display = (cfg.badge === "diurnal") ? "" : "none";
@@ -4076,70 +4139,108 @@ function updateReadouts(){
   }
 }
 
+/* =========================================================================
+   Formulas card skeleton: two formula-lines (ids "fA"/"fB"), each with a
+   def + sub slot. Every slot holds a plain-HTML fallback span (identical in
+   spirit to what this card always rendered) plus an empty KaTeX target div,
+   toggled by katexInto() -- see the "1b. KATEX TYPESETTING" helpers above.
+   Built ONCE per tab switch (buildFormulasSkeleton(), called from
+   switchTab()), then updateFormulas()/updateOriginFormulas() -- which run
+   every frame while a tab is playing -- only refill these persistent
+   elements, so katexInto()'s signature cache actually skips real work on
+   frames where the substituted numbers haven't changed. */
+let fEls = null;
+function formulaLineSkeleton(id){
+  return '<div class="formula-line">' +
+      '<div class="formula-def"><span class="ktx-fallback" id="' + id + 'DefFallback"></span><div class="ktx" id="' + id + 'DefKtx"></div><span class="formula-note" id="' + id + 'DefNote"></span></div>' +
+      '<div class="formula-sub"><span class="ktx-fallback" id="' + id + 'SubFallback"></span><div class="ktx" id="' + id + 'SubKtx"></div><span class="formula-note" id="' + id + 'SubNote"></span></div>' +
+    '</div>';
+}
+function buildFormulasSkeleton(){
+  els.formulasBody.innerHTML = formulaLineSkeleton("fA") + formulaLineSkeleton("fB");
+  fEls = {};
+  ["fA","fB"].forEach(function(id){
+    fEls[id] = {
+      defFallback: document.getElementById(id+"DefFallback"), defKtx: document.getElementById(id+"DefKtx"), defNote: document.getElementById(id+"DefNote"),
+      subFallback: document.getElementById(id+"SubFallback"), subKtx: document.getElementById(id+"SubKtx"), subNote: document.getElementById(id+"SubNote")
+    };
+  });
+}
+function fillFormulaLine(line, defPlainHTML, defLatex, defNoteHTML, subPlainHTML, subLatex, subNoteHTML){
+  line.defFallback.innerHTML = defPlainHTML;
+  katexInto(line.defKtx, line.defFallback, defLatex, true);
+  line.defNote.innerHTML = defNoteHTML || "";
+  line.subFallback.innerHTML = subPlainHTML;
+  katexInto(line.subKtx, line.subFallback, subLatex, true);
+  line.subNote.innerHTML = subNoteHTML || "";
+}
+
 /* sin delta = sin eps sin lambda; tan alpha = cos eps tan lambda (alpha in
    the same quadrant as lambda -- i.e. via atan2, not a bare arctan, which
    is singular at lambda=90/270 where cos(lambda)=0) */
 function updateOriginFormulas(){
-  if(!originStage) return;
+  if(!originStage || !fEls) return;
   const s = originStage.getState();
   const lambdaDeg = s.lambdaDeg;
   const sinDelta = Math.sin(ORIGIN_EPS)*Math.sin(lambdaDeg*RAD);
 
-  const line1 =
-    '<div class="formula-line">' +
-      '<div class="formula-def"><span class="math">sin &delta;</span>&#9737; = <span class="math">sin &epsilon; sin &lambda;</span>&#9737;</div>' +
-      '<div class="formula-sub">sin ' + ORIGIN_EPS_DEG.toFixed(2) + '&deg; sin ' + fmtNum(lambdaDeg,0.1) + '&deg; = <b>' + sinDelta.toFixed(3) + '</b> &rarr; <span class="math">&delta;</span>&#9737; = <b>' + fmtSigned(s.decDeg,1) + '&deg;</b></div>' +
-    '</div>';
+  fillFormulaLine(fEls.fA,
+    '<span class="math">sin &delta;</span>&#9737; = <span class="math">sin &epsilon; sin &lambda;</span>&#9737;',
+    String.raw`\sin\delta_\odot = \sin\epsilon\sin\lambda_\odot`,
+    "",
+    'sin ' + ORIGIN_EPS_DEG.toFixed(2) + '&deg; sin ' + fmtNum(lambdaDeg,0.1) + '&deg; = <b>' + sinDelta.toFixed(3) + '</b> &rarr; <span class="math">&delta;</span>&#9737; = <b>' + fmtSigned(s.decDeg,1) + '&deg;</b>',
+    String.raw`\sin ${ORIGIN_EPS_DEG.toFixed(2)}^\circ \sin ${fmtNum(lambdaDeg,0.1)}^\circ = \mathbf{${sinDelta.toFixed(3)}} \Rightarrow \delta_\odot = \mathbf{${fmtSigned(s.decDeg,1)}^\circ}`,
+    ""
+  );
 
-  let line2;
+  const defPlainB = '<span class="math">tan &alpha;</span>&#9737; = <span class="math">cos &epsilon; tan &lambda;</span>&#9737; (<span class="math">&alpha;</span>&#9737; in the same quadrant as <span class="math">&lambda;</span>&#9737;)';
+  const defLatexB = String.raw`\tan\alpha_\odot = \cos\epsilon\tan\lambda_\odot\ \ (\alpha_\odot\text{ in the same quadrant as }\lambda_\odot)`;
   const cosLambda = Math.cos(lambdaDeg*RAD);
+  let subPlainB, subLatexB;
   if(Math.abs(cosLambda) < 1e-6){
-    line2 =
-      '<div class="formula-line">' +
-        '<div class="formula-def"><span class="math">tan &alpha;</span>&#9737; = <span class="math">cos &epsilon; tan &lambda;</span>&#9737; (<span class="math">&alpha;</span>&#9737; in the same quadrant as <span class="math">&lambda;</span>&#9737;)</div>' +
-        '<div class="formula-sub">undefined here (cos &lambda;&#9737; &asymp; 0, a solstice) &mdash; <span class="math">&alpha;</span>&#9737; = <b>' + s.raHours.toFixed(2) + 'h</b> directly (a quarter/three-quarter turn from &#9800;)</div>' +
-      '</div>';
+    subPlainB = 'undefined here (cos &lambda;&#9737; &asymp; 0, a solstice) &mdash; <span class="math">&alpha;</span>&#9737; = <b>' + s.raHours.toFixed(2) + 'h</b> directly (a quarter/three-quarter turn from &#9800;)';
+    subLatexB = String.raw`\text{undefined here }(\cos\lambda_\odot \approx 0\text{, a solstice}) \Rightarrow \alpha_\odot = \mathbf{${s.raHours.toFixed(2)}\text{h}}\text{ directly}`;
   } else {
     const tanAlpha = Math.cos(ORIGIN_EPS)*Math.tan(lambdaDeg*RAD);
-    line2 =
-      '<div class="formula-line">' +
-        '<div class="formula-def"><span class="math">tan &alpha;</span>&#9737; = <span class="math">cos &epsilon; tan &lambda;</span>&#9737; (<span class="math">&alpha;</span>&#9737; in the same quadrant as <span class="math">&lambda;</span>&#9737;)</div>' +
-        '<div class="formula-sub">cos ' + ORIGIN_EPS_DEG.toFixed(2) + '&deg; tan ' + fmtNum(lambdaDeg,0.1) + '&deg; = <b>' + tanAlpha.toFixed(3) + '</b> &rarr; <span class="math">&alpha;</span>&#9737; = <b>' + s.raHours.toFixed(2) + 'h</b></div>' +
-      '</div>';
+    subPlainB = 'cos ' + ORIGIN_EPS_DEG.toFixed(2) + '&deg; tan ' + fmtNum(lambdaDeg,0.1) + '&deg; = <b>' + tanAlpha.toFixed(3) + '</b> &rarr; <span class="math">&alpha;</span>&#9737; = <b>' + s.raHours.toFixed(2) + 'h</b>';
+    subLatexB = String.raw`\cos ${ORIGIN_EPS_DEG.toFixed(2)}^\circ \tan ${fmtNum(lambdaDeg,0.1)}^\circ = \mathbf{${tanAlpha.toFixed(3)}} \Rightarrow \alpha_\odot = \mathbf{${s.raHours.toFixed(2)}\text{h}}`;
   }
-  els.formulasBody.innerHTML = line1 + line2;
+  fillFormulaLine(fEls.fB, defPlainB, defLatexB, "", subPlainB, subLatexB, "");
 }
 
 function updateFormulas(){
   if(state.tab === "origin"){ updateOriginFormulas(); return; }
+  if(!fEls) return;
   const d = state.derived;
   const phi = state.phi, dec = state.dec, hDeg = d.H_deg;
   const sinA_ = Math.sin(phi*RAD)*Math.sin(dec*RAD) + Math.cos(phi*RAD)*Math.cos(dec*RAD)*Math.cos(hDeg*RAD);
 
-  const line1 =
-    '<div class="formula-line">' +
-      '<div class="formula-def"><span class="math">sin</span> <span class="math-upright">El</span> = <span class="math">sin &phi; sin &delta; + cos &phi; cos &delta; cos h</span></div>' +
-      '<div class="formula-sub">sin ' + fmtNum(phi,0.1) + '&deg; sin ' + fmtSigned(dec,1) + '&deg; + cos ' + fmtNum(phi,0.1) + '&deg; cos ' + fmtSigned(dec,1) + '&deg; cos(' + fmtSigned(hDeg,1) + '&deg;) = <b>' + sinA_.toFixed(3) + '</b> &rarr; <span class="math-upright">El</span> = <b>' + d.a_deg.toFixed(1) + '&deg;</b></div>' +
-    '</div>';
+  fillFormulaLine(fEls.fA,
+    '<span class="math">sin</span> <span class="math-upright">El</span> = <span class="math">sin &phi; sin &delta; + cos &phi; cos &delta; cos h</span>',
+    String.raw`\sin \text{El} = \sin\varphi\sin\delta + \cos\varphi\cos\delta\cos h`,
+    "",
+    'sin ' + fmtNum(phi,0.1) + '&deg; sin ' + fmtSigned(dec,1) + '&deg; + cos ' + fmtNum(phi,0.1) + '&deg; cos ' + fmtSigned(dec,1) + '&deg; cos(' + fmtSigned(hDeg,1) + '&deg;) = <b>' + sinA_.toFixed(3) + '</b> &rarr; <span class="math-upright">El</span> = <b>' + d.a_deg.toFixed(1) + '&deg;</b>',
+    String.raw`\sin ${fmtNum(phi,0.1)}^\circ \sin(${fmtSigned(dec,1)}^\circ) + \cos ${fmtNum(phi,0.1)}^\circ \cos(${fmtSigned(dec,1)}^\circ) \cos(${fmtSigned(hDeg,1)}^\circ) = \mathbf{${sinA_.toFixed(3)}} \Rightarrow \text{El} = \mathbf{${d.a_deg.toFixed(1)}^\circ}`,
+    ""
+  );
 
-  let line2;
+  const defPlainAz = '<span class="math">cos</span> <span class="math-upright">Az</span> = <span class="math">(sin &delta; &minus; sin &phi; sin</span> <span class="math-upright">El</span><span class="math">) / (cos &phi; cos</span> <span class="math-upright">El</span><span class="math">)</span>';
+  const defLatexAz = String.raw`\cos \text{Az} = \dfrac{\sin\delta - \sin\varphi\sin\text{El}}{\cos\varphi\cos\text{El}}`;
   const cosAdenom = Math.cos(phi*RAD)*Math.cos(d.a_deg*RAD);
+  let defNoteAz = "", subPlainAz, subLatexAz, subNoteAz = "";
   if(Math.abs(cosAdenom) < 1e-9){
-    line2 =
-      '<div class="formula-line">' +
-        '<div class="formula-def"><span class="math">cos</span> <span class="math-upright">Az</span> = <span class="math">(sin &delta; &minus; sin &phi; sin</span> <span class="math-upright">El</span><span class="math">) / (cos &phi; cos</span> <span class="math-upright">El</span><span class="math">)</span></div>' +
-        '<div class="formula-sub">undefined here (cos &phi; cos <span class="math-upright">El</span> &asymp; 0) &mdash; <span class="math-upright">Az</span> = &mdash;</div>' +
-      '</div>';
+    subPlainAz = 'undefined here (cos &phi; cos <span class="math-upright">El</span> &asymp; 0) &mdash; <span class="math-upright">Az</span> = &mdash;';
+    subLatexAz = String.raw`\text{undefined here }(\cos\varphi\cos\text{El} \approx 0) \Rightarrow \text{Az} = \mathbf{-}`;
   } else {
     const cosAval = clamp((Math.sin(dec*RAD) - Math.sin(phi*RAD)*Math.sin(d.a_deg*RAD)) / cosAdenom, -1, 1);
     const westEast = (Math.sin(hDeg*RAD) > 0) ? "west" : "east";
-    line2 =
-      '<div class="formula-line">' +
-        '<div class="formula-def"><span class="math">cos</span> <span class="math-upright">Az</span> = <span class="math">(sin &delta; &minus; sin &phi; sin</span> <span class="math-upright">El</span><span class="math">) / (cos &phi; cos</span> <span class="math-upright">El</span><span class="math">)</span>, <span class="math-upright">Az</span> &rarr; 360&deg; &minus; <span class="math-upright">Az</span> when sin h &gt; 0</div>' +
-        '<div class="formula-sub">(sin ' + fmtSigned(dec,1) + '&deg; &minus; sin ' + fmtNum(phi,0.1) + '&deg; sin ' + d.a_deg.toFixed(1) + '&deg;) / (cos ' + fmtNum(phi,0.1) + '&deg; cos ' + d.a_deg.toFixed(1) + '&deg;) = <b>' + cosAval.toFixed(3) + '</b> &rarr; <span class="math-upright">Az</span> = <b>' + (isNaN(d.A_deg)?"&mdash;":d.A_deg.toFixed(1)+'&deg;') + '</b> (h ' + (hDeg>=0?'&gt;':'&lt;') + ' 0 &rarr; star ' + westEast + ' of meridian)</div>' +
-      '</div>';
+    defNoteAz = ', <span class="math-upright">Az</span> &rarr; 360&deg; &minus; <span class="math-upright">Az</span> when sin h &gt; 0';
+    const azStr = isNaN(d.A_deg) ? String.raw`\mathbf{-}` : String.raw`\mathbf{${d.A_deg.toFixed(1)}^\circ}`;
+    subPlainAz = '(sin ' + fmtSigned(dec,1) + '&deg; &minus; sin ' + fmtNum(phi,0.1) + '&deg; sin ' + d.a_deg.toFixed(1) + '&deg;) / (cos ' + fmtNum(phi,0.1) + '&deg; cos ' + d.a_deg.toFixed(1) + '&deg;) = <b>' + cosAval.toFixed(3) + '</b> &rarr; <span class="math-upright">Az</span> = <b>' + (isNaN(d.A_deg)?"&mdash;":d.A_deg.toFixed(1)+'&deg;') + '</b>';
+    subLatexAz = String.raw`(\sin(${fmtSigned(dec,1)}^\circ) - \sin ${fmtNum(phi,0.1)}^\circ\sin ${d.a_deg.toFixed(1)}^\circ) / (\cos ${fmtNum(phi,0.1)}^\circ\cos ${d.a_deg.toFixed(1)}^\circ) = \mathbf{${cosAval.toFixed(3)}} \Rightarrow \text{Az} = ` + azStr;
+    subNoteAz = ' (h ' + (hDeg>=0?'&gt;':'&lt;') + ' 0 &rarr; star ' + westEast + ' of meridian)';
   }
-  els.formulasBody.innerHTML = line1 + line2;
+  fillFormulaLine(fEls.fB, defPlainAz, defLatexAz, defNoteAz, subPlainAz, subLatexAz, subNoteAz);
 }
 
 function wireFormulasCollapse(){
@@ -4468,6 +4569,9 @@ function init(){
   wireStar();
   wireFormulasCollapse();
   wireSplitters();
+
+  renderMathSpans(document.querySelector(".rail")); // static field-label/sectors math symbols (About card is done per-tab by switchTab())
+  renderMathSpans(document.getElementById("mainPanel")); // static header-readout math symbols (Az/El, alpha/delta/phi/lambda, incl. the h-alpha-LST relation) -- these panel-readouts spans are all present in the DOM from load, just display:none until their tab is active
 
   setupGLResize();
   setupStripResize();
