@@ -528,6 +528,22 @@
             <button type="button" data-lambda="270" role="tab">Dec 21</button>
           </div>
         </div>
+        <div class="field">
+          <label class="field-label" for="originClockRange">Clock time</label>
+          <div class="field-row">
+            <input type="range" id="originClockRange" min="0" max="24" step="0.25" value="12.00">
+            <input type="number" id="originClockNum" class="num-input" min="0" max="24" step="0.25" value="12.00">
+            <span class="unit">h</span>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="originPhiRange">Latitude <span class="math">&phi;</span></label>
+          <div class="field-row">
+            <input type="range" id="originPhiRange" min="-90" max="90" step="0.1" value="40.7">
+            <input type="number" id="originPhiNum" class="num-input" min="-90" max="90" step="0.1" value="40.7">
+            <span class="unit">&deg;</span>
+          </div>
+        </div>
       </div>
 
       <div class="card" id="displayCard">
@@ -606,6 +622,10 @@
             <span><span class="math">&delta;</span>&#9737; = <b id="originDelta" class="tabular">&mdash;</b>&deg;</span>
             <span>&middot;</span>
             <span>N <b id="originSeasonN" class="tabular">&mdash;</b> / S <b id="originSeasonS" class="tabular">&mdash;</b></span>
+            <span>&middot;</span>
+            <span>EoT = <b id="originEot" class="tabular">&mdash;</b> min</span>
+            <span>&middot;</span>
+            <span>noon <span class="math-upright">El</span> (<span class="math">&phi;</span>) = <b id="originNoonEl" class="tabular">&mdash;</b>&deg;</span>
           </div>
           <div class="panel-header-right">
             <button type="button" class="btn icon-btn" id="btnResetView" title="Reset camera view">&#8962;</button>
@@ -639,10 +659,15 @@
             <span id="legendAllsky"><i class="swatch" style="background:var(--cyan)"></i>horizontal &nbsp; <i class="swatch" style="background:var(--amber)"></i>equatorial</span>
             <span id="legendRadec" style="display:none"><i class="swatch" style="background:var(--cyan)"></i>horizon &nbsp; <i class="swatch" style="background:var(--amber)"></i>diurnal path</span>
             <span id="legendOrigin" style="display:none"><i class="swatch" style="background:var(--coral)"></i>ecliptic &nbsp; <i class="swatch" style="background:var(--amber)"></i>Sun</span>
+            <span id="legendAnalemma" style="display:none">same clock time every day &middot; height = declination (23.4&deg;) &middot; width = equation of time</span>
           </div>
           <div class="segmented" id="stripModeToggle" role="tablist" aria-label="Strip panel mode">
             <button type="button" data-mode="allsky" class="active" role="tab" aria-selected="true">All-sky view</button>
             <button type="button" data-mode="radec" role="tab" aria-selected="false">RA/Dec map</button>
+          </div>
+          <div class="segmented" id="originStripModeToggle" role="tablist" aria-label="Origin strip panel mode" style="display:none">
+            <button type="button" data-mode="ecliptic" role="tab" aria-selected="false">Ecliptic map</button>
+            <button type="button" data-mode="analemma" class="active" role="tab" aria-selected="true">Analemma</button>
           </div>
         </div>
         <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
@@ -906,7 +931,9 @@ const TAB_CONFIG = {
     aboutTitle: "Where ♈ comes from", // set via .textContent -- literal glyph, not an HTML entity
     aboutHTML:
       '<p>Right ascension needs a zero point on the celestial equator, and nothing on the equator is special &mdash; except where the Sun\'s yearly path crosses it. Earth\'s axis keeps a fixed direction in space as Earth orbits, so Earth\'s equatorial plane and its orbital plane (the ecliptic) are tilted 23.4&deg; to each other and intersect along one fixed line. Seen from Earth that line marks two points on the sky: the Sun sits at one of them around March 20, crossing the equator northward &mdash; the vernal equinox &#9800; &mdash; and at the other around September 22. So &#9800; is a direction, not a place: the direction from Earth to the Sun at the moment of the March equinox. Right ascension is measured eastward from it along the equator; declination from the equator itself. Watch the arrow toward &#9800; stay parallel through the year while the Sun slides along the ecliptic, and read the Sun\'s coordinates: 0h / 0&deg; in March, 6h / +23.4&deg; in June, 12h / 0&deg; in September, 18h / &minus;23.4&deg; in December.</p>' +
-      '<p>The zodiac ring shows the twelve signs, 30&deg; each counted eastward from &#9800; &mdash; the Sun appears in the sign on the far side of the Sun from Earth. The zero point drifts slowly westward through the constellations (precession, one turn in 26,000 years), which is why catalogue coordinates carry an epoch such as J2000.</p>'
+      '<p>The zodiac ring shows the twelve signs, 30&deg; each counted eastward from &#9800; &mdash; the Sun appears in the sign on the far side of the Sun from Earth. The zero point drifts slowly westward through the constellations (precession, one turn in 26,000 years), which is why catalogue coordinates carry an epoch such as J2000.</p>' +
+      '<p>Photograph the Sun at the same clock time every few days and it traces a figure 8, the analemma. Its height is the declination swing &mdash; the 23.4&deg; tilt seen from the ground. Its width is the equation of time: the Sun runs ahead of or behind the clock because its motion along the equator is uneven, partly from the tilt itself and partly from Earth\'s slightly eccentric orbit (<span class="math">e</span> = 0.017), which is why the two lobes are unequal. Change the clock time to tilt the 8, as in a morning or afternoon photograph.</p>',
+    clockHr: 12.00 // Origin tab's own default clock time (h) for the analemma
   },
   grids: {
     label: "Two grids",
@@ -1002,6 +1029,8 @@ const state = {
   playing: false, speed: 1.0,      // speed = hours/s, used by the LST-based tabs
   day: 79, speedDays: 20,          // day = day-of-year, speedDays = days/s -- Origin tab only
   originDisplay: { ghosts:true, zodiac:true, sunArcs:true, eqGrid:true, labels:true }, // Origin tab's own Display-card state
+  originStripMode: "analemma", // "ecliptic" | "analemma" -- Origin tab's own strip-panel toggle
+  originClockHr: 12.00,        // Origin tab: clock time (h) for the analemma's Az/El calc + readouts
   display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
   sectorPair: "radec",        // "none" | "azel" | "radec" -- which pair of coordinate-sector fans is shown
   gridAlpha: { h:1, e:1 },
@@ -2673,7 +2702,11 @@ function drawStrip(){
   const h = state.stripH || canvas.clientHeight;
   ctx.clearRect(0,0,w,h);
   if(w<=0 || h<=0) return; // defensive
-  if(state.tab === "origin"){ drawOriginMap(ctx,w,h); return; } // forced RA/Dec-style map, no observer/horizon
+  if(state.tab === "origin"){
+    if(state.originStripMode === "analemma") drawOriginAnalemma(ctx,w,h);
+    else drawOriginMap(ctx,w,h); // no observer/horizon
+    return;
+  }
   if(!state.derived) return; // defensive: derived quantities not yet computed
   if(state.stripMode === "radec") drawRadecMap(ctx,w,h);
   else drawAllSky(ctx,w,h);
@@ -3041,6 +3074,154 @@ function drawOriginMap(ctx, w, h){
 }
 
 /* =========================================================================
+   10c. ORIGIN-TAB STRIP MAP -- THE ANALEMMA (toggle in the strip header:
+   "Ecliptic map" | "Analemma", state.originStripMode, default "analemma";
+   see wireOriginStripModeToggle()). Because the Sun's position is
+   closed-form, the WHOLE YEAR is drawn at once: for every day of year, at a
+   fixed clock time (state.originClockHr) and observer latitude (state.phi),
+   the Sun's azimuth/elevation traces a figure 8 -- height from the 23.4 deg
+   declination swing, width from the equation of time (a mix of the
+   obliquity's own unevenness and the e=0.0167 orbital eccentricity).
+   ========================================================================= */
+const ORIGIN_ECC = 0.0167, ORIGIN_APOGEE_DEG = 102; // mirrors createOriginStage's default options
+const ORIGIN_ANALEMMA_CREAM = "#fff1d9"; // same amber-white blend altaz_origin_stage.js uses for the orbit line
+const ORIGIN_ANALEMMA_CARDINALS = [
+  { day: ORIGIN_CARDINAL_DAYS[0], label: ORIGIN_CARDINAL_READOUTS[0] },
+  { day: ORIGIN_CARDINAL_DAYS[1], label: ORIGIN_CARDINAL_READOUTS[1] },
+  { day: ORIGIN_CARDINAL_DAYS[2], label: ORIGIN_CARDINAL_READOUTS[2] },
+  { day: ORIGIN_CARDINAL_DAYS[3], label: ORIGIN_CARDINAL_READOUTS[3] }
+];
+
+/* Sun's TRUE-longitude declination + equation of time (degrees), for a given
+   day of year -- mirrors altaz_origin_stage.js's own sunTrueLongitudeDeg() +
+   EoT computation, duplicated here for the same reason originSunRaDec() is
+   (this module isn't imported by the strip panel's plain Canvas 2D code --
+   see that function's own comment). Reuses originSunRaDec() (already
+   generic in its longitude input) and the page's own wrap180() (already
+   exactly the "(-180,180]" wrap the equation of time needs). */
+function originTrueSun(dayOfYear){
+  const L = norm360(360*(dayOfYear-79)/365.25); // meanSunLongitudeDeg
+  const lambdaP = norm360(ORIGIN_APOGEE_DEG + 180);
+  const M = (L - lambdaP)*RAD;
+  const lamTrue = norm360(L + 2*ORIGIN_ECC*DEG*Math.sin(M)); // 1st-order equation of centre
+  const eq = originSunRaDec(lamTrue);
+  const eotDeg = wrap180(L - eq.raH*15);
+  return { decDeg: eq.decDeg, eotDeg: eotDeg };
+}
+/* Sun's Az/El at a given day/clock-time/latitude -- h_deg = 15(T-12) + EoT_deg,
+   then the same sin(El) = sin(phi)sin(delta) + cos(phi)cos(delta)cos(h)
+   triangle altAzFromEq() already implements (and this codebase already
+   verified) for every other tab's star. */
+function originSunAltAz(dayOfYear, clockHr, phiDeg){
+  const sun = originTrueSun(dayOfYear);
+  const hDeg = 15*(clockHr-12) + sun.eotDeg;
+  return altAzFromEq(phiDeg, sun.decDeg, hDeg);
+}
+
+function drawOriginAnalemma(ctx, w, h){
+  const padL=14, padR=14, padT=18, padB=18;
+  const plotL=padL, plotR=w-padR, plotT=padT, plotB=h-padB;
+  const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
+
+  ctx.fillStyle = COLORS.canvas; ctx.fillRect(0,0,w,h);
+
+  const phi = state.phi, clockHr = state.originClockHr;
+  const pts = [];
+  let minAz=Infinity, maxAz=-Infinity, minEl=Infinity, maxEl=-Infinity;
+  for(let d=0; d<=365; d++){
+    const altaz = originSunAltAz(d, clockHr, phi);
+    pts.push({ day:d, A:altaz.A, El:altaz.a });
+    if(!isNaN(altaz.A)){ if(altaz.A<minAz) minAz=altaz.A; if(altaz.A>maxAz) maxAz=altaz.A; }
+    if(altaz.a<minEl) minEl=altaz.a; if(altaz.a>maxEl) maxEl=altaz.a;
+  }
+  if(!isFinite(minAz)){ minAz=170; maxAz=190; } // degenerate fallback (e.g. phi = +-90)
+
+  // auto-range each axis to the curve: 8% padding, at least 20 deg span
+  function padRange(lo, hi){
+    const span0 = Math.max(1e-6, hi-lo);
+    const pad = span0*0.08;
+    let a = lo-pad, b = hi+pad;
+    if((b-a) < 20){ const mid=(a+b)/2; a=mid-10; b=mid+10; }
+    return { lo:a, hi:b };
+  }
+  const azR = padRange(minAz,maxAz), elR = padRange(minEl,maxEl);
+  function xOf(az){ return plotL + (az-azR.lo)/(azR.hi-azR.lo)*plotW; }
+  function yOf(el){ return plotB - (el-elR.lo)/(elR.hi-elR.lo)*plotH; }
+  function gridStep(span){ return span<=60 ? 5 : 10; } // gridlines every 5 or 10 deg
+
+  // gridlines
+  const azStep = gridStep(azR.hi-azR.lo), elStep = gridStep(elR.hi-elR.lo);
+  ctx.lineWidth=1; ctx.strokeStyle = hexAlpha(COLORS.border,0.35);
+  for(let a=Math.ceil(azR.lo/azStep)*azStep; a<=azR.hi; a+=azStep){
+    const x = xOf(a);
+    ctx.beginPath(); ctx.moveTo(x,plotT); ctx.lineTo(x,plotB); ctx.stroke();
+  }
+  for(let e=Math.ceil(elR.lo/elStep)*elStep; e<=elR.hi; e+=elStep){
+    const y = yOf(e);
+    ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
+  }
+
+  // horizon (El=0), muted, only when in range
+  if(elR.lo <= 0 && elR.hi >= 0){
+    ctx.strokeStyle = hexAlpha(COLORS.muted,0.5); ctx.lineWidth=1.2;
+    const y = yOf(0);
+    ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
+  }
+
+  // the year's curve: thin cream polyline, with a dot every 7 days (alpha 0.6)
+  ctx.strokeStyle = hexAlpha(ORIGIN_ANALEMMA_CREAM, 0.85); ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  let started = false;
+  pts.forEach(function(p){
+    if(isNaN(p.A)){ started=false; return; }
+    const x = xOf(p.A), y = yOf(p.El);
+    if(!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  ctx.fillStyle = hexAlpha(ORIGIN_ANALEMMA_CREAM, 0.6);
+  pts.forEach(function(p){
+    if(isNaN(p.A) || p.day % 7 !== 0) return;
+    const x = xOf(p.A), y = yOf(p.El);
+    ctx.beginPath(); ctx.arc(x,y,1.6,0,TAU); ctx.fill();
+  });
+
+  // the four cardinal dates: ringed markers + small muted labels
+  ctx.font = "10px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="bottom";
+  ORIGIN_ANALEMMA_CARDINALS.forEach(function(c){
+    const altaz = originSunAltAz(c.day, clockHr, phi);
+    if(isNaN(altaz.A)) return;
+    const x = xOf(altaz.A), y = yOf(altaz.a);
+    ctx.strokeStyle = COLORS.muted; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.arc(x,y,4,0,TAU); ctx.stroke();
+    ctx.fillStyle = hexAlpha(COLORS.muted,0.9);
+    ctx.fillText(c.label, x+6, y-4);
+  });
+
+  // the CURRENT date's Sun: glow + 3px amber dot -- moves along the 8 as the
+  // timeline plays (drawStrip() is re-invoked every time state.day changes)
+  {
+    const altaz = originSunAltAz(state.day, clockHr, phi);
+    if(!isNaN(altaz.A)){
+      const x = xOf(altaz.A), y = yOf(altaz.a);
+      drawGlow(ctx, glowSprite, x, y, 20);
+      ctx.fillStyle = COLORS.amber;
+      ctx.beginPath(); ctx.arc(x,y,3,0,TAU); ctx.fill();
+    }
+  }
+
+  // axis titles
+  ctx.font = "10px Inter, sans-serif";
+  ctx.fillStyle = hexAlpha(COLORS.muted, 0.8);
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("elevation (°)", plotL+4, plotT+4);
+  ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+  ctx.fillText("azimuth (°)", plotR-4, plotB-4);
+
+  ctx.strokeStyle = COLORS.border; ctx.lineWidth=1;
+  ctx.strokeRect(plotL+0.5,plotT+0.5,plotW-1,plotH-1);
+}
+
+/* =========================================================================
    11. CONTROLS WIRING
    ========================================================================= */
 const els = {};
@@ -3049,6 +3230,7 @@ function cacheEls(){
    "observerCard","locationField","locationSelect","phiRange","phiNum","lstRange","lstNum",
    "starCard","starSelect","raRange","raNum","decRange","decNum",
    "dateCard","doyRange","doyNum","doyCalendarReadout","doyTicks","cardinalControl",
+   "originClockRange","originClockNum","originPhiRange","originPhiNum",
    "originTimeline","btnTimelinePlay","timelineRange","timelineBubble","timelineTicks",
    "displayTogglesNormal","displayTogglesOrigin",
    "mainPanelTitle","readoutsDefault","readoutsHlst","readoutsOrigin",
@@ -3056,8 +3238,9 @@ function cacheEls(){
    "poleReadout","readoutPoleAlt","badgeWrap","riseBadge","diurnalExtra","readoutTransitEl","readoutH0",
    "hlstLST","hlstH","hlstAlpha","hlstCulminateNote",
    "originDateLabel","originDayNum","originLambda","originAlpha","originDelta","originSeasonN","originSeasonS",
+   "originEot","originNoonEl",
    "aboutCard","aboutTitle","aboutBody","formulasCard","formulasHead","formulasBody",
-   "stripModeToggle","legendAllsky","legendRadec","legendOrigin","dialHoverZone"
+   "stripModeToggle","originStripModeToggle","legendAllsky","legendRadec","legendOrigin","legendAnalemma","dialHoverZone"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
 }
 
@@ -3410,6 +3593,52 @@ function wireOriginToggles(){
   window.addEventListener("resize", function(){ if(!tip.hidden) hideTip(); });
 }
 
+/* Origin tab's "Ecliptic map" | "Analemma" strip-panel toggle (state.
+   originStripMode) -- styling/wiring pattern mirrors wireStripModeToggle()
+   above (the OTHER tabs' own strip toggle), just a second independent
+   toggle scoped to this tab (see switchTab()'s show/hide of each). */
+function wireOriginStripModeToggle(){
+  els.originStripModeToggle.querySelectorAll("button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      state.originStripMode = btn.dataset.mode;
+      els.originStripModeToggle.querySelectorAll("button").forEach(function(b){
+        const active = b === btn;
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      els.legendOrigin.style.display = (state.originStripMode === "ecliptic") ? "" : "none";
+      els.legendAnalemma.style.display = (state.originStripMode === "analemma") ? "" : "none";
+      state.stripDirty = true;
+      requestRender();
+    });
+  });
+}
+
+/* Origin tab's Date-card "Clock time" / "Latitude" sliders -- these feed
+   ONLY the analemma curve + the EoT/noon-El header readouts (marks the
+   strip dirty and, for latitude, refreshes the readouts); unlike the DOY
+   slider/cardinal buttons, they never touch originStage.setDate() or the
+   3D scene. */
+function wireOriginAnalemmaControls(){
+  wireSliderNumber(els.originClockRange, els.originClockNum, {
+    min:0, max:24, step:0.25, fallback:function(){ return state.originClockHr; },
+    onCommit:function(v){
+      state.originClockHr = v;
+      state.stripDirty = true;
+      requestRender();
+    }
+  });
+  wireSliderNumber(els.originPhiRange, els.originPhiNum, {
+    min:-90, max:90, step:0.1, fallback:function(){ return state.phi; },
+    onCommit:function(v){
+      state.phi = v;
+      updateOriginReadouts(); // noon El depends on phi
+      state.stripDirty = true;
+      requestRender();
+    }
+  });
+}
+
 function wireObserver(){
   els.locationSelect.addEventListener("change", function(){
     const key = els.locationSelect.value;
@@ -3720,6 +3949,11 @@ function switchTab(tabId){
     const key = btn.dataset.key;
     btn.setAttribute("aria-pressed", state.originDisplay[key] ? "true" : "false");
   });
+  els.originStripModeToggle.querySelectorAll("button").forEach(function(b){
+    const active = b.dataset.mode === state.originStripMode;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+  });
 
   document.querySelectorAll("#sectorsControl button").forEach(function(b){
     const active = b.dataset.pair === state.sectorPair;
@@ -3756,12 +3990,14 @@ function switchTab(tabId){
   els.displayTogglesNormal.style.display = isOrigin ? "none" : "";
   els.displayTogglesOrigin.style.display = isOrigin ? "" : "none";
 
-  // Strip panel: the Origin tab forces its own RA/Dec-style ecliptic map, no
-  // stripMode toggle / all-sky option.
+  // Strip panel: the Origin tab shows its own toggle (Ecliptic map/Analemma)
+  // instead of the other tabs' stripModeToggle (All-sky/RA-Dec).
   els.stripModeToggle.style.display = isOrigin ? "none" : "";
+  els.originStripModeToggle.style.display = isOrigin ? "" : "none";
   els.legendAllsky.style.display = (!isOrigin && state.stripMode === "allsky") ? "" : "none";
   els.legendRadec.style.display = (!isOrigin && state.stripMode === "radec") ? "" : "none";
-  els.legendOrigin.style.display = isOrigin ? "" : "none";
+  els.legendOrigin.style.display = (isOrigin && state.originStripMode === "ecliptic") ? "" : "none";
+  els.legendAnalemma.style.display = (isOrigin && state.originStripMode === "analemma") ? "" : "none";
 
   updatePlayButton();
   if(state.playing) startLoop(); else stopLoop();
@@ -3772,7 +4008,10 @@ function switchTab(tabId){
       originStage.setVisible(true);
       originStage.attachPointer(glCanvas);
       state.day = cfg.day;
+      state.originClockHr = cfg.clockHr;
       setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
+      setSliderNumber(els.originClockRange, els.originClockNum, state.originClockHr, 0.25);
+      setSliderNumber(els.originPhiRange, els.originPhiNum, state.phi, 0.1);
       originStage.setOptions(state.originDisplay);
       onOriginDateChanged(); // setDate + readouts + formulas + strip dirty + requestRender
       originStage.resetView(); // each entry re-homes both of the stage's cameras; renders once
@@ -3805,6 +4044,8 @@ function updateOriginReadouts(){
   els.originDelta.textContent = fmtSigned(s.decDeg,1);
   els.originSeasonN.textContent = s.seasonN;
   els.originSeasonS.textContent = s.seasonS;
+  els.originEot.textContent = fmtSigned(s.eotMin, 1);
+  els.originNoonEl.textContent = fmtSigned(transitAltitudeDeg(state.phi, s.decDeg), 1);
 }
 
 function updateReadouts(){
@@ -4218,9 +4459,11 @@ function init(){
   wireOriginToggles();
   wireDialTooltip();
   wireStripModeToggle();
+  wireOriginStripModeToggle();
   wirePlayback();
   wireOriginDate();
   wireOriginTimeline();
+  wireOriginAnalemmaControls();
   wireObserver();
   wireStar();
   wireFormulasCollapse();

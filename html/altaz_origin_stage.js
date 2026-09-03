@@ -51,10 +51,20 @@
                              // does NOT draw — call render() to see it (this
                              // lets an animation loop batch many setDate()s
                              // per rendered frame if it ever needs to)
-       getState(),           // -> {day, dateLabel, lambdaDeg, raHours, decDeg, seasonN, seasonS}
+       getState(),           // -> {day, dateLabel, lambdaDeg, lambdaTrueDeg, meanLongitudeDeg,
+                             //     eotMin, raHours, decDeg, seasonN, seasonS, eccentricity,
+                             //     apogeeLongitudeDeg} -- lambdaDeg/lambdaTrueDeg are the same
+                             //     TRUE ecliptic longitude (kept as two names: lambdaDeg for
+                             //     back-compat, lambdaTrueDeg to be explicit); meanLongitudeDeg
+                             //     is the underlying uniform-rate longitude L; eotMin is the
+                             //     equation of time in minutes (see setDate()'s own comment).
        setOptions(opts),     // {ghosts,zodiac,sunArcs,eqGrid,labels} -- all boolean, all default
-                             // true; toggles this stage's Display-card layers. Like setDate(),
-                             // this only updates visibility flags -- call render() to see it.
+                             // true; toggles this stage's Display-card layers. Also accepts
+                             // {eccentricity,apogeeLongitudeDeg} -- numbers, default 0.0167/102
+                             // deg -- the analemma's orbital parameters (see
+                             // sunTrueLongitudeDeg()'s own comment); a later setDate() picks up
+                             // any change. Like setDate(), this only updates state/visibility
+                             // flags -- call render() to see it.
        resize(cssW, cssH),   // lay out the two viewports + resize the renderer; renders once
        render(),             // draw both viewports into the current renderer canvas
        attachPointer(el),    // wire drag-rotate/wheel-zoom on `el`, scoped per-viewport
@@ -95,6 +105,16 @@
    above) — a fair reflection of the real Sun doing the same thing, for the
    opposite reason (eccentricity rather than a labelling simplification).
 
+   ANALEMMA ADDENDUM: the paragraph above was written when this module had no
+   eccentricity at all; it now does, via options.eccentricity/
+   apogeeLongitudeDeg and the first-order equation of centre in
+   sunTrueLongitudeDeg() (see that function's own comment) -- the CONTINUOUS
+   Earth/Sun described above is placed by the resulting TRUE longitude, not
+   the bare uniform-rate mean longitude, while the four ghost Earths remain
+   exactly as described (exact cardinal MEAN longitudes, untouched by
+   eccentricity). The drawn orbit itself is still a perfect circle -- see the
+   comment beside its ring geometry in buildHelioScene().
+
    Ecliptic frame -> three.js (y-up) mapping used throughout:
      x_ecl -> +X (toward the vernal equinox, Aries)
      z_ecl (ecliptic north) -> +Y
@@ -128,6 +148,12 @@ const SIN_EPS = Math.sin(EPS);
 function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 function norm360(d) { d = d % 360; if (d < 0) d += 360; return d; }
 function wrap24(h) { h = h % 24; if (h < 0) h += 24; return h; }
+function wrapPM180(d) { // normalize an angle to (-180,180]
+  d = d % 360;
+  if (d <= -180) d += 360;
+  if (d > 180) d -= 360;
+  return d;
+}
 
 /* ---- palette (fixed design tokens shared with altaz_radec.html's :root
    CSS custom properties; hardcoded here since deps carries no palette —
@@ -171,6 +197,29 @@ function sunEquatorialFromLambda(lambdaDeg) {
   const decDeg = Math.asin(sinDelta) * DEG;
   const alphaDeg = norm360(Math.atan2(COS_EPS * Math.sin(l), Math.cos(l)) * DEG);
   return { raHours: alphaDeg / 15, decDeg: decDeg };
+}
+/* ---- eccentricity: first-order equation of centre (ANALEMMA addendum to
+   the mean-Sun model above). Converts the Sun's MEAN ecliptic longitude L
+   (uniform motion around a circular orbit) to its TRUE ecliptic longitude
+   lambda_true -- what a real, slightly eccentric orbit (e ~ 0.0167) actually
+   produces -- to first order in e:
+     lambda_true = L + 2e * (180/pi) * sin(L - lambda_P)
+   where lambda_P = apogeeLongitudeDeg + 180 is the perihelion longitude (the
+   apogee/perihelion line is one straight line through the Sun, so the two
+   are exactly 180 deg apart) and M = L - lambda_P is the mean anomaly. This
+   is the ONLY place eccentricity enters: Earth's drawn orbit (see
+   buildHelioScene's orbit ring / earthOrbitPos3 below) stays a PERFECT
+   CIRCLE -- e never touches the drawn radius, only this angular correction,
+   which is exactly enough for the analemma (a 2D angle plot) to come out
+   right. lambda_true then replaces the mean lambda everywhere the Sun is
+   placed or read out (setDate() below): the Sun's position on the
+   sphere/orbit, its RA/Dec, the zodiac highlight, and every readout. The
+   four ghost Earths stay at the exact CARDINAL MEAN longitudes (unchanged
+   below) -- only the continuous/current Sun moves on the true path. */
+function sunTrueLongitudeDeg(meanLongitudeDeg, eccentricity, apogeeLongitudeDeg) {
+  const lambdaP = norm360(apogeeLongitudeDeg + 180);
+  const M = (meanLongitudeDeg - lambdaP) * RAD;
+  return norm360(meanLongitudeDeg + 2 * eccentricity * DEG * Math.sin(M));
 }
 function seasonsForLambda(lambdaDeg) {
   const l = norm360(lambdaDeg);
@@ -279,7 +328,23 @@ export function createOriginStage(deps) {
   sceneL.add(camL); // cameras are added to their own scene so camera-child HUD sprites render
   sceneR.add(camR);
 
-  const CAM_L_DEFAULT = { theta: 0, phi: 40 * RAD, radius: 3.6 };
+  // Default viewpoint, derived from applyCam()'s own convention (camera =
+  // R*(cos(phi)sin(theta), sin(phi), cos(phi)cos(theta)), looking at the
+  // origin; theta=0 is the +Z/June-solstice side, theta increases toward +X/
+  // September): the March-equinox Earth sits at heliocentric (-1,0,0) (see
+  // earthOrbitPos3(0)), i.e. camera azimuth theta=-90 deg looks at the Sun
+  // from directly behind that Earth (symmetric, camera z=0). Per spec we
+  // want that vantage rotated ~12 deg toward the June side (theta=0), i.e.
+  // theta = -90+12 = -78 deg, plus elevation 32 deg above the ecliptic
+  // plane -- same radius/target as before. At this theta/phi the March
+  // Earth projects to bottom-centre (near the viewer, screen-y<0), June to
+  // the right (screen-x>0), December to the left (screen-x<0), and
+  // September (the far side, screen-depth<0 i.e. farthest from the camera)
+  // to the top (screen-y>0) -- verified by projecting each ghost Earth's
+  // position onto the resulting camera's right/up axes. The world-+X arrow
+  // toward Aries (from the March Earth toward the Sun) then points up and
+  // slightly right on screen, i.e. "up toward the Sun".
+  const CAM_L_DEFAULT = { theta: -78 * RAD, phi: 32 * RAD, radius: 3.6 };
   const CAM_R_DEFAULT = { theta: 25 * RAD, phi: 25 * RAD, radius: 3.2 };
   const ZOOM_MIN = 1.3, ZOOM_MAX = 11;
   // world-space radius of each scene's outermost content (ghost-Earth labels /
@@ -578,6 +643,10 @@ export function createOriginStage(deps) {
     track({ dispose: function () { sunGeo.dispose(); sunMat.dispose(); } });
 
     // Earth's orbit (thin amber-white circle, r=1) + ecliptic-plane hint disk + faint radial grid
+    // -- drawn as a PERFECT CIRCLE always: eccentricity (options.eccentricity)
+    // never touches this radius, it only enters through the equation-of-
+    // centre angular correction in sunTrueLongitudeDeg() above, which is what
+    // moves the current Earth/Sun slightly off a uniform circular pace.
     thinLoop(ringPoints3(ECL_U, ECL_V, 1, CIRCLE_N), COLOR_INT.orbit, 0.5, sceneL);
     {
       const diskPts = ringPoints3(ECL_U, ECL_V, 1.35, 64);
@@ -916,14 +985,31 @@ export function createOriginStage(deps) {
      Does not draw (call render() to see it) -- see the module header.
      ======================================================================= */
   const scratchP0 = { x: 0, y: 0, z: 0 }, scratchP1 = { x: 0, y: 0, z: 0 };
-  let current = { day: 79, lambdaDeg: 0, raHours: 0, decDeg: 0, seasonN: "spring", seasonS: "autumn" };
+  let current = {
+    day: 79, lambdaDeg: 0, lambdaTrueDeg: 0, meanLongitudeDeg: 0, eotMin: 0,
+    raHours: 0, decDeg: 0, seasonN: "spring", seasonS: "autumn"
+  };
 
   function setDate(dayOfYear) {
     const day = dayOfYear;
-    const lambdaDeg = meanSunLongitudeDeg(day);
+    // meanLongitudeDeg (L) is the uniform-rate mean-Sun longitude; lambdaDeg
+    // is the TRUE ecliptic longitude (equation of centre applied -- see
+    // sunTrueLongitudeDeg()'s own comment) and is what actually places the
+    // Sun/current-Earth everywhere below (ghost Earths stay on the exact
+    // CARDINAL MEAN longitudes, set once in buildHelioScene() -- unaffected).
+    const meanLongitudeDeg = meanSunLongitudeDeg(day);
+    const lambdaDeg = sunTrueLongitudeDeg(meanLongitudeDeg, options.eccentricity, options.apogeeLongitudeDeg);
     const eq = sunEquatorialFromLambda(lambdaDeg);
     const seasons = seasonsForLambda(lambdaDeg);
-    current = { day: day, lambdaDeg: lambdaDeg, raHours: eq.raHours, decDeg: eq.decDeg, seasonN: seasons.N, seasonS: seasons.S };
+    // equation of time: EoT(deg) = L - alpha(lambda_true), wrapped to
+    // (-180,180]; eotMin converts to the familiar "clock minutes" unit
+    // (1 deg of RA = 4 minutes of time, since the sky turns 360 deg / 24h).
+    const eotDeg = wrapPM180(meanLongitudeDeg - eq.raHours * 15);
+    const eotMin = 4 * eotDeg;
+    current = {
+      day: day, lambdaDeg: lambdaDeg, lambdaTrueDeg: lambdaDeg, meanLongitudeDeg: meanLongitudeDeg, eotMin: eotMin,
+      raHours: eq.raHours, decDeg: eq.decDeg, seasonN: seasons.N, seasonS: seasons.S
+    };
 
     // ---- left scene ----
     const eOrb = earthOrbitPos3(lambdaDeg);
@@ -1036,7 +1122,9 @@ export function createOriginStage(deps) {
   function getState() {
     return {
       day: current.day, dateLabel: dayOfYearToLabel(current.day), lambdaDeg: current.lambdaDeg,
-      raHours: current.raHours, decDeg: current.decDeg, seasonN: current.seasonN, seasonS: current.seasonS
+      lambdaTrueDeg: current.lambdaTrueDeg, meanLongitudeDeg: current.meanLongitudeDeg, eotMin: current.eotMin,
+      raHours: current.raHours, decDeg: current.decDeg, seasonN: current.seasonN, seasonS: current.seasonS,
+      eccentricity: options.eccentricity, apogeeLongitudeDeg: options.apogeeLongitudeDeg
     };
   }
 
@@ -1050,7 +1138,16 @@ export function createOriginStage(deps) {
      only matters when sunArcGeomGroup is already visible.
      Like setDate(), setOptions() only updates state/visibility -- it does
      NOT render (call render() to see it), and it never allocates. ---- */
-  const options = { ghosts: true, zodiac: true, sunArcs: true, eqGrid: true, labels: true };
+  // ghosts/zodiac/sunArcs/eqGrid/labels: Display-card boolean toggles (gate
+  // THREE object visibility -- see applyOptionsVisibility() below).
+  // eccentricity/apogeeLongitudeDeg: the ANALEMMA addendum's orbital
+  // parameters (see sunTrueLongitudeDeg()'s own comment) -- not gated by
+  // applyOptionsVisibility() (they're numbers, not visibility flags); a
+  // later setDate() call picks up any change made via setOptions().
+  const options = {
+    ghosts: true, zodiac: true, sunArcs: true, eqGrid: true, labels: true,
+    eccentricity: 0.0167, apogeeLongitudeDeg: 102
+  };
   function applyOptionsVisibility() {
     ghostGeomGroup.visible = options.ghosts;
     ghostLabelGroup.visible = options.ghosts && options.labels;
@@ -1168,6 +1265,9 @@ export function createOriginStage(deps) {
 
   function render() {
     if (!visible || !renderer) return;
+    // refresh both camera matrices first: after a discontinuous camera jump (drag, reset)
+    // the label clamp must project with the NEW view, not the previous frame's matrix
+    camL.updateMatrixWorld(true); camR.updateMatrixWorld(true);
     clampAllLabels();
     renderer.setScissorTest(true);
     renderer.setViewport(rectL.x, rectL.y, rectL.w, rectL.h);
