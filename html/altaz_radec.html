@@ -528,7 +528,7 @@
             <input type="number" id="doyNum" class="num-input" min="0" max="365" step="0.5" value="79">
           </div>
           <div class="unit" id="doyCalendarReadout" style="margin-top:6px">Mar 20</div>
-          <div class="unit" style="margin-top:2px">mean Sun, circular orbit (uniform <span class="math" data-latex="\lambda">&lambda;</span>&#9737;)</div>
+          <div class="unit" style="margin-top:2px">true Sun: e = 0.017, equinox fixed at Mar 20</div>
         </div>
         <div class="field sectors-field">
           <label class="field-label">Cardinal dates</label>
@@ -994,7 +994,8 @@ const TAB_CONFIG = {
     aboutHTML:
       '<p>Right ascension needs a zero point on the celestial equator, and nothing on the equator is special &mdash; except where the Sun\'s yearly path crosses it. Earth\'s axis keeps a fixed direction in space as Earth orbits, so Earth\'s equatorial plane and its orbital plane (the ecliptic) are tilted 23.4&deg; to each other and intersect along one fixed line. Seen from Earth that line marks two points on the sky: the Sun sits at one of them around March 20, crossing the equator northward &mdash; the vernal equinox &#9800; &mdash; and at the other around September 22. So &#9800; is a direction, not a place: the direction from Earth to the Sun at the moment of the March equinox. Right ascension is measured eastward from it along the equator; declination from the equator itself. Watch the arrow toward &#9800; stay parallel through the year while the Sun slides along the ecliptic, and read the Sun\'s coordinates: 0h / 0&deg; in March, 6h / +23.4&deg; in June, 12h / 0&deg; in September, 18h / &minus;23.4&deg; in December.</p>' +
       '<p>The zodiac ring shows the twelve signs, 30&deg; each counted eastward from &#9800; &mdash; the Sun appears in the sign on the far side of the Sun from Earth. The zero point drifts slowly westward through the constellations (precession, one turn in 26,000 years), which is why catalogue coordinates carry an epoch such as J2000.</p>' +
-      '<p>Photograph the Sun at the same clock time every few days and it traces a figure 8, the analemma. Its height is the declination swing &mdash; the 23.4&deg; tilt seen from the ground. Its width is the equation of time: the Sun runs ahead of or behind the clock because its motion along the equator is uneven, partly from the tilt itself and partly from Earth\'s slightly eccentric orbit (<span class="math" data-latex="e">e</span> = 0.017), which is why the two lobes are unequal. Change the clock time to tilt the 8, as in a morning or afternoon photograph.</p>',
+      '<p>Photograph the Sun at the same clock time every few days and it traces a figure 8, the analemma. Its height is the declination swing &mdash; the 23.4&deg; tilt seen from the ground. Its width is the equation of time: the Sun runs ahead of or behind the clock because its motion along the equator is uneven, partly from the tilt itself and partly from Earth\'s slightly eccentric orbit (<span class="math" data-latex="e">e</span> = 0.017), which is why the two lobes are unequal. Change the clock time to tilt the 8, as in a morning or afternoon photograph.</p>' +
+      '<p>Because Earth\'s orbit is slightly eccentric the seasons are unequal &mdash; spring and summer together run about a week longer than autumn and winter &mdash; and the app\'s cardinal dates come from the true Sun, so the moving Earth meets each ghost exactly on its day.</p>',
     clockHr: 12.00 // Origin tab's own default clock time (h) for the analemma
   },
   grids: {
@@ -3070,16 +3071,48 @@ function originSunRaDec(lambdaDeg){
 const ORIGIN_ZODIAC_GLYPHS = ["♈︎","♉︎","♊︎","♋︎","♌︎","♍︎","♎︎","♏︎","♐︎","♑︎","♒︎","♓︎"];
 
 /* Day-of-year slider (Origin tab, Date card): exact day-of-year values for
-   lambda = 0/90/180/270 deg -- the SAME formula the cardinal-date buttons
-   use (79 + lambdaDeg*365.25/360, the inverse of altaz_origin_stage.js's
-   meanSunLongitudeDeg(d)), NOT the rounded calendar days 79/172/265/355.
-   Shared by the slider's snap-to-cardinal behavior, its tick marks, and the
-   calendar readout's landmark suffix (wireOriginDate()/onOriginDateChanged()
-   below). */
+   TRUE ecliptic longitude 0/90/180/270 deg -- sourced from
+   altaz_origin_stage.js's own createOriginStage(...).cardinalDays(), NOT
+   computed independently here (a fixed 79 + lambdaDeg*365.25/360 formula
+   ignores eccentricity and used to leave the continuous Earth ~1.9 deg away
+   from the March ghost on day 79 -- see that module's header PHYSICS
+   comment). The arrays below start out holding that same old approximate
+   formula purely as a same-tab-no-WebGL fallback (originStage never gets
+   created, so refreshOriginCardinals() has nothing to refresh them from);
+   refreshOriginCardinals(), called right after the stage is created in
+   init(), overwrites them in place with the module's authoritative values
+   BEFORE wireOriginDate()/wireOriginTimeline() build any tick marks off of
+   them, so there is exactly one source of truth in the normal (WebGL
+   available) case. Shared by the slider's snap-to-cardinal behavior, its
+   tick marks, and the calendar readout's landmark suffix
+   (wireOriginDate()/onOriginDateChanged() below). */
 const ORIGIN_CARDINAL_DAYS = [0,90,180,270].map(function(l){ return 79 + l*365.25/360; });
 const ORIGIN_CARDINAL_READOUTS = [
   "Mar 20 · ♈ equinox", "Jun 21 · solstice", "Sep 22 · equinox", "Dec 21 · solstice"
 ]; // same literal strings as the ghost-Earth labels in altaz_origin_stage.js
+/* Overwrites ORIGIN_CARDINAL_DAYS/ORIGIN_CARDINAL_READOUTS/
+   ORIGIN_TIMELINE_CARDINAL_LABELS IN PLACE (so every existing reference to
+   these `const` arrays picks up the new values with no further code changes)
+   from the origin stage's own cardinalDays()/cardinalCalendarLabels() -- see
+   altaz_origin_stage.js's true-Sun epoch calibration. Called once from
+   init() right after ensureOriginStage(), and would need to be called again
+   if a future control ever let the user change the stage's
+   eccentricity/apogeeLongitudeDeg live (no such control exists today -- see
+   ORIGIN_ECC/ORIGIN_APOGEE_DEG above, which are fixed constants). A no-op
+   (leaving the fallback formula above in place) when WebGL isn't available,
+   since then originStage is never created. */
+function refreshOriginCardinals(){
+  if(!originStage) return;
+  const days = originStage.cardinalDays();
+  const labels = originStage.cardinalCalendarLabels();
+  const suffixes = ["♈ equinox","solstice","equinox","solstice"];
+  const timelinePrefixes = ["♈ ","","♎ ",""];
+  for(let i=0;i<4;i++){
+    ORIGIN_CARDINAL_DAYS[i] = days[i];
+    ORIGIN_CARDINAL_READOUTS[i] = labels[i] + " · " + suffixes[i];
+    ORIGIN_TIMELINE_CARDINAL_LABELS[i] = timelinePrefixes[i] + labels[i];
+  }
+}
 const ORIGIN_SNAP_TOLERANCE_DAYS = 3;
 /* Shared cardinal-date snap used by both the Date card's own doyRange input
    (wireOriginDate()) and the full-width timeline strip's range input
@@ -3626,13 +3659,16 @@ function wireOriginDate(){
 
   els.cardinalControl.querySelectorAll("button").forEach(function(btn){
     btn.addEventListener("click", function(){
-      // sets the EXACT cardinal longitude (0/90/180/270 deg), not the
-      // approximate calendar day -- inverse of the stage's own
-      // meanSunLongitudeDeg(d) = 360*(d-79)/365.25, so lambda=0 lands
-      // exactly on d=79 and the others land a few tenths of a day off
-      // their calendar label (documented in altaz_origin_stage.js's header).
+      // sets the EXACT day the origin stage's continuous Earth reaches this
+      // cardinal TRUE ecliptic longitude (0/90/180/270 deg) -- i.e.
+      // ORIGIN_CARDINAL_DAYS[idx], sourced from cardinalDays() (see
+      // refreshOriginCardinals()), not a fixed mean-longitude inversion. The
+      // March button lands exactly on day 79; the other three land a
+      // fraction of a day off their rounded calendar label (documented in
+      // altaz_origin_stage.js's header PHYSICS comment).
       const lambdaDeg = parseFloat(btn.dataset.lambda);
-      state.day = 79 + lambdaDeg*365.25/360;
+      const idx = Math.round(lambdaDeg/90) % 4;
+      state.day = ORIGIN_CARDINAL_DAYS[idx];
       setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
       onOriginDateChanged();
     });
@@ -4665,6 +4701,15 @@ function init(){
   recomputeDerived(); // seed state.derived before any early render (e.g. initThreeScene's initial resetCameraView -> render)
 
   initThreeScene(); // builds the dome scene; sets state.webglOK
+
+  // Create the origin stage (if WebGL is available) and pull its
+  // authoritative cardinal days/labels BEFORE wireOriginDate()/
+  // wireOriginTimeline() build any tick marks or <datalist> options off of
+  // ORIGIN_CARDINAL_DAYS/ORIGIN_CARDINAL_READOUTS below -- see
+  // refreshOriginCardinals()'s own comment. Harmless to call again later
+  // from switchTab() -- ensureOriginStage() is itself idempotent.
+  ensureOriginStage();
+  refreshOriginCardinals();
 
   wireTabs();
   wireDisplayToggles();

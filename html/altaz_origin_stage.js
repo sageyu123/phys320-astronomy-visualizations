@@ -53,18 +53,21 @@
                              // per rendered frame if it ever needs to)
        getState(),           // -> {day, dateLabel, lambdaDeg, lambdaTrueDeg, meanLongitudeDeg,
                              //     eotMin, raHours, decDeg, seasonN, seasonS, eccentricity,
-                             //     apogeeLongitudeDeg} -- lambdaDeg/lambdaTrueDeg are the same
-                             //     TRUE ecliptic longitude (kept as two names: lambdaDeg for
-                             //     back-compat, lambdaTrueDeg to be explicit); meanLongitudeDeg
-                             //     is the underlying uniform-rate longitude L; eotMin is the
-                             //     equation of time in minutes (see setDate()'s own comment).
+                             //     apogeeLongitudeDeg, seasonLengths} -- lambdaDeg/lambdaTrueDeg
+                             //     are the same TRUE ecliptic longitude (kept as two names:
+                             //     lambdaDeg for back-compat, lambdaTrueDeg to be explicit);
+                             //     meanLongitudeDeg is the underlying uniform-rate longitude L;
+                             //     eotMin is the equation of time in minutes (see setDate()'s own
+                             //     comment); seasonLengths is {spring,summer,autumn,winter} in
+                             //     days (see computeSeasonLengths()'s own comment).
        setOptions(opts),     // {ghosts,zodiac,sunArcs,eqGrid,labels} -- all boolean, all default
                              // true; toggles this stage's Display-card layers. Also accepts
                              // {eccentricity,apogeeLongitudeDeg} -- numbers, default 0.0167/102
                              // deg -- the analemma's orbital parameters (see
                              // sunTrueLongitudeDeg()'s own comment); a later setDate() picks up
-                             // any change. Like setDate(), this only updates state/visibility
-                             // flags -- call render() to see it.
+                             // any change, and the true-Sun epoch/cardinal days below are
+                             // recalibrated immediately (recomputeEpoch()). Like setDate(), this
+                             // only updates state/visibility flags -- call render() to see it.
        resize(cssW, cssH),   // lay out the two viewports + resize the renderer; renders once
        render(),             // draw both viewports into the current renderer canvas
        attachPointer(el),    // wire drag-rotate/wheel-zoom on `el`, scoped per-viewport
@@ -72,53 +75,82 @@
        resetView(),          // restore both cameras' default orbit + renders once
        setVisible(bool),     // when false, render() is a no-op (host is hiding this stage)
        dispose(),            // free all GPU resources + remove listeners
-       getViewportRects()    // -> {layout:"row"|"col", L:{x,y,w,h}, R:{x,y,w,h}} -- each
+       getViewportRects(),   // -> {layout:"row"|"col", L:{x,y,w,h}, R:{x,y,w,h}} -- each
                              // viewport's rect in the SAME CSS-pixel, top-left-origin frame
                              // the host's own overlay canvas uses (see resize()'s own
                              // comment); lets the host draw a 2D-canvas inset (e.g. the
                              // Analemma) positioned against either viewport
+       cardinalDays(),       // -> [dSpring,dSummer,dAutumn,dWinter], the four days of year where
+                             // the Sun's TRUE ecliptic longitude is exactly 0/90/180/270 deg (see
+                             // solveCardinalDay()'s own comment) -- dSpring is always day 79
+                             // (Mar 20) to Newton's own 1e-9 deg tolerance, by construction of
+                             // epochDay0 (see solveEpochDay0()); the other three land a fraction
+                             // of a day off the ordinary calendar dates 172/265/355
+       cardinalCalendarLabels(), // -> ["Mar 20","Jun 21","Sep 22" (or "23"),"Dec 21"] -- the same
+                             // four days above, turned into calendar labels via
+                             // dayOfYearToLabel(); this is what the ghost-Earth labels in
+                             // buildHelioScene() are built from
+       seasonLengths()       // -> {spring,summer,autumn,winter} in days -- the gaps between
+                             // consecutive cardinalDays() entries (see computeSeasonLengths());
+                             // same numbers as getState().seasonLengths, exposed standalone so a
+                             // host can read them without also needing a live setDate()'d state
      }
 
-   PHYSICS — CLOSED-FORM, CIRCULAR ORBIT, MEAN SUN (a deliberate teaching
-   simplification: Earth's real orbit is a slightly eccentric ellipse and the
-   real Sun's ecliptic longitude does not advance at a perfectly uniform
-   rate, which is why real equinox/solstice dates drift by about a day
-   year-to-year and are NOT exactly a quarter-year apart. Here the orbit is a
-   perfect circle and the Sun's mean longitude advances uniformly in time, so
-   every derived formula below is exact algebra, not an approximation of an
-   ephemeris.):
+   PHYSICS — CIRCULAR ORBIT, TRUE SUN (a deliberate teaching simplification:
+   Earth's drawn orbit is a perfect circle, but the Sun's ANGULAR position on
+   it is the real, slightly eccentric one, via the first-order equation of
+   centre below -- not the fully-uniform "mean Sun" this module started with.
+   That is what makes the seasons come out unequal, same as the real sky,
+   while every derived formula below stays exact algebra for the given
+   e/apogeeLongitudeDeg, not an approximation of a full ephemeris.):
 
      epsilon = 23.44 deg (obliquity)
-     lambda(d) = 360 * (d - 79) / 365.25   (deg; d = day of year, 1-indexed
-                 so d=1 is Jan 1; lambda=0 at d=79 = Mar 20, the March
-                 equinox — see dayOfYearToLabel for the calendar mapping)
-     sin(delta) = sin(epsilon) * sin(lambda)
-     alpha = atan2(cos(epsilon) * sin(lambda), cos(lambda)), wrapped to [0,24h)
+     e = eccentricity (default 0.0167), lambda_P = apogeeLongitudeDeg + 180
+         (perihelion longitude; default apogeeLongitudeDeg = 102 deg)
+     L(d) = 360 * (d - epochDay0) / 365.25   (deg; mean ecliptic longitude --
+            uniform-rate motion around the circular orbit; d = day of year,
+            1-indexed so d=1 is Jan 1)
+     M = L - lambda_P   (mean anomaly)
+     lambda_true = L + 2e * (180/pi) * sin(M)   (first-order equation of
+            centre -- see sunTrueLongitudeDeg()'s own comment)
+     sin(delta) = sin(epsilon) * sin(lambda_true)
+     alpha = atan2(cos(epsilon) * sin(lambda_true), cos(lambda_true)),
+             wrapped to [0,24h)
 
-   The four "cardinal" ghost Earths are placed at the EXACT cardinal
-   longitudes lambda = 0/90/180/270 deg (not at lambda(79)/lambda(172)/
-   lambda(265)/lambda(355), which the uniform-rate model puts at very
-   slightly different longitudes — about +1.7 deg at the June point, +3.3 at
-   the September point, +2.0 at the December point). Using the exact
-   quarter-longitudes keeps the ghosts at astronomically exact equinox/
-   solstice positions (delta=+/-epsilon or 0, alpha=6h/12h/18h/0h to machine
-   precision) while still labelling them with the ordinary calendar dates
-   79/172/265/355 -> "Mar 20"/"Jun 21"/"Sep 22"/"Dec 21" people actually use.
-   The CONTINUOUS/current Earth (driven by setDate) always uses the uniform
-   lambda(d) formula above, so at d=79 it sits exactly on the March ghost,
-   and near-but-not-exactly on the other three (by the few degrees noted
-   above) — a fair reflection of the real Sun doing the same thing, for the
-   opposite reason (eccentricity rather than a labelling simplification).
+   epochDay0 is NOT the literal 79 this module used to fix its mean-longitude
+   epoch to: it is solved once by Newton's method (solveEpochDay0(), 1e-9 deg
+   tolerance) so that lambda_true comes out EXACTLY 0 on day 79 (Mar 20) for
+   the current e/apogeeLongitudeDeg. That calibration is the fix for a bug
+   this comment used to describe: with epochDay0 fixed at 79, the CONTINUOUS
+   Earth's TRUE longitude on day 79 came out about +1.9 deg away from 0 (the
+   equation-of-centre term at that point in the year), so it visibly missed
+   the March ghost Earth (placed at the exact literal longitude 0) by that
+   amount. recomputeEpoch() reruns this calibration whenever setOptions()
+   changes eccentricity/apogeeLongitudeDeg.
 
-   ANALEMMA ADDENDUM: the paragraph above was written when this module had no
-   eccentricity at all; it now does, via options.eccentricity/
-   apogeeLongitudeDeg and the first-order equation of centre in
-   sunTrueLongitudeDeg() (see that function's own comment) -- the CONTINUOUS
-   Earth/Sun described above is placed by the resulting TRUE longitude, not
-   the bare uniform-rate mean longitude, while the four ghost Earths remain
-   exactly as described (exact cardinal MEAN longitudes, untouched by
-   eccentricity). The drawn orbit itself is still a perfect circle -- see the
-   comment beside its ring geometry in buildHelioScene().
+   The four "cardinal" ghost Earths sit at the exact literal longitudes
+   lambda = 0/90/180/270 deg (delta=+/-epsilon or 0, alpha=6h/12h/18h/0h to
+   machine precision -- see earthOrbitPos3()/buildHelioScene()). cardinalDays()
+   inverts lambda_true(day) = 0/90/180/270 by Newton (also 1e-9 deg
+   tolerance, solveCardinalDay()) to find the four days the CONTINUOUS Earth
+   actually reaches each of those longitudes: day 79 exactly for the March
+   point (by the epochDay0 calibration above), and a fraction of a day off
+   the ordinary calendar dates 172/265/355 for the other three -- Earth moves
+   at a non-uniform TRUE rate around its eccentric orbit, so equal 90 deg
+   longitude steps do not take equal numbers of days (computeSeasonLengths()
+   turns the four cardinalDays() gaps into the resulting unequal season
+   lengths: longest in northern spring/summer, shortest in northern
+   autumn/winter, per Kepler's second law). cardinalCalendarLabels() turns
+   those four days into the ordinary calendar labels ("Mar 20", "Jun 21",
+   "Sep 22" or "23", "Dec 21") the ghost labels below and the host page's
+   cardinal-date UI both use. Because the continuous Earth and
+   cardinalDays() solve the exact SAME lambda_true(day) equation, the
+   continuous Earth always sits EXACTLY on top of each ghost on that ghost's
+   own cardinalDays() entry.
+
+   Earth's DRAWN orbit (see buildHelioScene()'s orbit ring / earthOrbitPos3()
+   below) stays a PERFECT CIRCLE regardless of all of the above -- e never
+   touches the drawn radius, only the angular (lambda) correction.
 
    Ecliptic frame -> three.js (y-up) mapping used throughout:
      x_ecl -> +X (toward the vernal equinox, Aries)
@@ -151,7 +183,17 @@ const COS_EPS = Math.cos(EPS);
 const SIN_EPS = Math.sin(EPS);
 
 function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
-function norm360(d) { d = d % 360; if (d < 0) d += 360; return d; }
+function norm360(d) {
+  d = d % 360; if (d < 0) d += 360;
+  // snap a floating-point value that "should" be exactly 0 (e.g. the Newton-
+  // calibrated true-Sun longitude at day 79 -- see solveEpochDay0()) but
+  // landed a few ULPs on the negative side, and so wrapped to just under 360
+  // instead of just above 0, back down to a clean 0. 1e-6 deg (~3.6
+  // milliarcsec) is far tighter than anything this module ever needs to draw
+  // or display, so this never affects a genuinely distinct angle.
+  if (d > 360 - 1e-6) d = 0;
+  return d;
+}
 function wrap24(h) { h = h % 24; if (h < 0) h += 24; return h; }
 function wrapPM180(d) { // normalize an angle to (-180,180]
   d = d % 360;
@@ -195,11 +237,26 @@ const ZODIAC_SIGNS = [
 ];
 
 /* ---- physics (pure numbers; independently re-verified in a Node harness) ---- */
-function meanSunLongitudeDeg(dayOfYear) { return norm360(360 * (dayOfYear - 79) / 365.25); }
+const DEFAULT_ECCENTRICITY = 0.0167, DEFAULT_APOGEE_LONGITUDE_DEG = 102;
+/* meanSunLongitudeDeg's epochDay0 is NOT a fixed literal 79 -- see
+   solveEpochDay0() below and the module header's PHYSICS comment for why. */
+function meanSunLongitudeDeg(dayOfYear, epochDay0) { return norm360(360 * (dayOfYear - epochDay0) / 365.25); }
+/* unwrapped (no norm360) mean longitude -- continuous in dayOfYear, which the
+   Newton solvers below need (norm360's +-360 deg wrap would otherwise look
+   like a discontinuity to Newton's iteration right where it matters, at
+   meanLongitudeDeg near 0/360). */
+function meanSunLongitudeDegRaw(dayOfYear, epochDay0) { return 360 * (dayOfYear - epochDay0) / 365.25; }
 function sunEquatorialFromLambda(lambdaDeg) {
   const l = lambdaDeg * RAD;
   const sinDelta = clamp(SIN_EPS * Math.sin(l), -1, 1);
-  const decDeg = Math.asin(sinDelta) * DEG;
+  let decDeg = Math.asin(sinDelta) * DEG;
+  // clean up floating-point residue at the equinoxes (lambdaDeg = 0 or 180,
+  // now landed on exactly by cardinalDays() -- see solveCardinalDay()):
+  // decDeg comes out as a signed ~1e-14 deg residue rather than a clean 0,
+  // which the sign-preserving fmtSigned()/toFixed() display in the host page
+  // would otherwise render as the confusing "-0.0deg" -- same rationale as
+  // norm360()'s own snap above.
+  if (Math.abs(decDeg) < 1e-6) decDeg = 0;
   const alphaDeg = norm360(Math.atan2(COS_EPS * Math.sin(l), Math.cos(l)) * DEG);
   return { raHours: alphaDeg / 15, decDeg: decDeg };
 }
@@ -219,12 +276,84 @@ function sunEquatorialFromLambda(lambdaDeg) {
    right. lambda_true then replaces the mean lambda everywhere the Sun is
    placed or read out (setDate() below): the Sun's position on the
    sphere/orbit, its RA/Dec, the zodiac highlight, and every readout. The
-   four ghost Earths stay at the exact CARDINAL MEAN longitudes (unchanged
-   below) -- only the continuous/current Sun moves on the true path. */
+   four ghost Earths sit at the exact literal cardinal longitudes 0/90/180/
+   270 (unchanged below); it is meanSunLongitudeDeg's epochDay0 (solved by
+   solveEpochDay0() below) that makes the continuous Earth reach longitude 0
+   on EXACTLY day 79, so it lands on the March ghost instead of missing it by
+   the equation-of-centre term computed here -- see the module header's
+   PHYSICS comment for the full story. */
 function sunTrueLongitudeDeg(meanLongitudeDeg, eccentricity, apogeeLongitudeDeg) {
   const lambdaP = norm360(apogeeLongitudeDeg + 180);
   const M = (meanLongitudeDeg - lambdaP) * RAD;
   return norm360(meanLongitudeDeg + 2 * eccentricity * DEG * Math.sin(M));
+}
+/* unwrapped (no norm360) counterpart of sunTrueLongitudeDeg() above --
+   continuous in meanLongitudeDeg, for the same reason meanSunLongitudeDegRaw
+   exists (used only by the Newton solvers just below). */
+function sunTrueLongitudeDegRaw(meanLongitudeDeg, eccentricity, apogeeLongitudeDeg) {
+  const lambdaP = apogeeLongitudeDeg + 180;
+  const M = (meanLongitudeDeg - lambdaP) * RAD;
+  return meanLongitudeDeg + 2 * eccentricity * DEG * Math.sin(M);
+}
+/* Newton-solves the mean-longitude epoch day0 such that
+   sunTrueLongitudeDeg(meanSunLongitudeDeg(79, day0), e, apogee) = 0 EXACTLY
+   -- i.e. the continuous Sun's TRUE ecliptic longitude is zero on day 79
+   (Mar 20), matching the March ghost Earth (placed at the literal longitude
+   0 -- see buildHelioScene()) instead of missing it by the ~1.9 deg
+   equation-of-centre term a fixed epochDay0=79 leaves uncorrected. The
+   function is nearly linear in day0 (e is small), so convergence is fast;
+   the iteration cap is just a safety backstop, never actually needed. */
+function solveEpochDay0(eccentricity, apogeeLongitudeDeg) {
+  let d0 = 79;
+  const lambdaP = apogeeLongitudeDeg + 180;
+  for (let i = 0; i < 20; i++) {
+    const L = meanSunLongitudeDegRaw(79, d0);
+    const M = (L - lambdaP) * RAD;
+    const f = L + 2 * eccentricity * DEG * Math.sin(M); // target: f(d0) = 0
+    if (Math.abs(f) < 1e-9) break;
+    const dfdD0 = (1 + 2 * eccentricity * Math.cos(M)) * (-360 / 365.25); // d(f)/d(d0)
+    d0 -= f / dfdD0;
+  }
+  return d0;
+}
+/* Newton-solves the day of year on which the continuous Sun's TRUE ecliptic
+   longitude equals targetLambdaDeg (0/90/180/270 for the four cardinal
+   points) -- the inverse of sunTrueLongitudeDeg(meanSunLongitudeDeg(day,
+   epochDay0), e, apogee). Because this solves the exact same equation the
+   continuous Earth/Sun is placed by every frame (setDate() below), the
+   returned day is exactly when the continuous Earth reaches that ghost's
+   position -- not merely the nearby rounded calendar day. */
+function solveCardinalDay(targetLambdaDeg, eccentricity, apogeeLongitudeDeg, epochDay0) {
+  let day = epochDay0 + targetLambdaDeg * 365.25 / 360; // ignoring eccentricity -- already within a fraction of a day
+  const lambdaP = apogeeLongitudeDeg + 180;
+  for (let i = 0; i < 20; i++) {
+    const L = meanSunLongitudeDegRaw(day, epochDay0);
+    const M = (L - lambdaP) * RAD;
+    const lamTrue = L + 2 * eccentricity * DEG * Math.sin(M);
+    const f = lamTrue - targetLambdaDeg;
+    if (Math.abs(f) < 1e-9) break;
+    const dfdDay = (1 + 2 * eccentricity * Math.cos(M)) * (360 / 365.25); // d(f)/d(day)
+    day -= f / dfdDay;
+  }
+  return day;
+}
+/* the four cardinalDays(), one Newton solve per cardinal target (0/90/180/270). */
+function computeCardinalDays(eccentricity, apogeeLongitudeDeg, epochDay0) {
+  return [0, 90, 180, 270].map(function (target) { return solveCardinalDay(target, eccentricity, apogeeLongitudeDeg, epochDay0); });
+}
+/* Season lengths implied by the four cardinal days (spring = Mar->Jun,
+   summer = Jun->Sep, autumn = Sep->Dec, winter = Dec->next Mar): unequal
+   because Earth moves fastest near perihelion (northern winter) and slowest
+   near aphelion (northern summer), so the Sun spends longer traversing the
+   90 deg of TRUE longitude spring+summer cover than the 90 deg
+   autumn+winter cover (Kepler's second law). */
+function computeSeasonLengths(cardinalDaysArr) {
+  return {
+    spring: cardinalDaysArr[1] - cardinalDaysArr[0],
+    summer: cardinalDaysArr[2] - cardinalDaysArr[1],
+    autumn: cardinalDaysArr[3] - cardinalDaysArr[2],
+    winter: (cardinalDaysArr[0] + 365.25) - cardinalDaysArr[3]
+  };
 }
 function seasonsForLambda(lambdaDeg) {
   const l = norm360(lambdaDeg);
@@ -321,6 +450,29 @@ export function createOriginStage(deps) {
   const renderer = deps.renderer;
   const makeTextSprite = deps.makeTextSprite;
   const applySpriteScale = deps.applySpriteScale;
+
+  /* ---- true-Sun epoch calibration (fixes the ~1.9 deg gap between the
+     continuous Earth and the March ghost on day 79 -- see the module
+     header's PHYSICS comment for the full story). epochDay0 is solved once
+     (Newton) so lambda_true(79) = 0 EXACTLY for the current
+     eccentricity/apogeeLongitudeDeg; meanSunLongitudeDeg(day, epochDay0)
+     (used by setDate() below) replaces the module's old fixed-79 epoch.
+     cardinalDaysCache/cardinalLabelsCache/seasonLengthsCache are derived from
+     it and re-derived by recomputeEpoch() whenever setOptions() changes
+     either parameter. Declared and seeded here, before buildHelioScene() is
+     called below, because that function's ghost-Earth labels are built once
+     from cardinalLabelsCache. */
+  let epochDay0 = 79;
+  let cardinalDaysCache = [79, 79, 79, 79];
+  let cardinalLabelsCache = ["Mar 20", "Mar 20", "Mar 20", "Mar 20"];
+  let seasonLengthsCache = { spring: 0, summer: 0, autumn: 0, winter: 0 };
+  function recomputeEpoch(eccentricity, apogeeLongitudeDeg) {
+    epochDay0 = solveEpochDay0(eccentricity, apogeeLongitudeDeg);
+    cardinalDaysCache = computeCardinalDays(eccentricity, apogeeLongitudeDeg, epochDay0);
+    cardinalLabelsCache = cardinalDaysCache.map(dayOfYearToLabel);
+    seasonLengthsCache = computeSeasonLengths(cardinalDaysCache);
+  }
+  recomputeEpoch(DEFAULT_ECCENTRICITY, DEFAULT_APOGEE_LONGITUDE_DEG); // matches the `options` defaults below
 
   function v3(p) { return new THREE.Vector3(p.x, p.y, p.z); }
   function pts3(arr) { return arr.map(v3); }
@@ -679,12 +831,14 @@ export function createOriginStage(deps) {
     // children need no individual visibility bookkeeping)
     ghostGeomGroup = new THREE.Group(); sceneL.add(ghostGeomGroup);
     ghostLabelGroup = new THREE.Group(); sceneL.add(ghostLabelGroup);
-    const CARDINALS = [
-      { lambdaDeg: 0, label: "Mar 20 · ♈ equinox" },
-      { lambdaDeg: 90, label: "Jun 21 · solstice" },
-      { lambdaDeg: 180, label: "Sep 22 · equinox" },
-      { lambdaDeg: 270, label: "Dec 21 · solstice" }
-    ];
+    // labels built from cardinalLabelsCache (computed by recomputeEpoch()
+    // above, before this function runs), not hard-coded calendar strings --
+    // see the module header's PHYSICS comment for why the day/label for
+    // Jun/Sep/Dec is not exactly the rounded calendar date.
+    const CARDINAL_SUFFIXES = ["♈ equinox", "solstice", "equinox", "solstice"];
+    const CARDINALS = [0, 90, 180, 270].map(function (lambdaDeg, i) {
+      return { lambdaDeg: lambdaDeg, label: cardinalLabelsCache[i] + " · " + CARDINAL_SUFFIXES[i] };
+    });
     CARDINALS.forEach(function (c) {
       const tmpl = buildEarthTemplate(ghostGeomGroup, 0.45, false);
       const pos = earthOrbitPos3(c.lambdaDeg);
@@ -997,12 +1151,16 @@ export function createOriginStage(deps) {
 
   function setDate(dayOfYear) {
     const day = dayOfYear;
-    // meanLongitudeDeg (L) is the uniform-rate mean-Sun longitude; lambdaDeg
-    // is the TRUE ecliptic longitude (equation of centre applied -- see
-    // sunTrueLongitudeDeg()'s own comment) and is what actually places the
-    // Sun/current-Earth everywhere below (ghost Earths stay on the exact
-    // CARDINAL MEAN longitudes, set once in buildHelioScene() -- unaffected).
-    const meanLongitudeDeg = meanSunLongitudeDeg(day);
+    // meanLongitudeDeg (L) is the uniform-rate mean-Sun longitude (epoch
+    // epochDay0, calibrated by recomputeEpoch() -- see the module header's
+    // PHYSICS comment); lambdaDeg is the TRUE ecliptic longitude (equation of
+    // centre applied -- see sunTrueLongitudeDeg()'s own comment) and is what
+    // actually places the Sun/current-Earth everywhere below (ghost Earths
+    // stay at the exact literal cardinal longitudes, set once in
+    // buildHelioScene() -- unaffected; the epoch calibration is what makes
+    // the continuous Earth land exactly on top of each one on its own
+    // cardinalDays() day).
+    const meanLongitudeDeg = meanSunLongitudeDeg(day, epochDay0);
     const lambdaDeg = sunTrueLongitudeDeg(meanLongitudeDeg, options.eccentricity, options.apogeeLongitudeDeg);
     const eq = sunEquatorialFromLambda(lambdaDeg);
     const seasons = seasonsForLambda(lambdaDeg);
@@ -1129,7 +1287,21 @@ export function createOriginStage(deps) {
       day: current.day, dateLabel: dayOfYearToLabel(current.day), lambdaDeg: current.lambdaDeg,
       lambdaTrueDeg: current.lambdaTrueDeg, meanLongitudeDeg: current.meanLongitudeDeg, eotMin: current.eotMin,
       raHours: current.raHours, decDeg: current.decDeg, seasonN: current.seasonN, seasonS: current.seasonS,
-      eccentricity: options.eccentricity, apogeeLongitudeDeg: options.apogeeLongitudeDeg
+      eccentricity: options.eccentricity, apogeeLongitudeDeg: options.apogeeLongitudeDeg,
+      seasonLengths: {
+        spring: seasonLengthsCache.spring, summer: seasonLengthsCache.summer,
+        autumn: seasonLengthsCache.autumn, winter: seasonLengthsCache.winter
+      }
+    };
+  }
+  // API accessors for the true-Sun epoch calibration (see recomputeEpoch()
+  // above) -- each returns a fresh copy so callers can't mutate the cache.
+  function cardinalDays() { return cardinalDaysCache.slice(); }
+  function cardinalCalendarLabels() { return cardinalLabelsCache.slice(); }
+  function seasonLengths() {
+    return {
+      spring: seasonLengthsCache.spring, summer: seasonLengthsCache.summer,
+      autumn: seasonLengthsCache.autumn, winter: seasonLengthsCache.winter
     };
   }
 
@@ -1151,7 +1323,7 @@ export function createOriginStage(deps) {
   // later setDate() call picks up any change made via setOptions().
   const options = {
     ghosts: true, zodiac: true, sunArcs: true, eqGrid: true, labels: true,
-    eccentricity: 0.0167, apogeeLongitudeDeg: 102
+    eccentricity: DEFAULT_ECCENTRICITY, apogeeLongitudeDeg: DEFAULT_APOGEE_LONGITUDE_DEG
   };
   function applyOptionsVisibility() {
     ghostGeomGroup.visible = options.ghosts;
@@ -1169,6 +1341,15 @@ export function createOriginStage(deps) {
   }
   function setOptions(opts) {
     Object.assign(options, opts || {});
+    // recalibrate the true-Sun epoch/cardinal days whenever eccentricity or
+    // apogeeLongitudeDeg changed (see recomputeEpoch()'s own comment) -- note
+    // this does NOT retexture the already-built ghost-Earth label sprites
+    // (buildHelioScene() bakes their text once, from the epoch in effect at
+    // construction time); a host that lets the user change these live would
+    // need to rebuild those sprites too.
+    if (opts && (Object.prototype.hasOwnProperty.call(opts, "eccentricity") || Object.prototype.hasOwnProperty.call(opts, "apogeeLongitudeDeg"))) {
+      recomputeEpoch(options.eccentricity, options.apogeeLongitudeDeg);
+    }
     applyOptionsVisibility();
   }
 
@@ -1389,6 +1570,7 @@ export function createOriginStage(deps) {
   return {
     setDate: setDate, getState: getState, setOptions: setOptions, resize: resize, render: render,
     attachPointer: attachPointer, detachPointer: detachPointer, resetView: resetView,
-    setVisible: setVisible, dispose: dispose, getViewportRects: getViewportRects
+    setVisible: setVisible, dispose: dispose, getViewportRects: getViewportRects,
+    cardinalDays: cardinalDays, cardinalCalendarLabels: cardinalCalendarLabels, seasonLengths: seasonLengths
   };
 }
