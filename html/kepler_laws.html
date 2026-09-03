@@ -57,16 +57,14 @@
     background:var(--rail); border-bottom:1px solid var(--border);
     min-width:0; overflow:hidden;
   }
-  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; }
+  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; text-decoration:none; color:inherit; border-radius:4px; }
+  .brand:hover .brand-title{ color:var(--cyan); }
+  .brand:hover .brand-sub{ text-decoration:underline; }
   .brand-icon{ flex:0 0 auto; filter:drop-shadow(0 0 5px rgb(86 199 217/28%)); }
   .brand-text{ display:flex; flex-direction:column; line-height:1.15; min-width:0; }
   .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
   .brand-sub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  .home-btn{ display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; margin-right:10px; min-height:28px; padding:0 11px; border-radius:999px;
-    color:var(--muted); background:var(--panel-raised); border:1px solid var(--border); font-size:12px; text-decoration:none; white-space:nowrap; }
-  .home-btn:hover{ color:var(--text); background:var(--control-hover); border-color:var(--border-hover); }
-  body.embed .home-btn{ display:none; }
   .tabbar{ flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:thin; }
   .tabbar::-webkit-scrollbar{ height:4px; }
   .tabbar::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
@@ -210,6 +208,7 @@
   }
   .tip.visible{ opacity:1; transform:translateY(-50%) translateX(0); }
   .tip .math{ font-family:"STIX Two Math","Cambria Math","Times New Roman",serif; font-style:italic; }
+  .tip .katex{ font-size:1.05em; color:inherit; }
   .tip::after{
     content:""; position:absolute; width:6px; height:6px;
     background:inherit; border:inherit; border-right:none; border-top:none;
@@ -223,6 +222,25 @@
   @media (prefers-reduced-motion: reduce){
     .tip{ transition:none; }
   }
+
+  /* ---------- formulas card (def line + substituted line per formula) ---------- */
+  .formula-line{ margin-bottom:10px; }
+  .formula-line:last-child{ margin-bottom:0; }
+  .formula-def{ font-size:12.5px; margin-bottom:3px; }
+  .formula-sub{ font-size:11.5px; color:var(--muted); word-break:break-word; }
+  .formula-sub b{ color:var(--text); font-weight:600; }
+
+  /* ---------- KaTeX typesetting (vendored, offline -- vendor/katex/) ----------
+     Formulas/About cards render real math when window.katex loaded; every
+     .ktx target starts hidden and .ktx-fallback (the plain HTML/entity text
+     already in the markup) stands in until a render call flips them, so the
+     page still teaches correctly if the vendored library is missing/blocked. */
+  .ktx{ display:none; }
+  .card .katex{ font-size:1.05em; color:inherit; }
+  .card .katex-display{ margin:6px 0; text-align:left; overflow-x:auto; overflow-y:hidden; }
+  .formula-note{ font-size:11.5px; color:var(--muted); }
+  .formula-def .formula-note{ margin-top:2px; display:block; }
+  .formula-sub .formula-note{ margin-left:4px; }
 
   /* ---------- about / formulas cards ---------- */
   .about h3{ font-size:12px; font-weight:700; margin:0 0 8px; }
@@ -276,12 +294,15 @@
   body.embed .workspace{ padding:0; grid-template-rows:1fr; }
   body.embed #mainPanel{ width:100vw; height:100vh; border:none; border-radius:0; box-shadow:none; }
 </style>
+<link rel="stylesheet" href="../vendor/katex/katex.min.css">
+<script defer src="../vendor/katex/katex.min.js"></script>
+<script defer src="../vendor/katex/contrib/auto-render.min.js"></script>
 </head>
 <body>
 <div id="app">
 
   <div class="topbar">
-    <div class="brand">
+    <a class="brand" href="../index.html" title="Back to the visualizations index">
       <svg class="brand-icon" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
         <ellipse cx="10" cy="10" rx="8.5" ry="5.5" fill="none" stroke="#4a5057" stroke-width="1.4"/>
         <circle cx="6.2" cy="10" r="1.5" fill="#ffcc66"/>
@@ -289,10 +310,9 @@
       </svg>
       <div class="brand-text">
         <div class="brand-title">KEPLER'S LAWS</div>
-        <div class="brand-sub">PHYS 320 · Planetary Motion</div>
+        <div class="brand-sub">&lsaquo; PHYS 320 Visualizations &middot; Planetary Motion</div>
       </div>
-    </div>
-    <a class="home-btn" href="../index.html" title="Back to the visualizations index">&#8962; Home</a>
+    </a>
     <div class="tabbar">
       <div class="segmented" id="tabBar" role="tablist" aria-label="Kepler's law">
         <button type="button" data-tab="ellipse" class="active" role="tab" aria-selected="true">Ellipses</button>
@@ -456,6 +476,46 @@ function fmtDegArcmin(absDeg){
   let m = Math.round((absDeg - d) * 60);
   if(m >= 60){ m = 0; d += 1; }
   return d + "°" + m + "′";
+}
+
+/* =========================================================================
+   1b. KATEX TYPESETTING (vendored, offline -- vendor/katex/, loaded via
+       <script defer> in <head>). Every call below is defensive: if the
+       vendored library failed to load or throws, the pre-existing plain-
+       text/HTML content already in the DOM (the ".ktx-fallback" sibling, or
+       the element's own original entity glyph for inline About/param-label
+       spans) is left on screen untouched -- the page still teaches
+       correctly. Mirrors the Ptolemy's Model page's helpers verbatim.
+   ========================================================================= */
+function katexReady(){ return !!(window.katex && typeof window.katex.render === "function"); }
+const _katexSig = new WeakMap(); // ktx element -> last-rendered "mode:latex" signature (perf: skip unchanged re-renders)
+function katexInto(ktxEl, fallbackEl, latex, displayMode){
+  if(!ktxEl) return;
+  if(!katexReady()){
+    ktxEl.style.display = "none";
+    if(fallbackEl) fallbackEl.style.display = "";
+    return;
+  }
+  const sig = (displayMode ? "D:" : "I:") + latex;
+  if(_katexSig.get(ktxEl) !== sig){
+    try{
+      window.katex.render(latex, ktxEl, { throwOnError:false, displayMode: !!displayMode });
+      _katexSig.set(ktxEl, sig);
+    }catch(e){
+      ktxEl.style.display = "none";
+      if(fallbackEl) fallbackEl.style.display = "";
+      return;
+    }
+  }
+  ktxEl.style.display = "block"; // .ktx{display:none} in CSS is the default -- must set an explicit non-none value to override it
+  if(fallbackEl) fallbackEl.style.display = "none";
+}
+function renderMathSpans(root){
+  if(!root || !katexReady()) return;
+  root.querySelectorAll("[data-latex]").forEach(function(el){
+    try{ window.katex.render(el.dataset.latex, el, { throwOnError:false, displayMode:false }); }
+    catch(e){ /* leave the original glyph content on error */ }
+  });
 }
 
 /* pre-rendered radial glow sprite, drawn with drawImage instead of shadowBlur
@@ -692,18 +752,18 @@ function updateStripLegend(){
 const TOGGLE_TIPS = {
   ellipse: {
     labels: 'Names for the foci, the perihelion/aphelion points, and the planet.',
-    circleA: 'A circle of the same radius <span class="math">a</span>, centred where the ellipse is — compare it to the true ellipse.',
-    focal: 'The two lines whose lengths always add to <span class="math">2a</span> — the defining property of an ellipse.'
+    circleA: 'A circle of the same radius <span class="math" data-latex="a">a</span>, centred where the ellipse is — compare it to the true ellipse.',
+    focal: 'The two lines whose lengths always add to <span class="math" data-latex="2a">2a</span> — the defining property of an ellipse.'
   },
   areas: {
     labels: 'Names for the Sun and the planet.',
     velocity: "The planet's instantaneous velocity vector — long near perihelion, short near aphelion.",
     sectors: 'The last few equal-time slices swept by the Sun&ndash;planet line — equal area, very unequal shape.',
-    whyEqual: 'Gravity points at the Sun, so it can change the planet\'s speed toward or away from the Sun but never its sideways motion: <span class="math">r&middot;v&perp;</span> stays constant — and <span class="math">&frac12;&middot;r&middot;v&perp;</span> is the area swept per unit time.'
+    whyEqual: 'Gravity points at the Sun, so it can change the planet\'s speed toward or away from the Sun but never its sideways motion: <span class="math" data-latex="r \\cdot v_\\perp">r&middot;v&perp;</span> stays constant — and <span class="math" data-latex="\\tfrac{1}{2}\\cdot r\\cdot v_\\perp">&frac12;&middot;r&middot;v&perp;</span> is the area swept per unit time.'
   },
   harmonic: {
     labels: 'Names for each planet.',
-    customPlanet: 'An adjustable extra circular orbit, in cyan, obeying the same <span class="math">P = a<sup>3/2</sup></span> relation.'
+    customPlanet: 'An adjustable extra circular orbit, in cyan, obeying the same <span class="math" data-latex="P = a^{3/2}">P = a<sup>3/2</sup></span> relation.'
   },
   equant: {
     labels: 'Names for the Sun, the empty focus / equant Q, and both planets.'
@@ -714,21 +774,21 @@ const ABOUT = {
   ellipse: {
     title: "The Ellipse — an off-center Sun",
     html:
-      '<p>Kepler\'s first law (1609): each planet moves on an ellipse with the Sun at one focus. An ellipse is the set of points whose distances to the two foci add up to a constant, <span class="math">2a</span> — the two grey lines from the foci to the planet always sum to the same length.</p>' +
-      '<p>The other focus is empty; its distance from the centre, <span class="math">ae</span>, is how far the Sun sits off-centre. Perihelion, the closest approach, is <span class="math">a(1 &minus; e)</span> from the Sun; aphelion <span class="math">a(1 + e)</span>.</p>' +
-      '<p>Planetary orbits are barely distinguishable from circles (Mars: <span class="math">e</span> = 0.093) — which is why the off-centre Sun, not the shape, was Kepler\'s real discovery, and why Ptolemy\'s off-centre circle had worked so well.</p>'
+      '<p>Kepler\'s first law (1609): each planet moves on an ellipse with the Sun at one focus. An ellipse is the set of points whose distances to the two foci add up to a constant, <span class="math" data-latex="2a">2a</span> — the two grey lines from the foci to the planet always sum to the same length.</p>' +
+      '<p>The other focus is empty; its distance from the centre, <span class="math" data-latex="ae">ae</span>, is how far the Sun sits off-centre. Perihelion, the closest approach, is <span class="math" data-latex="a(1-e)">a(1 &minus; e)</span> from the Sun; aphelion <span class="math" data-latex="a(1+e)">a(1 + e)</span>.</p>' +
+      '<p>Planetary orbits are barely distinguishable from circles (Mars: <span class="math" data-latex="e">e</span> = 0.093) — which is why the off-centre Sun, not the shape, was Kepler\'s real discovery, and why Ptolemy\'s off-centre circle had worked so well.</p>'
   },
   areas: {
     title: "Equal Areas — the rhythm of an orbit",
     html:
       "<p>Kepler's second law: the line from the Sun to the planet sweeps out equal areas in equal times. Near perihelion the planet is fast and the sector is short and fat; near aphelion it is slow and the sector is long and thin — the same area.</p>" +
-      '<p>In modern language this is conservation of angular momentum. Ptolemy\'s equant had captured the rhythm fourteen centuries earlier: uniform angular motion about the empty focus is the equal-area law to first order in <span class="math">e</span>.</p>' +
-      '<p>Why are the areas equal? Because the Sun\'s pull points straight at the Sun. A force along the radius can speed the planet up or slow it down as it falls in or climbs out, but it can never push sideways — so the product <span class="math">r&middot;v&perp;</span> of the distance and the sideways speed cannot change. In a short time <span class="math">&Delta;t</span> the radius sweeps a thin triangle of area <span class="math">&frac12;&middot;r&middot;v&perp;&middot;&Delta;t</span>: constant <span class="math">r&middot;v&perp;</span> means equal areas in equal times. Newton would name <span class="math">r&middot;v&perp;</span> (times the mass) the angular momentum; Kepler had found its conservation without knowing why.</p>'
+      '<p>In modern language this is conservation of angular momentum. Ptolemy\'s equant had captured the rhythm fourteen centuries earlier: uniform angular motion about the empty focus is the equal-area law to first order in <span class="math" data-latex="e">e</span>.</p>' +
+      '<p>Why are the areas equal? Because the Sun\'s pull points straight at the Sun. A force along the radius can speed the planet up or slow it down as it falls in or climbs out, but it can never push sideways — so the product <span class="math" data-latex="r \\cdot v_\\perp">r&middot;v&perp;</span> of the distance and the sideways speed cannot change. In a short time <span class="math" data-latex="\\Delta t">&Delta;t</span> the radius sweeps a thin triangle of area <span class="math" data-latex="\\tfrac{1}{2}\\cdot r\\cdot v_\\perp\\cdot\\Delta t">&frac12;&middot;r&middot;v&perp;&middot;&Delta;t</span>: constant <span class="math" data-latex="r \\cdot v_\\perp">r&middot;v&perp;</span> means equal areas in equal times. Newton would name <span class="math" data-latex="r \\cdot v_\\perp">r&middot;v&perp;</span> (times the mass) the angular momentum; Kepler had found its conservation without knowing why.</p>'
   },
   harmonic: {
     title: "The Harmonic Law — P² ∝ a³",
     html:
-      '<p>Kepler\'s third law (1619): the square of the orbital period is proportional to the cube of the semi-major axis, <span class="math">P</span>&sup2; &prop; <span class="math">a</span>&sup3; — for the Sun\'s planets, <span class="math">P</span> in years equals <span class="math">a</span><sup>3/2</sup> in astronomical units.</p>' +
+      '<p>Kepler\'s third law (1619): the square of the orbital period is proportional to the cube of the semi-major axis, <span class="math" data-latex="P">P</span>&sup2; &prop; <span class="math" data-latex="a">a</span>&sup3; — for the Sun\'s planets, <span class="math" data-latex="P">P</span> in years equals <span class="math" data-latex="a">a</span><sup>3/2</sup> in astronomical units.</p>' +
       '<p>Outer planets are not only farther but slower: Saturn at 9.5 AU takes 29.5 years. On a log&ndash;log plot every planet, comet and asteroid falls on one line of slope 3/2.</p>' +
       '<p>Newton later showed that the constant of proportionality measures the mass of the central body — the same law weighs the Sun, Jupiter from its moons, and distant binary stars.</p>'
   },
@@ -736,7 +796,7 @@ const ABOUT = {
     title: "Ptolemy's Shadow — the equant vs the ellipse",
     html:
       '<p>What is compared here: the direction of the planet as seen from the Sun, which plays the role of Ptolemy\'s observer.</p>' +
-      '<p>Put Ptolemy\'s best device beside Kepler\'s ellipse: a circle of radius <span class="math">a</span>, the Sun off-centre by <span class="math">ae</span>, and uniform motion about the equant at the mirror point — exactly where Kepler\'s empty focus sits.</p>' +
+      '<p>Put Ptolemy\'s best device beside Kepler\'s ellipse: a circle of radius <span class="math" data-latex="a">a</span>, the Sun off-centre by <span class="math" data-latex="ae">ae</span>, and uniform motion about the equant at the mirror point — exactly where Kepler\'s empty focus sits.</p>' +
       '<p>For Mars the two directions differ by less than 10 arcminutes anywhere on the orbit: the equant was a first-order approximation to the equal-area law, good enough for naked-eye astronomy for fourteen centuries.</p>' +
       '<p>Tycho Brahe\'s observations, accurate to about 2 arcminutes, were what exposed the difference — the 8 arcminutes Kepler refused to ignore.</p>'
   }
@@ -871,6 +931,7 @@ function buildParamsCard(){
   else if(state.tab === "areas") buildAreasParams(c);
   else if(state.tab === "harmonic") buildHarmonicParams(c);
   else if(state.tab === "equant") buildEquantParams(c);
+  renderMathSpans(c); // typeset the param labels' <span class="math"> symbols (falls back to the plain glyphs above if KaTeX didn't load)
 }
 
 function syncOrbitSliders(){
@@ -908,13 +969,13 @@ function buildOrbitControls(container, opts){
   });
   if(!opts.hideA){
     paramWidgets.aW = buildSliderField(container, {
-      label: 'Semi-major axis <span class="math">a</span>', value: state.p.a,
+      label: 'Semi-major axis <span class="math" data-latex="a">a</span>', value: state.p.a,
       min:0.2, max:20, step:0.01, unit:"AU",
       onChange: function(v){ state.p.a = v; markCustom(); onParamsChanged(); }
     });
   }
   paramWidgets.eW = buildSliderField(container, {
-    label: 'Eccentricity <span class="math">e</span>', value: state.p.e,
+    label: 'Eccentricity <span class="math" data-latex="e">e</span>', value: state.p.e,
     min:0, max:0.95, step:0.001,
     onChange: function(v){ state.p.e = v; markCustom(); onParamsChanged(); }
   });
@@ -967,7 +1028,7 @@ function buildHarmonicParams(c){
   c.appendChild(field);
 
   paramWidgets.customAW = buildSliderField(c, {
-    label: 'Custom planet <span class="math">a</span>', value: state.p.customA,
+    label: 'Custom planet <span class="math" data-latex="a">a</span>', value: state.p.customA,
     min:0.2, max:20, step:0.01, unit:"AU",
     onChange: function(v){ state.p.customA = v; clearTrail("custom"); updateFormulasCard(); render(); }
   });
@@ -1050,6 +1111,7 @@ function wireDisplayToggles(){
   function showTip(btn){
     const tips = TOGGLE_TIPS[state.tab] || {};
     tip.innerHTML = tips[btn.dataset.key] || "";
+    renderMathSpans(tip); // typeset the tooltip's <span class="math"> symbols (falls back to the plain glyphs above if KaTeX didn't load)
     tip.hidden = false;
     positionTip(btn);
     btn.setAttribute("aria-describedby", "sharedTip");
@@ -1120,38 +1182,221 @@ function labelsOn(){
 }
 
 /* =========================================================================
-   7. FORMULAS CARD (per tab; rebuilt whenever a parameter changes)
+   7. FORMULAS CARD (per tab). Skeleton pattern mirrors the Ptolemy's Model
+      page: each formula-line has a def + substituted slot, each slot a
+      plain-HTML fallback span plus an empty KaTeX target div toggled by
+      katexInto() (see the "1b. KATEX TYPESETTING" helpers above).
+      buildFormulasCard() (called once per tab switch, from switchTab())
+      rebuilds the persistent skeleton elements; updateFormulasCard() --
+      called every frame from render() -- only refills them, so
+      katexInto()'s signature cache actually skips real work on frames
+      where the substituted numbers haven't changed. Long substituted
+      expressions are split with \\ inside aligned/gathered environments so
+      no line overflows the rail card at its 230px minimum width.
    ========================================================================= */
-function updateFormulasCard(){
-  const body = els.formulasBody;
+const GM_MANT  = (GM*1e4).toFixed(3); // GM = (mantissa) x 10^-4 AU^3/day^2 -- fixed, computed once
+const GM_LATEX = GM_MANT + "\\times10^{-4}";
+const GM_PLAIN = GM_MANT + "&times;10<sup>&minus;4</sup>";
+
+const FORMULA_IDS = {
+  ellipse:  ["fA","fB","fC","fD"],
+  areas:    ["fA","fB","fC"],
+  harmonic: ["fA","fB"],
+  equant:   ["fA","fB"]
+};
+
+let fEls = null;
+function formulaLineSkeleton(id){
+  return '<div class="formula-line">' +
+      '<div class="formula-def"><span class="ktx-fallback" id="' + id + 'DefFallback"></span><div class="ktx" id="' + id + 'DefKtx"></div><span class="formula-note" id="' + id + 'DefNote"></span></div>' +
+      '<div class="formula-sub"><span class="ktx-fallback" id="' + id + 'SubFallback"></span><div class="ktx" id="' + id + 'SubKtx"></div><span class="formula-note" id="' + id + 'SubNote"></span></div>' +
+    '</div>';
+}
+function fillFormulaLine(line, defPlainHTML, defLatex, defNoteHTML, subPlainHTML, subLatex, subNoteHTML){
+  line.defFallback.innerHTML = defPlainHTML;
+  katexInto(line.defKtx, line.defFallback, defLatex, true);
+  line.defNote.innerHTML = defNoteHTML || "";
+  line.subFallback.innerHTML = subPlainHTML;
+  katexInto(line.subKtx, line.subFallback, subLatex, true);
+  line.subNote.innerHTML = subNoteHTML || "";
+}
+function buildFormulasCard(){
+  const ids = FORMULA_IDS[state.tab] || [];
+  els.formulasBody.innerHTML = ids.map(formulaLineSkeleton).join("");
+  fEls = {};
+  ids.forEach(function(id){
+    fEls[id] = {
+      defFallback: document.getElementById(id+"DefFallback"), defKtx: document.getElementById(id+"DefKtx"), defNote: document.getElementById(id+"DefNote"),
+      subFallback: document.getElementById(id+"SubFallback"), subKtx: document.getElementById(id+"SubKtx"), subNote: document.getElementById(id+"SubNote")
+    };
+  });
+}
+
+// Ellipses tab: r(nu) is live (nu advances with the animation clock); r_peri,
+// r_ap and b depend only on a, e (constant while paused, but still refilled
+// every frame -- katexInto's signature cache makes that a cheap no-op).
+function updateEllipseFormulas(){
+  if(!fEls || !fEls.fA) return;
+  const p = state.p, g = ellipseGeometry(p.a, p.e);
+  const o = computeOrbit(p.a, p.e, state.t);
+  const aStr = p.a.toFixed(2), eStr = p.e.toFixed(3);
+  const nuStr = (((o.nu*DEG)+360)%360).toFixed(1);
+  const numStr = (p.a*(1-p.e*p.e)).toFixed(3);
+  const denStr = (1+p.e*Math.cos(o.nu)).toFixed(3);
+  const rStr = o.r.toFixed(3);
+
+  fillFormulaLine(fEls.fA,
+    '<i>r</i>(&nu;) = <i>a</i>(1&minus;<i>e</i><sup>2</sup>)/(1+<i>e</i>&nbsp;cos&nbsp;&nu;)',
+    String.raw`r(\nu) = \dfrac{a(1-e^2)}{1+e\cos\nu}`,
+    "",
+    '<i>r</i> = ('+numStr+')/('+denStr+') = <b>'+rStr+'</b> AU',
+    String.raw`\begin{aligned} r &= \dfrac{(${aStr})(1-${eStr}^2)}{1+${eStr}\cos ${nuStr}^\circ} \\ &= \dfrac{${numStr}}{${denStr}} \\ &= \mathbf{${rStr}}\text{ AU} \end{aligned}`,
+    "(&nu; = "+nuStr+"&deg; right now)"
+  );
+
+  const periStr = g.peri.x.toFixed(3);
+  fillFormulaLine(fEls.fB,
+    '<i>r</i><sub>peri</sub> = <i>a</i>(1&minus;<i>e</i>)',
+    String.raw`r_{\text{peri}} = a(1-e)`,
+    "",
+    '('+aStr+')(1&minus;'+eStr+') = <b>'+periStr+'</b> AU',
+    String.raw`\begin{aligned} r_{\text{peri}} &= (${aStr})(1-${eStr}) \\ &= \mathbf{${periStr}}\text{ AU} \end{aligned}`,
+    ""
+  );
+
+  const apStr = (-g.apo.x).toFixed(3);
+  fillFormulaLine(fEls.fC,
+    '<i>r</i><sub>ap</sub> = <i>a</i>(1+<i>e</i>)',
+    String.raw`r_{\text{ap}} = a(1+e)`,
+    "",
+    '('+aStr+')(1+'+eStr+') = <b>'+apStr+'</b> AU',
+    String.raw`\begin{aligned} r_{\text{ap}} &= (${aStr})(1+${eStr}) \\ &= \mathbf{${apStr}}\text{ AU} \end{aligned}`,
+    ""
+  );
+
+  const bStr = g.b.toFixed(3);
+  fillFormulaLine(fEls.fD,
+    '<i>b</i> = <i>a</i>&radic;(1&minus;<i>e</i><sup>2</sup>)',
+    String.raw`b = a\sqrt{1-e^2}`,
+    "",
+    '('+aStr+')&radic;(1&minus;'+eStr+'<sup>2</sup>) = <b>'+bStr+'</b> AU',
+    String.raw`\begin{aligned} b &= (${aStr})\sqrt{1-${eStr}^2} \\ &= \mathbf{${bStr}}\text{ AU} \end{aligned}`,
+    ""
+  );
+}
+
+// Equal areas tab: dA/dt depends only on a, e (constant over the orbit); v^2
+// and r*v_perp both use the live r (and v_perp = 2 dA/dt / r) at state.t.
+function updateAreasFormulas(){
+  if(!fEls || !fEls.fA) return;
   const p = state.p;
-  if(state.tab === "ellipse"){
-    const a=p.a, e=p.e, g = ellipseGeometry(a,e);
-    body.innerHTML =
-      '<p><span class="math">r</span> = <span class="math">a</span>(1&minus;<span class="math">e</span>&sup2;)/(1+<span class="math">e</span>&nbsp;cos&nbsp;<span class="math">&nu;</span>)</p>' +
-      '<p><span class="math">r</span><sub>peri</sub> = <span class="math">a</span>(1&minus;<span class="math">e</span>) = <b>'+g.peri.x.toFixed(3)+'</b> AU &nbsp; <span class="math">r</span><sub>ap</sub> = <span class="math">a</span>(1+<span class="math">e</span>) = <b>'+(-g.apo.x).toFixed(3)+'</b> AU</p>' +
-      '<p><span class="math">b</span> = <span class="math">a</span>&radic;(1&minus;<span class="math">e</span>&sup2;) = <b>'+g.b.toFixed(3)+'</b> AU</p>';
-  } else if(state.tab === "areas"){
-    const a=p.a, e=p.e;
-    const dAdt = 0.5*Math.sqrt(GM*a*(1-e*e));
-    body.innerHTML =
-      '<p>d<span class="math">A</span>/d<span class="math">t</span> = &frac12; <span class="math">r</span>&sup2; d<span class="math">&nu;</span>/d<span class="math">t</span> = &frac12;&radic;(<span class="math">GM</span>&nbsp;<span class="math">a</span>(1&minus;<span class="math">e</span>&sup2;)) = <b>'+dAdt.toFixed(6)+'</b> AU&sup2;/d (constant)</p>' +
-      '<p><span class="math">v</span>&sup2; = <span class="math">GM</span>(2/<span class="math">r</span> &minus; 1/<span class="math">a</span>)</p>';
-  } else if(state.tab === "harmonic"){
-    const a = p.customA, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
-    const Pformula = TAU*Math.sqrt(Math.pow(a,3)/GM);
-    body.innerHTML =
-      '<p><span class="math">P</span>&sup2; = <span class="math">a</span>&sup3; &nbsp;(<span class="math">P</span> in years, <span class="math">a</span> in AU)</p>' +
-      '<p><span class="math">P</span> = 2&pi;&radic;(<span class="math">a</span>&sup3;/<span class="math">GM</span>)</p>' +
-      '<p>Custom planet: <span class="math">a</span> = <b>'+a.toFixed(2)+'</b> AU &rarr; <span class="math">P</span> = <b>'+Pformula.toFixed(1)+'</b> d = <b>'+Py.toFixed(3)+'</b> yr</p>';
-  } else if(state.tab === "equant"){
-    const e = p.e;
-    const approx = (e*e/4)*DEG*60;
-    body.innerHTML =
-      '<p>Ptolemy: uniform angular motion about <span class="math">Q</span>. Kepler: uniform in swept area.</p>' +
-      '<p>The equant matches Kepler to first order in <span class="math">e</span>; the leftover is <span class="math">O(e</span>&sup2;<span class="math">)</span>:</p>' +
-      '<p>&Delta;&lambda;<sub>max</sub> &asymp; (<span class="math">e</span>&sup2;/4)&middot;(180/&pi;)&middot;60&prime; &asymp; <b>'+approx.toFixed(2)+'</b>&prime; &nbsp; (exact numeric sweep: <b id="formExact">'+maxDeltaLambdaArcmin(p.a,e).toFixed(2)+'</b>&prime;)</p>';
-  }
+  const o = computeOrbit(p.a, p.e, state.t);
+  const aStr = p.a.toFixed(2), eStr = p.e.toFixed(3);
+  const kStr = (p.a*(1-p.e*p.e)).toFixed(3); // a(1-e^2), reused inside the sqrt below
+  const dAdtStr = o.dAdt.toFixed(6);
+
+  // GM's own numeric value is parked in a formula-note (plain text, wraps normally)
+  // rather than inlined beside another substituted factor -- combining the two on
+  // one KaTeX row was the one substitution wide enough to clip the rail at 230px.
+  fillFormulaLine(fEls.fA,
+    'd<i>A</i>/d<i>t</i> = &frac12;<i>r</i><sup>2</sup>d&nu;/d<i>t</i>',
+    String.raw`\begin{aligned} \dfrac{dA}{dt} &= \tfrac12 r^2\dfrac{d\nu}{dt} \\ &= \tfrac12\sqrt{GM\,a(1-e^2)} \end{aligned}`,
+    "",
+    '&frac12;&radic;(<i>GM</i>&middot;'+kStr+') = <b>'+dAdtStr+'</b> AU&sup2;/d',
+    String.raw`\begin{aligned} \dfrac{dA}{dt} &= \tfrac12\sqrt{GM\cdot(${kStr})} \\ &= \mathbf{${dAdtStr}}\ \text{AU}^2\text{/d} \end{aligned}`,
+    "(<i>GM</i> = "+GM_PLAIN+"; constant over the orbit)"
+  );
+
+  const rStr = o.r.toFixed(3);
+  const diffVal = 2/o.r - 1/p.a, diffStr = diffVal.toFixed(3);
+  const vSqVal = GM*diffVal, vSqStr = vSqVal.toFixed(6);
+  const vStr = Math.sqrt(Math.max(0,vSqVal)).toFixed(4);
+  fillFormulaLine(fEls.fB,
+    '<i>v</i><sup>2</sup> = <i>GM</i>(2/<i>r</i> &minus; 1/<i>a</i>)',
+    String.raw`v^2 = GM\left(\dfrac{2}{r}-\dfrac{1}{a}\right)`,
+    "",
+    '<i>GM</i>(2/'+rStr+' &minus; 1/'+aStr+') = <b>'+vSqStr+'</b> &rarr; <i>v</i> = <b>'+vStr+'</b> AU/d',
+    String.raw`\begin{aligned} v^2 &= GM\left(\dfrac{2}{${rStr}}-\dfrac{1}{${aStr}}\right) \\ &= GM\,(${diffStr}) \\ &= \mathbf{${vSqStr}} \\ &\Rightarrow v = \mathbf{${vStr}}\text{ AU/d} \end{aligned}`,
+    "(<i>GM</i> = "+GM_PLAIN+")"
+  );
+
+  const vPerpVal = 2*o.dAdt/o.r, vPerpStr = vPerpVal.toFixed(4);
+  const rvPerpStr = (o.r*vPerpVal).toFixed(6);
+  const twiceDadtStr = (2*o.dAdt).toFixed(6);
+  fillFormulaLine(fEls.fC,
+    '<i>r</i>&middot;<i>v</i>&perp; = 2 d<i>A</i>/d<i>t</i> = const',
+    String.raw`r\,v_\perp = 2\dfrac{dA}{dt} = \text{const}`,
+    "",
+    '('+rStr+')('+vPerpStr+') = <b>'+rvPerpStr+'</b> AU&sup2;/d',
+    String.raw`\begin{aligned} r\,v_\perp &= (${rStr})(${vPerpStr}) \\ &= \mathbf{${rvPerpStr}} \\ &= 2\dfrac{dA}{dt} = \mathbf{${twiceDadtStr}} \end{aligned}`,
+    "(AU&sup2;/d)"
+  );
+}
+
+// Harmonic tab: both formulas depend only on the custom planet's a (not on
+// time), so these are the same every frame while the slider is untouched.
+function updateHarmonicFormulas(){
+  if(!fEls || !fEls.fA) return;
+  const a = state.p.customA, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
+  const aStr = a.toFixed(2), PyStr = Py.toFixed(3), PdStr = Pd.toFixed(1);
+  const P2Str = (Py*Py).toFixed(3);
+  const a3Str = Math.pow(a,3).toFixed(3);
+
+  fillFormulaLine(fEls.fA,
+    '<i>P</i><sup>2</sup> = <i>a</i><sup>3</sup>',
+    String.raw`\begin{aligned} P^2 &= a^3 \\ &\quad (P\text{ in yr},\ a\text{ in AU}) \end{aligned}`,
+    "",
+    '<i>P</i><sup>2</sup> = <b>'+P2Str+'</b> &nbsp; <i>a</i><sup>3</sup> = <b>'+a3Str+'</b>',
+    String.raw`\begin{aligned} P^2 &= (${PyStr})^2 = \mathbf{${P2Str}} \\ a^3 &= (${aStr})^3 = \mathbf{${a3Str}} \end{aligned}`,
+    "(should match)"
+  );
+
+  fillFormulaLine(fEls.fB,
+    '<i>P</i> = 2&pi;&radic;(<i>a</i><sup>3</sup>/<i>GM</i>)',
+    String.raw`P = 2\pi\sqrt{\dfrac{a^3}{GM}}`,
+    "",
+    '2&pi;&radic;(('+aStr+')<sup>3</sup>/('+GM_PLAIN+')) = <b>'+PdStr+'</b> d = <b>'+PyStr+'</b> yr',
+    String.raw`\begin{aligned} P &= 2\pi\sqrt{\dfrac{a^3}{GM}} \\ &= 2\pi\sqrt{\dfrac{(${aStr})^3}{${GM_LATEX}}} \\ &= \mathbf{${PdStr}}\text{ d} = \mathbf{${PyStr}}\text{ yr} \end{aligned}`,
+    ""
+  );
+}
+
+// Ptolemy's shadow tab: fA states the two rules being compared (text only,
+// no numbers); fB is the O(e^2) mismatch between them, live in p.e (and,
+// for the exact numeric sweep, p.a too).
+function updateEquantFormulas(){
+  if(!fEls || !fEls.fA) return;
+  const p = state.p;
+  const eStr = p.e.toFixed(3);
+  const approxRad = p.e*p.e/4, approxRadStr = approxRad.toFixed(5);
+  const approxArcminStr = (approxRad*DEG*60).toFixed(2);
+  const exactArcminStr = maxDeltaLambdaArcmin(p.a,p.e).toFixed(2);
+
+  fillFormulaLine(fEls.fA,
+    'Ptolemy: uniform angular motion about <i>Q</i>.',
+    String.raw`\begin{gathered} \text{Ptolemy: uniform} \\ \text{angular motion about } Q \end{gathered}`,
+    "",
+    'Kepler: uniform in swept area (equal areas in equal times).',
+    String.raw`\begin{gathered} \text{Kepler: uniform in} \\ \text{swept area} \end{gathered}`,
+    ""
+  );
+
+  fillFormulaLine(fEls.fB,
+    '&Delta;&lambda;<sub>max</sub> &asymp; <i>e</i><sup>2</sup>/4 rad',
+    String.raw`\Delta\lambda_{\max} \approx \dfrac{e^2}{4}\ \text{rad}`,
+    "(the leftover after matching Kepler to first order in <i>e</i>)",
+    '(<i>e</i><sup>2</sup>/4) = <b>'+approxRadStr+'</b> rad &asymp; <b>'+approxArcminStr+'</b>&prime; (exact: <b>'+exactArcminStr+'</b>&prime;)',
+    String.raw`\begin{aligned} \Delta\lambda_{\max} &\approx \dfrac{(${eStr})^2}{4} \\ &= \mathbf{${approxRadStr}}\text{ rad} \\ &\approx \mathbf{${approxArcminStr}}' \\ &(\text{exact: }\mathbf{${exactArcminStr}}') \end{aligned}`,
+    ""
+  );
+}
+
+function updateFormulasCard(){
+  if(!fEls) return;
+  if(state.tab === "ellipse") updateEllipseFormulas();
+  else if(state.tab === "areas") updateAreasFormulas();
+  else if(state.tab === "harmonic") updateHarmonicFormulas();
+  else if(state.tab === "equant") updateEquantFormulas();
 }
 
 /* =========================================================================
@@ -1163,6 +1408,7 @@ function buildAboutCard(){
   document.getElementById("formulasCard").className = "card about tint-" + TAB_TINT[state.tab];
   els.aboutTitle.textContent = cfg.title;
   els.aboutBody.innerHTML = cfg.html;
+  renderMathSpans(els.aboutBody); // typeset the About card's <span class="math"> symbols (falls back to the plain glyphs above if KaTeX didn't load)
 }
 
 /* =========================================================================
@@ -1263,7 +1509,7 @@ function switchTab(tabId){
   buildParamsCard();
   buildDisplayCard();
   buildAboutCard();
-  updateFormulasCard();
+  buildFormulasCard();
   buildStripModeToggle();
   updateMainPanelTitle();
 
@@ -2570,6 +2816,7 @@ function updateReadouts(){
 
 function render(){
   updateReadouts();
+  { const nowMs = performance.now(); if(!state.playing || nowMs - (state._lastFormulaMs || 0) > 100){ state._lastFormulaMs = nowMs; updateFormulasCard(); } } // live formulas at <= 10 Hz during playback
   drawMain();
   if(state.stripDirty){
     drawStrip();
