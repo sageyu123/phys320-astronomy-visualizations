@@ -1058,6 +1058,12 @@ function originHudInsetPx(){ return document.body.classList.contains("embed") ? 
 let originStage = null; // lazily constructed on first activation of the "origin" tab -- see ensureOriginStage()
 let hGridGroup, meridianGroup, equatorialGroup, diurnalGroup;
 let meridianUpper, meridianLower; // {line,material,baseOpacity,baseLinewidth} wrappers, for applyHighlight()
+// diurnal-circle extras (rebuilt from scratch every rebuildDiurnalCircle() call --
+// see that function): the translucent constant-declination disk (own hover
+// rule in applyHighlight(), kept out of the generic diurnalGroup loop) and the
+// "diurnal circle"/"rises"/"sets" text sprites (diurnalCircleLabel's own
+// visibility follows the Labels toggle -- see applyDisplayVisibility()).
+let diurnalDisk = null, diurnalCircleLabel = null, diurnalRiseLabel = null, diurnalSetLabel = null;
 let meridianLabel; // the "meridian" text sprite -- hidden on the triangle tab (collides with its Az label there); see applyDisplayVisibility()
 let ncpLabel; // the "NCP" text sprite (child of polarAxisPart) -- nudged outward by avoidNcpZenithOverlap() when it reads too close to "Z" on screen
 let starSphere, starGlow, starLabel, starLabelText = null;
@@ -1090,6 +1096,10 @@ function applyDisplayVisibility(){
     equatorialGroup.userData.equinoxPart.visible = !!state.display.eGrid || hk === "eGrid";
   }
   if(diurnalGroup) diurnalGroup.visible = !!state.display.diurnal || hk === "diurnal";
+  // the "diurnal circle" transit label is the one diurnal-layer sprite gated
+  // by the Labels toggle (the rise/set labels and everything else in the
+  // group follow the "diurnal" toggle alone, via diurnalGroup.visible above)
+  if(diurnalCircleLabel) diurnalCircleLabel.visible = !!state.display.labels || hk === "labels";
   if(meridianGroup) meridianGroup.visible = !!state.display.meridian || hk === "meridian";
   // the "meridian" text label collides with the triangle tab's Az-angle label
   // at that tab's default camera vantage -- hide just the label there; the
@@ -1145,9 +1155,18 @@ function applyHighlight(){
 
   diurnalGroup.children.forEach(function(o){
     if(o.material && o.material.userData && o.material.userData.baseOpacity != null){
-      setHighlightedOpacity(o.material, o.material.userData.baseOpacity, "diurnal", hk);
+      setHighlightedOpacity(o.material, o.material.userData.baseOpacity, "diurnal", hk, o.material.userData.baseLinewidth);
     }
   });
+  // the translucent diurnal-plane disk previews to an explicit 0.14 opacity on
+  // hover, not the generic base*1.6 the loop above applies -- so it is kept
+  // out of that loop (its material.userData.baseOpacity is left unset) and
+  // handled here instead.
+  if(diurnalDisk){
+    const diskBase = 0.07;
+    diurnalDisk.material.opacity = !hk ? diskBase
+      : (hk === "diurnal" ? (state.display.diurnal ? 0.14 : diskBase*0.5) : diskBase*0.35);
+  }
 
   [meridianUpper, meridianLower].forEach(function(o){
     setHighlightedOpacity(o.material, o.baseOpacity, "meridian", hk, o.baseLinewidth);
@@ -1450,14 +1469,14 @@ function ensureOriginStage(){
 function buildStaticScene(){
   // ground
   const groundGeo = new THREE.PlaneGeometry(6,6);
-  const groundMat = new THREE.MeshBasicMaterial({ color:COLORI["panel-deep"], transparent:true, opacity:0.55, side:THREE.DoubleSide, depthWrite:false });
+  const groundMat = new THREE.MeshBasicMaterial({ color:0x1b222b, transparent:true, opacity:0.72, side:THREE.DoubleSide, depthWrite:false });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI/2;
   scene.add(ground);
 
   const grid = new THREE.GridHelper(6, 12, COLORI["border-strong"], 0x2a2f36);
   grid.material.transparent = true;
-  grid.material.opacity = 0.22;
+  grid.material.opacity = 0.30;
   scene.add(grid);
 
   // sky dome (upper hemisphere), two passes so it reads from outside too
@@ -1712,15 +1731,29 @@ function updateStarInGroup(){
    group's contents, it is built directly in WORLD space via the closed-form
    eqToVec()+toThree() and only rebuilt when phi or the star's declination
    changes (never per animation frame) — dispose+recreate here is fine since
-   this is outside the per-frame render path. Above-horizon = solid; below =
-   dashed, low alpha; rise/set points get small tick marks. */
+   this is outside the per-frame render path. Above-horizon = a bright fat
+   path with a soft glow copy under it; below = dashed, low alpha; rise/set
+   points get amber dots + short radial ticks + "rises"/"sets" labels; a
+   translucent disk shows the plane the whole circle lies in; a "diurnal
+   circle" label sits at the transit point (point of maximum elevation). */
 function rebuildDiurnalCircle(){
   if(!diurnalGroup) return;
   while(diurnalGroup.children.length){
     const c = diurnalGroup.children.pop();
+    if(c.isSprite){ disposeSprite(c); continue; } // Sprite.geometry is a shared static buffer -- never dispose it (see disposeSprite())
+    if(c.material && c.material.isLineMaterial){
+      // fat-line (Line2/LineMaterial) materials self-register into
+      // fatLineMaterials for resolution updates (see makeFatLineStrip/Raw) --
+      // this group is the only one disposed+rebuilt repeatedly over the
+      // page's life, so unregister here or that array would grow forever
+      const idx = fatLineMaterials.indexOf(c.material);
+      if(idx >= 0) fatLineMaterials.splice(idx,1);
+    }
     c.geometry && c.geometry.dispose();
     c.material && c.material.dispose();
   }
+  diurnalDisk = null; diurnalCircleLabel = null; diurnalRiseLabel = null; diurnalSetLabel = null;
+
   const n = CIRCLE_N;
   const worldPts = [], zSign = [];
   for(let i=0;i<=n;i++){
@@ -1751,29 +1784,106 @@ function rebuildDiurnalCircle(){
     runs[0].pts = runs[runs.length-1].pts.concat(runs[0].pts);
     runs.pop();
   }
+  // Above-horizon: a bright 3px path lifted to radius 1.008 (clear of the
+  // dome/grid) plus a wide, faint 7px glow copy at radius 1.006 -- a hair
+  // FARTHER from the (external) camera than the crisp path, so the
+  // transparent-object back-to-front sort always draws it first, reading as
+  // a soft glow sitting under the line rather than a second bright stroke.
+  // Below-horizon: a dim dashed path at the true radius, no glow -- it should
+  // read as hidden below the ground, not as a second prominent feature.
   runs.forEach(function(run){
-    const baseOp = run.above ? 0.55 : 0.22;
-    const r = run.above
-      ? makeLineStrip(run.pts, COLORI.amber, baseOp, false)
-      : makeLineStrip(run.pts, COLORI.amber, baseOp, true);
-    // this group is dispose+recreated on every phi/dec change (unlike matRefs'
-    // static grid materials), so the hover-highlight system (applyHighlight())
-    // reads each material's own true base opacity back off it directly here
-    // rather than keeping a separate registry that would go stale on rebuild
-    r.material.userData.baseOpacity = baseOp;
-    diurnalGroup.add(r.line);
+    if(run.above){
+      const glowPts = run.pts.map(function(p){ return p.clone().multiplyScalar(1.006); });
+      const pathPts = run.pts.map(function(p){ return p.clone().multiplyScalar(1.008); });
+      const glow = makeFatLineStrip(glowPts, COLORI.amber, 0.16, 7);
+      glow.material.userData.baseOpacity = 0.16;
+      glow.material.userData.baseLinewidth = 7;
+      diurnalGroup.add(glow.line);
+      const path = makeFatLineStrip(pathPts, COLORI.amber, 0.95, 3);
+      path.material.userData.baseOpacity = 0.95;
+      path.material.userData.baseLinewidth = 3;
+      diurnalGroup.add(path.line);
+    } else {
+      const below = makeFatLineRaw(COLORI.amber, 0.35, 3, true, run.pts.length);
+      below.material.dashSize = 0.05;
+      below.material.gapSize = 0.03;
+      setLinePoints(below, run.pts); // fills the geometry + calls computeLineDistances() (dashed+fat)
+      below.material.userData.baseOpacity = 0.35;
+      below.material.userData.baseLinewidth = 3;
+      diurnalGroup.add(below.line);
+    }
   });
-  // rise/set tick marks, if they exist
+
+  // Translucent disk: the plane of constant declination itself (parallel to
+  // the celestial equator, centred on the polar axis) -- its rim IS the
+  // circle built above. A circle of radius cos(delta) sitting at height
+  // sin(delta) along the pole direction, its face turned to be normal to
+  // that same pole direction (CircleGeometry's own local normal is +Z, so
+  // just rotate +Z onto the world pole direction).
+  {
+    const dRad = state.dec*RAD;
+    const poleDir = toThreeVec3(pHatModel(state.phi)).normalize();
+    const geo = new THREE.CircleGeometry(Math.max(0.0005, Math.cos(dRad)), 64);
+    const mat = new THREE.MeshBasicMaterial({ color:COLORI.amber, transparent:true, opacity:0.07, side:THREE.DoubleSide, depthWrite:false });
+    const disk = new THREE.Mesh(geo, mat);
+    disk.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), poleDir);
+    disk.position.copy(poleDir).multiplyScalar(Math.sin(dRad));
+    disk.renderOrder = -1; // draw below the path/glow lines (renderOrder 0), matching the coordinate-sector fans' own convention
+    diurnalGroup.add(disk);
+    diurnalDisk = disk; // applyHighlight() gives this its own (non-generic) hover opacity
+  }
+
+  // rise/set markers: an amber dot + a short radial tick crossing the
+  // horizon ring + a "rises"/"sets" label, omitted for circumpolar stars (no
+  // crossing exists) or stars that never rise above the horizon at all
   const rs = riseSetInfo(state.phi, state.dec);
   if(!rs.circumpolar && !rs.neverRises && rs.H0deg != null){
-    [rs.H0deg, -rs.H0deg].forEach(function(Hd){
-      const v = eqToVec(Hd, state.dec, state.phi);
-      const p = toThreeVec3(v);
-      const outward = p.clone().normalize();
-      const tick = new THREE.Mesh(new THREE.SphereGeometry(0.013,8,6), new THREE.MeshBasicMaterial({ color:COLORI.amber }));
-      tick.position.copy(p);
+    // H = -H0 is where altitude is INCREASING through zero as H (=time)
+    // advances -- i.e. rise; H = +H0 is the corresponding set
+    [{ Hd:-rs.H0deg, text:"rises", ref:"diurnalRiseLabel" },
+     { Hd: rs.H0deg, text:"sets",  ref:"diurnalSetLabel"  }].forEach(function(cross){
+      const p = toThreeVec3(eqToVec(cross.Hd, state.dec, state.phi)); // unit length -- also its own outward/radial direction
+
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012,10,8),
+        new THREE.MeshBasicMaterial({ color:COLORI.amber, transparent:true, opacity:0.95 }));
+      dot.position.copy(p);
+      dot.material.userData.baseOpacity = 0.95;
+      diurnalGroup.add(dot);
+
+      // short radial tick crossing the horizon ring at the rise/set point
+      // (the previous marker was a bare r=0.013 sphere with no tick line at
+      // all -- this tick's half-length is that same 0.013 enlarged x1.5)
+      const tickHalf = 0.013*1.5;
+      const tickGeo = new THREE.BufferGeometry().setFromPoints([
+        p.clone().multiplyScalar(1 - tickHalf), p.clone().multiplyScalar(1 + tickHalf)
+      ]);
+      const tickMat = new THREE.LineBasicMaterial({ color:COLORI.amber, transparent:true, opacity:0.7, depthWrite:false });
+      const tick = new THREE.Line(tickGeo, tickMat);
+      tick.material.userData.baseOpacity = 0.7;
       diurnalGroup.add(tick);
+
+      const label = makeTextSprite(cross.text, COLORS.amber, { pixelHeight:12 });
+      label.position.copy(p.clone().multiplyScalar(1.13)); // just outside the horizon ring
+      diurnalGroup.add(label);
+      if(cross.ref === "diurnalRiseLabel") diurnalRiseLabel = label; else diurnalSetLabel = label;
     });
+  }
+
+  // "diurnal circle" label at the transit point (H=0, the point of maximum
+  // elevation) -- offset outward along the arc if the star's OWN current
+  // position sits within ~6 deg of it (e.g. the Diurnal-motion tab's default
+  // view starts the star close to transit), so the two labels never collide.
+  {
+    const transitV = toThreeVec3(eqToVec(0, state.dec, state.phi));
+    const starH = hourAngleDeg(state.lst, state.ra);
+    const starV = toThreeVec3(eqToVec(starH, state.dec, state.phi));
+    const sepDeg = Math.acos(clamp(transitV.dot(starV), -1, 1))*DEG;
+    const labelHd = (sepDeg <= 6) ? (starH >= 0 ? -25 : 25) : 0; // 25 deg along the circle, away from the star
+    const labelV = toThreeVec3(eqToVec(labelHd, state.dec, state.phi));
+    diurnalCircleLabel = makeTextSprite("diurnal circle", COLORS.amber, { pixelHeight:14 });
+    diurnalCircleLabel.position.copy(labelV.multiplyScalar(1.12));
+    diurnalCircleLabel.visible = !!state.display.labels || state.highlightKey === "labels"; // Labels-toggle-gated -- see applyDisplayVisibility()
+    diurnalGroup.add(diurnalCircleLabel);
   }
 }
 
@@ -3352,7 +3462,7 @@ const TOGGLE_TIPS = {
   hGrid: "Elevation circles and azimuth arcs fixed to your horizon — the observer's own grid. Cyan.",
   eGrid: "Declination circles and hour circles fixed to the stars, turning with sidereal time. Amber.",
   meridian: 'The great circle through the north point, zenith and south point — where every star culminates and where hour angle <span class="math">h</span> is zero.',
-  diurnal: "The star's daily path: a circle of constant declination about the celestial pole.",
+  diurnal: "The star's daily path: a circle of constant declination around the celestial pole, parallel to the celestial equator — it rises and sets where the circle meets the horizon.",
   arcs: 'The star\'s coordinates drawn as arcs: <span class="math">Az</span> and <span class="math">El</span> in cyan, <span class="math">&delta;</span> and <span class="math">&alpha;</span> in amber, hour angle <span class="math">h</span> in magenta.',
   sectorsControl: "Translucent sectors from the observer out to one pair of arcs — the planes in which that pair is measured. Show one pair at a time.",
   triangle: "The spherical triangle zenith–pole–star whose sides and angles convert between the two systems.",
