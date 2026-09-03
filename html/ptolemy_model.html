@@ -354,6 +354,7 @@
           <div class="panel-readouts">
             <span>t = <b id="readoutT" class="tabular">0</b> d</span>
             <span id="lambdaReadout">&lambda; = <b id="readoutLambda" class="tabular">0.0</b>&deg;</span>
+            <span id="lambdaQReadout" style="display:none"><span class="math">&lambda;<sub>Q</sub></span> = <b id="readoutLambdaQ" class="tabular">0.0</b>&deg;</span>
             <span id="ddtReadout" style="display:none">d&lambda;/dt = <b class="tabular">0.00</b> &deg;/d</span>
             <span id="sunReadouts" style="display:none"><span class="math">&delta;&#9737;</span> = <b id="readoutSunDecl" class="tabular">+0.0</b>&deg; &nbsp; noon El (<b id="readoutLat" class="tabular">40.7&deg; N</b>) = <b id="readoutNoonEl" class="tabular">49.3</b>&deg; &nbsp; EoT = <b id="readoutEoT" class="tabular">+0.0</b> min</span>
             <span id="compareReadouts" style="display:none">&lambda;<sub>geo</sub> = <b id="readoutLambdaGeo" class="tabular">0.0</b>&deg; &nbsp; &lambda;<sub>helio</sub> = <b id="readoutLambdaHelio" class="tabular">0.0</b>&deg; &nbsp; &Delta;&lambda; = <b id="readoutDeltaLambda" class="tabular">0.00</b>&deg;</span>
@@ -367,10 +368,10 @@
 
       <div class="panel" id="stripPanel">
         <div class="panel-header">
-          <div class="panel-title">Apparent longitude from Earth &lambda;(t)</div>
+          <div class="panel-title" id="stripPanelTitle">Apparent longitude &lambda;(t)</div>
           <div class="panel-readouts" id="stripLegend" style="display:none">
-            <span><i class="swatch" style="background:var(--amber)"></i>&lambda; geocentric</span>
-            <span><i class="swatch" style="background:var(--cyan)"></i>&lambda; heliocentric</span>
+            <span><i class="swatch" id="legendSwatch1" style="background:var(--amber)"></i><span id="legendText1">&lambda; geocentric</span></span>
+            <span><i class="swatch" id="legendSwatch2" style="background:var(--cyan)"></i><span id="legendText2">&lambda; heliocentric</span></span>
           </div>
           <div class="panel-readouts" id="sunYearCaption" style="display:none">equatorial chart &middot; the Sun's yearly path is the ecliptic</div>
           <div class="panel-readouts" id="analemmaCaption" style="display:none">same clock time every day &middot; figure-8 = declination (up/down) &times; equation of time (left/right)</div>
@@ -836,7 +837,8 @@ const TAB_CONFIG = {
     aboutHTML:
       '<p>Even an eccentric circle cannot match the planets\' uneven drift around the zodiac. Ptolemy\'s fix: let the motion be uniform neither about the center <span class="math">C</span> nor about Earth, but about the equant point <span class="math">Q</span> &mdash; Earth\'s mirror image across the center.</p>' +
       '<p>The magenta hand sweeps at a constant rate, so the planet must genuinely travel faster along the circle on Earth\'s side and slower opposite &mdash; closely mimicking what we now call Kepler\'s equal-area law (<span class="math">Q</span> sits nearly at the ellipse\'s empty focus).</p>' +
-      '<p>Introduced in the <em>Almagest</em> (&sim;150 CE), the equant quietly abandoned uniform circular motion &mdash; the flaw Copernicus called intolerable, and set out to repair.</p>'
+      '<p>Introduced in the <em>Almagest</em> (&sim;150 CE), the equant quietly abandoned uniform circular motion &mdash; the flaw Copernicus called intolerable, and set out to repair.</p>' +
+      '<p>In the <span class="math">&lambda;</span>&ndash;<span class="math">t</span> plot the magenta line is the motion as seen from <span class="math">Q</span> &mdash; perfectly uniform, a straight line &mdash; while the amber curve is what the sky actually shows from Earth. The equant kept the Greek ideal of uniform circular motion alive in the bookkeeping, at the price of the motion no longer being uniform about the circle\'s own centre; that compromise is exactly what Copernicus refused to accept.</p>'
   },
   full: {
     label: "Full Model",
@@ -909,7 +911,7 @@ const state = {
   clockTime: 12.00,     // local mean clock time, hours, at which the analemma is "photographed"
   latPhi: LAT_NEWARK,   // observer latitude, degrees N -- also feeds the noon-El header readout
   mainW: 0, mainH: 0, stripW: 0, stripH: 0,
-  _lastT: null, _lastDirect: null, _lastLambdaStr: null, _lastDdtStr: null,
+  _lastT: null, _lastDirect: null, _lastLambdaStr: null, _lastDdtStr: null, _lastLambdaQStr: null,
   _lastGeoStr: null, _lastHelioStr: null, _lastDeltaStr: null,
   _lastSunDeclStr: null, _lastNoonElStr: null, _lastLatStr: null, _lastEoTStr: null,
   // splitter-drag flag (Task A) -- this page's own resize path is cheap (2D
@@ -973,7 +975,13 @@ function appendStripSample(t, m, stripDt){
     state.dLambdaDt = dl / (t - hist[hist.length-1].t);
   }
 
-  hist.push({ t:t, lambda:m.lambda, beta:beta });
+  // ref: the uniform (equant-driven, or mean-Sun) angle for this sample, normalised 0-360 --
+  // equant/full tabs -> m.equantPhi (radians); eccentric tab -> m.L (already 0-360); else null.
+  // Recorded here so the lambda-t plot's magenta/muted reference line stays on the SAME fixed
+  // strip grid as the amber apparent-longitude curve.
+  const ref = (m.equantPhi != null) ? norm360(m.equantPhi * DEG) : (state.tab === "eccentric" ? m.L : null);
+
+  hist.push({ t:t, lambda:m.lambda, beta:beta, ref:ref });
   state.stripDirty = true;
 
   const tMin = state.t - state.windowDays;
@@ -1038,10 +1046,11 @@ function cacheEls(){
   ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum",
    "paramsFields","displayCard","aboutCard","aboutTitle","aboutBody",
    "mainPanelTitle","readoutT","readoutLambda","ddtReadout","motionBadge",
-   "lambdaReadout","compareReadouts","readoutLambdaGeo","readoutLambdaHelio","readoutDeltaLambda",
+   "lambdaReadout","lambdaQReadout","readoutLambdaQ","compareReadouts","readoutLambdaGeo","readoutLambdaHelio","readoutDeltaLambda",
    "sunReadouts","readoutSunDecl","readoutNoonEl","readoutLat","readoutEoT",
    "sunYearCaption","analemmaCaption",
-   "toggleMarkers","toggleVectors","stripLegend","stripModeToggle",
+   "toggleMarkers","toggleVectors","stripLegend","legendSwatch1","legendText1","legendSwatch2","legendText2",
+   "stripModeToggle","stripPanelTitle",
    "mainCanvas","stripCanvas"].forEach(function(id){ els[id] = document.getElementById(id); });
 }
 
@@ -1353,6 +1362,47 @@ function updateEccentricAtlasUI(){
   if(els.analemmaCaption) els.analemmaCaption.style.display = (isEcc && state.stripMode === "analemma") ? "" : "none";
 }
 
+// Strip-panel title: describes whatever drawStrip() is actually drawing right now --
+// must track both state.stripMode AND state.tab (the eccentric tab's "atlas" button
+// draws the Sun's-year equatorial chart, not the ecliptic-longitude sky atlas).
+function updateStripTitle(){
+  const isEcc = state.tab === "eccentric";
+  let text;
+  if(state.stripMode === "analemma" && isEcc){
+    text = "Analemma · Az/El at a fixed clock time";
+  } else if(state.stripMode === "atlas"){
+    text = isEcc ? "Sun's year · equatorial chart (α, δ)" : "Sky atlas · ecliptic longitude λ vs latitude β";
+  } else {
+    text = "Apparent longitude λ(t)";
+  }
+  els.stripPanelTitle.textContent = text;
+}
+
+// Strip-header legend chips: only meaningful when the plot actually draws a second
+// reference curve alongside the amber apparent-longitude one -- the compare tab's dual
+// geo/helio overlay (shown in both its plot and atlas modes, matching drawAtlasMode's own
+// compare-tab overlay), or the equant/full/eccentric tabs' plot-mode-only reference line.
+function updateStripLegend(){
+  const tab = state.tab;
+  const isCompare = tab === "compare";
+  const isEquantLike = (state.tab === "equant");
+  const isEccRef = false; // mean-Sun reference line retired (user request)
+  const show = isCompare || isEquantLike || isEccRef;
+  els.stripLegend.style.display = show ? "" : "none";
+  if(!show) return;
+  if(isCompare){
+    setStripLegendChips("var(--amber)", "λ geocentric", "var(--cyan)", "λ heliocentric");
+  } else if(isEquantLike){
+    setStripLegendChips("var(--amber)", "λ from Earth", "var(--magenta)", "λ from Q");
+  } else {
+    setStripLegendChips("var(--amber)", "λ from Earth", "var(--muted)", "mean Sun (uniform about C)");
+  }
+}
+function setStripLegendChips(c1, t1, c2, t2){
+  els.legendSwatch1.style.background = c1; els.legendText1.textContent = t1;
+  els.legendSwatch2.style.background = c2; els.legendText2.textContent = t2;
+}
+
 function buildAboutCard(){
   const cfg = TAB_CONFIG[state.tab];
   els.aboutCard.className = "card about tint-" + cfg.tint;
@@ -1459,6 +1509,8 @@ function wireStripModeToggle(){
         b.setAttribute("aria-selected", active ? "true" : "false");
       });
       updateEccentricAtlasUI();
+      updateStripTitle();
+      updateStripLegend();
       state.stripDirty = true;
       render();
     });
@@ -1499,10 +1551,11 @@ function switchTab(tabId){
 
   const isCompare = tabId === "compare";
   const isEquant = tabId === "equant";
+  const isFull = tabId === "full";
   els.toggleMarkers.style.display = isCompare ? "none" : "";
   els.toggleVectors.style.display = isCompare ? "" : "none";
-  els.stripLegend.style.display = isCompare ? "" : "none";
   els.lambdaReadout.style.display = isCompare ? "none" : "";
+  els.lambdaQReadout.style.display = isEquant ? "" : "none";
   els.compareReadouts.style.display = isCompare ? "" : "none";
   els.ddtReadout.style.display = isEquant ? "" : "none"; // structural: was previously never un-hidden anywhere
   if(tabId === "eccentric"){
@@ -1525,9 +1578,12 @@ function switchTab(tabId){
     state.stripDirty = true;
   }
   updateEccentricAtlasUI();
+  updateStripTitle();
+  updateStripLegend();
 
   // force every readout to repaint at least once on the new tab
   state._lastT = null; state._lastDirect = null; state._lastLambdaStr = null; state._lastDdtStr = null;
+  state._lastLambdaQStr = null;
   state._lastGeoStr = null; state._lastHelioStr = null; state._lastDeltaStr = null;
   state._lastSunDeclStr = null; state._lastNoonElStr = null;
 
@@ -1851,7 +1907,7 @@ function drawStandardMain(ctx, w, h){
   ctx.strokeStyle = COLORS["border-strong"];
   ctx.beginPath();
   const defC = toScreen(m.deferent.center);
-  ctx.arc(defC.x, defC.y, m.deferent.r*scale, 0, TAU);
+  ctx.arc(defC.x, defC.y, Math.max(0, m.deferent.r*scale), 0, TAU);
   ctx.stroke();
 
   // epicycle circle
@@ -1859,7 +1915,7 @@ function drawStandardMain(ctx, w, h){
     ctx.strokeStyle = COLORS.purple;
     ctx.beginPath();
     const epiC = toScreen(m.epicycle.center);
-    ctx.arc(epiC.x, epiC.y, m.epicycle.r*scale, 0, TAU);
+    ctx.arc(epiC.x, epiC.y, Math.max(0, m.epicycle.r*scale), 0, TAU);
     ctx.stroke();
   }
 
@@ -1920,7 +1976,7 @@ function drawStandardMain(ctx, w, h){
       ctx.strokeStyle = hexAlpha(COLORS.magenta, 0.35);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(fromS.x, fromS.y, dialR, 0, TAU);
+      ctx.arc(fromS.x, fromS.y, Math.max(0, dialR), 0, TAU);
       ctx.stroke();
       ctx.strokeStyle = hexAlpha(COLORS.magenta, 0.5);
       for(let k=0;k<12;k++){
@@ -2079,17 +2135,17 @@ function drawGeoViewport(ctx, cell, m, disp){
   ctx.setLineDash([3,3]);
   ctx.strokeStyle = hexAlpha(COLORS.amber, 0.5);
   ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(earthS.x, earthS.y, m.earthScale*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(earthS.x, earthS.y, Math.max(0, m.earthScale*scale), 0, TAU); ctx.stroke();
   ctx.restore();
 
   // deferent -- centered on Earth normally; on C_geo once eccentricity is visible;
   // radius = the planet's own equant-construction contribution
   ctx.strokeStyle = COLORS["border-strong"]; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(deferentCenterS.x, deferentCenterS.y, m.planetScale*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(deferentCenterS.x, deferentCenterS.y, Math.max(0, m.planetScale*scale), 0, TAU); ctx.stroke();
 
   // epicycle -- radius = Earth's own orbit contribution (same magnitude as Sun's apparent orbit)
   ctx.strokeStyle = COLORS.purple; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(DS.x, DS.y, m.earthScale*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(DS.x, DS.y, Math.max(0, m.earthScale*scale), 0, TAU); ctx.stroke();
 
   // line of sight — green, extended beyond the planet
   const geoSightStyle = layerStyle("sight");
@@ -2164,11 +2220,11 @@ function drawHelioViewport(ctx, cell, m, disp){
 
   // Earth's orbit
   ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.4); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(sunS.x, sunS.y, m.earthScale*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(sunS.x, sunS.y, Math.max(0, m.earthScale*scale), 0, TAU); ctx.stroke();
 
   // planet's orbit -- centered on the Sun normally; on C' once eccentricity is visible
   ctx.strokeStyle = COLORS["border-strong"]; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(marsOrbitCenterS.x, marsOrbitCenterS.y, m.planetScale*scale, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(marsOrbitCenterS.x, marsOrbitCenterS.y, Math.max(0, m.planetScale*scale), 0, TAU); ctx.stroke();
 
   // line of sight — green, extended beyond the planet
   const helioSightStyle = layerStyle("sight");
@@ -2235,7 +2291,9 @@ function regenerateAtlasBackground(cssW, cssH, betaBand){
   const actx = c.getContext("2d");
   actx.setTransform(dpr,0,0,dpr,0,0);
 
-  const padL=32, padR=8, padT=8, padB=26;
+  // padL widened for the rotated y-axis title along the left edge (kept clear of the beta
+  // tick numbers); padB holds three stacked rows (zodiac names, x-axis title, caption).
+  const padL=46, padR=8, padT=8, padB=36;
   const plotL=padL, plotR=cssW-padR, plotT=padT, plotB=cssH-padB;
   const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
   const bg = { canvas:c, cssW:cssW, cssH:cssH, dpr:dpr, betaBand:betaBand, plotL:plotL, plotR:plotR, plotT:plotT, plotB:plotB, plotW:plotW, plotH:plotH };
@@ -2276,11 +2334,17 @@ function regenerateAtlasBackground(cssW, cssH, betaBand){
     actx.fillText(ZODIAC_SYMBOLS[k] + " " + ZODIAC_NAMES[k], cxCell, plotB+3);
   }
 
+  // x-axis title -- its own row, below the zodiac names, above the caption
+  actx.font = "9px Inter, sans-serif";
+  actx.fillStyle = hexAlpha(COLORS.muted, 0.85);
+  actx.textAlign = "right"; actx.textBaseline = "top";
+  actx.fillText("ecliptic longitude λ (°)", plotR, plotB+14);
+
   // caption
   actx.font = "8px Inter, sans-serif";
   actx.fillStyle = hexAlpha(COLORS.muted, 0.6);
   actx.textAlign = "right"; actx.textBaseline = "top";
-  actx.fillText("star field illustrative", plotR, plotB+14);
+  actx.fillText("star field illustrative", plotR, plotB+25);
 
   // ecliptic line (beta = 0)
   const yEcl = yOfBetaAtlas(bg, 0);
@@ -2300,6 +2364,17 @@ function regenerateAtlasBackground(cssW, cssH, betaBand){
     actx.fillStyle = COLORS.muted;
     actx.fillText((v>0?"+":"")+v+"°", plotL-4, y);
   });
+
+  // y-axis title, rotated along the left edge -- clear of the numeric beta ticks (which
+  // sit just to its right, ending at plotL-4) thanks to the widened padL above.
+  actx.save();
+  actx.translate(11, (plotT+plotB)/2);
+  actx.rotate(-Math.PI/2);
+  actx.font = "9px Inter, sans-serif";
+  actx.fillStyle = hexAlpha(COLORS.muted, 0.85);
+  actx.textAlign = "center"; actx.textBaseline = "middle";
+  actx.fillText("ecliptic latitude β (°)", 0, 0);
+  actx.restore();
 
   actx.strokeStyle = COLORS.border;
   actx.lineWidth = 1;
@@ -2417,7 +2492,9 @@ function regenerateSunYearBackground(cssW, cssH){
   const actx = c.getContext("2d");
   actx.setTransform(dpr,0,0,dpr,0,0);
 
-  const padL=36, padR=8, padT=8, padB=26;
+  // padT holds the y-axis title above the plot; padB holds three stacked rows
+  // (hour ticks, x-axis title, caption).
+  const padL=36, padR=8, padT=16, padB=36;
   const plotL=padL, plotR=cssW-padR, plotT=padT, plotB=cssH-padB;
   const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
   const bg = { canvas:c, cssW:cssW, cssH:cssH, dpr:dpr, plotL:plotL, plotR:plotR, plotT:plotT, plotB:plotB, plotW:plotW, plotH:plotH };
@@ -2466,11 +2543,20 @@ function regenerateSunYearBackground(cssW, cssH){
     actx.fillText((d>0?"+":"")+d+"°", plotL-4, y);
   }
 
+  // axis titles -- y above the plot (top-left), x below the hour ticks (bottom-right,
+  // above the caption row)
+  actx.font = "9px Inter, sans-serif";
+  actx.fillStyle = hexAlpha(COLORS.muted, 0.85);
+  actx.textAlign = "left"; actx.textBaseline = "top";
+  actx.fillText("declination δ (°)", plotL, 2);
+  actx.textAlign = "right";
+  actx.fillText("right ascension α (h)", plotR, plotB+14);
+
   // caption
   actx.font = "8px Inter, sans-serif";
   actx.fillStyle = hexAlpha(COLORS.muted, 0.6);
   actx.textAlign = "right"; actx.textBaseline = "top";
-  actx.fillText("star field illustrative", plotR, plotB+14);
+  actx.fillText("star field illustrative", plotR, plotB+25);
 
   // celestial equator (delta = 0), amber, labeled at the left end
   const yEq = yOfDeltaSY(bg, 0);
@@ -2804,7 +2890,9 @@ function drawStrip(){
 
 function drawPlotMode(ctx, w, h){
   const W = state.windowDays;
-  const padL = 32, padR = 8, padT = 8, padB = 16;
+  // padT/padB carry a small extra gutter (top-left, bottom-right) for the axis titles below,
+  // kept clear of both the outside tick labels and the inside-plot "retrograde" annotation.
+  const padL = 32, padR = 8, padT = 16, padB = 26;
   const plotL = padL, plotR = w - padR, plotT = padT, plotB = h - padB;
   const plotW = Math.max(1, plotR - plotL), plotH = Math.max(1, plotB - plotT);
 
@@ -2836,6 +2924,15 @@ function drawPlotMode(ctx, w, h){
     ctx.fillStyle = COLORS.muted;
     ctx.fillText(Math.round(t) + "d", x, plotB+2);
   }
+
+  // axis titles -- top-left / bottom-right, in the gutter outside the plot rectangle so
+  // they never collide with the tick labels above or the inside-plot "retrograde" tag.
+  ctx.font = "9px Inter, sans-serif";
+  ctx.fillStyle = hexAlpha(COLORS.muted, 0.85);
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("λ (°)", plotL, 2);
+  ctx.textAlign = "right"; ctx.textBaseline = "alphabetic";
+  ctx.fillText("time (days)", plotR, h-3);
 
   // stripHistory is already monotonic-in-t and front-pruned to the window —
   // iterate directly, no filter/sort/copy in the hot path.
@@ -2881,6 +2978,43 @@ function drawPlotMode(ctx, w, h){
       else { ctx.lineTo(x,y); }
     }
     ctx.stroke();
+  }
+
+  // reference (uniform-angle) curve — teaches the equant's motivation: this is what a
+  // perfectly uniform angular rate looks like on the same axes as the amber apparent
+  // longitude. Equant/full tabs: the equant angle (magenta, matches the equant hand's
+  // colour). Eccentric tab: the mean Sun's uniform angle about C (muted, thinner).
+  // Broken at 0/360 wraps exactly like the amber curve, from the SAME fixed strip grid.
+  if(state.tab === "equant" && pts.length > 1){
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = COLORS.magenta;
+    ctx.beginPath();
+    let startedQ = false;
+    for(let i=0;i<pts.length;i++){
+      const r = pts[i].ref;
+      if(r == null) continue;
+      const x = xOf(pts[i].t), y = yOf(r);
+      if(startedQ && Math.abs(r - pts[i-1].ref) > 180) startedQ = false;
+      if(!startedQ){ ctx.moveTo(x,y); startedQ = true; }
+      else { ctx.lineTo(x,y); }
+    }
+    ctx.stroke();
+  } else if(false && state.tab === "eccentric" && pts.length > 1){ // mean-Sun line retired
+    ctx.save();
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = hexAlpha(COLORS.muted, 0.9);
+    ctx.beginPath();
+    let startedM = false;
+    for(let i=0;i<pts.length;i++){
+      const r = pts[i].ref;
+      if(r == null) continue;
+      const x = xOf(pts[i].t), y = yOf(r);
+      if(startedM && Math.abs(r - pts[i-1].ref) > 180) startedM = false;
+      if(!startedM){ ctx.moveTo(x,y); startedM = true; }
+      else { ctx.lineTo(x,y); }
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   // secondary (cyan, dashed) curve — heliocentric longitude; mathematically identical
@@ -2929,6 +3063,10 @@ function updateReadouts(){
   } else {
     const lam = m.lambda.toFixed(1);
     if(state._lastLambdaStr !== lam){ els.readoutLambda.textContent = lam; state._lastLambdaStr = lam; }
+    if(state.tab === "equant" || state.tab === "full"){
+      const lq = norm360(m.equantPhi * DEG).toFixed(1);
+      if(state._lastLambdaQStr !== lq){ els.readoutLambdaQ.textContent = lq; state._lastLambdaQStr = lq; }
+    }
     if(state.tab === "equant"){
       const ddt = state.dLambdaDt.toFixed(2);
       if(state._lastDdtStr !== ddt){ els.ddtReadout.querySelector("b").textContent = ddt; state._lastDdtStr = ddt; }
