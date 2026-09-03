@@ -369,7 +369,7 @@
             sector = <b id="vArSector" class="tabular">0.000</b>
           </div>
           <div class="panel-readouts" id="rdHarmonic" style="display:none">
-            custom <span class="math">a</span> = <b id="vHarA" class="tabular">1.00</b> AU &nbsp;
+            custom <span class="math">a</span> = <b id="vHarA" class="tabular">1.30</b> AU &nbsp;
             <span class="math">P</span> = <b id="vHarPd" class="tabular">365</b> d = <b id="vHarPy" class="tabular">1.000</b> yr &nbsp;
             <span class="math">P</span>&sup2;/<span class="math">a</span>&sup3; = <b id="vHarCheck" class="tabular">1.000</b>
           </div>
@@ -388,6 +388,7 @@
       <div class="panel" id="stripPanel">
         <div class="panel-header">
           <div class="panel-title" id="stripPanelTitle">r &amp; v vs time</div>
+          <div class="panel-readouts" id="stripLegend" style="display:none"></div>
           <div class="segmented" id="stripModeToggle" role="tablist" aria-label="Strip panel mode"></div>
         </div>
         <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
@@ -429,6 +430,9 @@ function hexToRgb(hex){
   return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
 }
 function hexAlpha(hex, a){ const c = hexToRgb(hex); return "rgba("+c.r+","+c.g+","+c.b+","+a+")"; }
+// "Cream" -- COLORS.text at reduced alpha, used for plotted quantities (r, r1) on the strip
+// charts so they never reuse the Sun's amber or the planet's cyan (see STRIP_LEGEND below).
+function creamColor(a){ return hexAlpha(COLORS.text, a==null?0.9:a); }
 
 function clamp(v,lo,hi){ return Math.min(hi, Math.max(lo, v)); }
 function wrapDiff(d){ // normalize an angle difference (degrees) to (-180, 180]
@@ -655,6 +659,36 @@ const STRIP_MODES = {
   equant:   [ { key:"dlambda", label:"Δλ vs time" }, { key:"ratio", label:"Distance ratio" } ]
 };
 
+// Strip-header legend chips (Ellipses + Equal-areas tabs only). Colors are resolved lazily
+// (functions, not strings) because COLORS isn't populated until loadColors() runs at init.
+// Rule: plotted quantities never reuse the Sun's amber or the planet's cyan.
+const STRIP_LEGEND = {
+  ellipse: {
+    rv:  [ { label:"r (AU)",        color:function(){ return creamColor(0.9); } },
+           { label:"v (AU/d)",      color:function(){ return COLORS.magenta; } } ],
+    sum: [ { label:"r₁",            color:function(){ return creamColor(0.9); } },
+           { label:"r₂",            color:function(){ return COLORS.muted; } },
+           { label:"r₁ + r₂ = 2a",  color:function(){ return creamColor(); } } ]
+  },
+  areas: {
+    rvperp: [ { label:"r (AU)",       color:function(){ return creamColor(0.9); } },
+              { label:"v⊥ (AU/d)",    color:function(){ return COLORS.magenta; } },
+              { label:"r·v⊥ (AU²/d)", color:function(){ return COLORS.amber; } } ],
+    area:   [ { label:"swept area (AU²)", color:function(){ return COLORS.amber; } } ],
+    speed:  [ { label:"v (AU/d)",     color:function(){ return COLORS.magenta; } } ]
+  }
+};
+function updateStripLegend(){
+  const c = els.stripLegend;
+  if(!c) return;
+  const cfg = (STRIP_LEGEND[state.tab] || {})[state.stripMode];
+  if(!cfg || !cfg.length){ c.style.display = "none"; c.innerHTML = ""; return; }
+  c.innerHTML = cfg.map(function(item){
+    return '<span><i class="swatch" style="background:'+item.color()+'"></i>'+item.label+'</span>';
+  }).join("");
+  c.style.display = "";
+}
+
 const TOGGLE_TIPS = {
   ellipse: {
     labels: 'Names for the foci, the perihelion/aphelion points, and the planet.',
@@ -720,7 +754,7 @@ function cacheEls(){
    "vArT","vArR","vArVperp","vArRvperp","vArDadt","vArSector",
    "vHarA","vHarPd","vHarPy","vHarCheck",
    "vEqLead","vEqDlam","vEqDlamMax","vEqE",
-   "stripModeToggle","stripPanelTitle","mainCanvas","stripCanvas"
+   "stripModeToggle","stripPanelTitle","stripLegend","mainCanvas","stripCanvas"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
 }
 
@@ -924,6 +958,7 @@ function buildHarmonicParams(c){
     b.addEventListener("click", function(){
       state.p.view = pair[0];
       seg.querySelectorAll("button").forEach(function(x){ x.classList.toggle("active", x===b); });
+      resetHarmonicLabels();
       state.stripDirty = true; render();
     });
     seg.appendChild(b);
@@ -1165,6 +1200,7 @@ function updateStripTitle(){
   const modes = STRIP_MODES[state.tab];
   const m = modes.filter(function(x){ return x.key===state.stripMode; })[0] || modes[0];
   els.stripPanelTitle.textContent = m.label;
+  updateStripLegend();
 }
 
 function updateMainPanelTitle(){
@@ -1188,7 +1224,7 @@ function defaultParamsFor(tab){
     if(tab === "areas"){ base.k = 12; base.n = 4; }
     return base;
   }
-  if(tab === "harmonic") return { view:"all", customA:1.0 };
+  if(tab === "harmonic") return { view:"all", customA:1.3 };
   if(tab === "equant"){
     const mars = presetByKey("mars");
     return { preset:"custom", a:mars.a, e:0.30 }; // "Exaggerated (e = 0.30)" default -- see buildEquantParams
@@ -1204,6 +1240,7 @@ function switchTab(tabId){
   state.highlightKey = null;
   state._last = {};
   clearAllTrails();
+  resetHarmonicLabels();
 
   els.tabBar.querySelectorAll("button").forEach(function(b){
     const active = b.dataset.tab === tabId;
@@ -1756,6 +1793,119 @@ function drawTrail(ctx, toScreen, key, curNu, colorHex){
   ctx.restore();
 }
 
+/* ---- smart labels (harmonic tab, "All planets" legend + "Inner planets" collision pass) -------
+   At the "All planets" scale, planets whose orbit is a small fraction of the view are unreadable
+   as moving labels (they collide and jitter near the Sun), so they get a fixed legend instead and
+   only Jupiter/Saturn (and the custom planet, once it's not tiny) keep a moving label. At the
+   "Inner planets" scale every labeled planet gets a moving label, laid out with a collision pass
+   (sorted by angle, pushed outward + alternated tangentially until clear) and then smoothed 35%
+   of the way toward its target each frame so labels glide instead of jumping. */
+const HARMONIC_LABEL_SMOOTH = 0.35;
+const HARMONIC_LABEL_HYSTERESIS = 3; // px -- an overlap must exceed this to trigger a push
+const harmonicLabelPos = {}; // key -> smoothed {x,y} screen position, persisted across frames
+function resetHarmonicLabels(){ Object.keys(harmonicLabelPos).forEach(function(k){ delete harmonicLabelPos[k]; }); }
+
+// items: [{key,name,color,sx,sy}] (sx,sy = planet's screen position). Lays out + draws a
+// collision-free, temporally-smoothed label for each, with a thin leader line when a label has
+// been pushed more than 22px from its planet.
+function layoutHarmonicLabels(ctx, items, cx, cy){
+  const size = 10;
+  ctx.font = size + "px Inter, sans-serif";
+  items.forEach(function(it){ it.angle = Math.atan2(it.sy-cy, it.sx-cx); });
+  items.sort(function(a,b){ return a.angle-b.angle; });
+
+  const placed = [];
+  const sideSigns = [1,-1,1,-1];
+  items.forEach(function(it){
+    const dir = outwardDir(it.sx, it.sy, cx, cy);
+    const tx = -dir.dy, ty = dir.dx; // tangential unit vector
+    const textW = ctx.measureText(it.name).width;
+    const boxW = textW + 8, boxH = size + 8;
+    // Box is anchored at `pos` per the same directional align/baseline convention drawLabel()
+    // uses (text sits OUTSIDE the anchor, away from the planet, instead of centred on top of it).
+    function posAt(radial, tangential){ return { x: it.sx + dir.dx*radial + tx*tangential, y: it.sy + dir.dy*radial + ty*tangential }; }
+    function boxAt(pos){
+      const l = dir.dx > 0.15 ? pos.x : (dir.dx < -0.15 ? pos.x-boxW : pos.x-boxW/2);
+      const t = dir.dy > 0.15 ? pos.y : (dir.dy < -0.15 ? pos.y-boxH : pos.y-boxH/2);
+      return { l:l, r:l+boxW, t:t, b:t+boxH };
+    }
+    let radial = 14, tangential = 0;
+    let pos = posAt(radial, tangential);
+    let box = boxAt(pos);
+    let tries = 0;
+    while(tries < 4){
+      let collides = false;
+      for(let i=0;i<placed.length;i++){
+        const ob = placed[i];
+        const ox = Math.min(box.r,ob.r) - Math.max(box.l,ob.l);
+        const oy = Math.min(box.b,ob.b) - Math.max(box.t,ob.t);
+        if(ox > HARMONIC_LABEL_HYSTERESIS && oy > HARMONIC_LABEL_HYSTERESIS){ collides = true; break; }
+      }
+      if(!collides) break;
+      radial += boxH;
+      tangential = sideSigns[tries]*8;
+      pos = posAt(radial, tangential);
+      box = boxAt(pos);
+      tries++;
+    }
+    placed.push(box);
+    it.dir = dir;
+    it.targetX = pos.x; it.targetY = pos.y;
+  });
+
+  items.forEach(function(it){
+    const prev = harmonicLabelPos[it.key];
+    const sx2 = prev ? prev.x + (it.targetX-prev.x)*HARMONIC_LABEL_SMOOTH : it.targetX;
+    const sy2 = prev ? prev.y + (it.targetY-prev.y)*HARMONIC_LABEL_SMOOTH : it.targetY;
+    harmonicLabelPos[it.key] = { x:sx2, y:sy2 };
+    it.drawX = sx2; it.drawY = sy2;
+  });
+
+  items.forEach(function(it){
+    const dist = Math.hypot(it.drawX-it.sx, it.drawY-it.sy);
+    if(dist > 22){
+      ctx.save();
+      ctx.strokeStyle = hexAlpha(it.color, 0.5);
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(it.sx,it.sy); ctx.lineTo(it.drawX,it.drawY); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.font = size + "px Inter, sans-serif";
+    ctx.fillStyle = it.color;
+    ctx.textAlign = it.dir.dx > 0.15 ? "left" : (it.dir.dx < -0.15 ? "right" : "center");
+    ctx.textBaseline = it.dir.dy > 0.15 ? "top" : (it.dir.dy < -0.15 ? "bottom" : "middle");
+    ctx.fillText(it.name, it.drawX, it.drawY);
+  });
+}
+
+// Fixed top-left legend (colored dot + name), shown at the "All planets" scale in place of the
+// moving labels this view suppresses.
+function drawHarmonicLegend(ctx, items){
+  const pad = 8, lineH = 14, dotR = 3, fontSize = 10;
+  ctx.font = fontSize + "px Inter, sans-serif";
+  let maxW = 0;
+  items.forEach(function(it){ maxW = Math.max(maxW, ctx.measureText(it.name).width); });
+  const boxW = pad*2 + dotR*2 + 6 + maxW;
+  const boxH = pad*2 + items.length*lineH;
+  const x0 = 10, y0 = 10;
+  ctx.save();
+  ctx.fillStyle = hexAlpha(COLORS["panel-deep"], 0.85);
+  ctx.strokeStyle = hexAlpha(COLORS.border, 0.8);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if(ctx.roundRect) ctx.roundRect(x0,y0,boxW,boxH,4); else ctx.rect(x0,y0,boxW,boxH);
+  ctx.fill(); ctx.stroke();
+  items.forEach(function(it,i){
+    const cy2 = y0+pad+i*lineH+lineH/2;
+    ctx.fillStyle = it.color;
+    ctx.beginPath(); ctx.arc(x0+pad+dotR, cy2, dotR, 0, TAU); ctx.fill();
+    ctx.fillStyle = COLORS.text;
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(it.name, x0+pad+dotR*2+6, cy2);
+  });
+  ctx.restore();
+}
+
 function drawHarmonicMain(ctx,w,h){
   const extent = (state.p.view === "inner") ? 1.7 : 10.5;
   const scale = (Math.min(w,h)/2 - 26) / extent;
@@ -1782,6 +1932,11 @@ function drawHarmonicMain(ctx,w,h){
   ctx.beginPath(); ctx.arc(cx,cy,6,0,TAU); ctx.fill();
   drawLabel(ctx, cx, cy, "Sun", {dx:0,dy:-1}, {color:COLORS.amber, size:11, offset:9});
 
+  const view = state.p.view;
+  const threshold = 0.12 * extent;
+  const moving = [];      // planets that get a moving, collision-avoided label this frame
+  const legendItems = []; // planets listed in the fixed legend ("All planets" scale only)
+
   HARMONIC_PLANETS.forEach(function(pl){
     const o = computeOrbit(pl.a, pl.e, state.t);
     const color = COLORS[pl.color];
@@ -1790,7 +1945,12 @@ function drawHarmonicMain(ctx,w,h){
     const s = toScreen({x:o.x,y:o.y});
     ctx.fillStyle = color;
     ctx.beginPath(); ctx.arc(s.x,s.y,5,0,TAU); ctx.fill();
-    drawLabel(ctx, s.x, s.y, pl.name, outwardDir(s.x,s.y,cx,cy), {color:color, size:10});
+
+    if(!labelsOn()) return;
+    if(view === "inner" || pl.key === "jupiter" || pl.key === "saturn"){
+      moving.push({ key:pl.key, name:pl.name, color:color, sx:s.x, sy:s.y });
+    }
+    if(view === "all") legendItems.push({ name:pl.name, color:color });
   });
 
   if(customStyle.show){
@@ -1801,9 +1961,21 @@ function drawHarmonicMain(ctx,w,h){
     drawGlow(ctx, glowSpriteCyan, s.x, s.y, 20);
     ctx.fillStyle = COLORS.cyan;
     ctx.beginPath(); ctx.arc(s.x,s.y,5.5,0,TAU); ctx.fill();
-    drawLabel(ctx, s.x, s.y, "custom", outwardDir(s.x,s.y,cx,cy), {color:COLORS.cyan, size:10});
+
+    if(labelsOn()){
+      if(view === "inner" || state.p.customA >= threshold){
+        moving.push({ key:"custom", name:"custom", color:COLORS.cyan, sx:s.x, sy:s.y });
+      }
+      if(view === "all") legendItems.push({ name:"custom", color:COLORS.cyan });
+    }
   } else {
     clearTrail("custom");
+    delete harmonicLabelPos.custom;
+  }
+
+  if(labelsOn()){
+    if(moving.length) layoutHarmonicLabels(ctx, moving, cx, cy);
+    if(view === "all" && legendItems.length) drawHarmonicLegend(ctx, legendItems);
   }
 }
 
@@ -1948,38 +2120,38 @@ function drawEllipseStrip(ctx,w,h){
     function yOfR(r){ return ax.plotB - ((r-rMin)/(rMax-rMin||1))*ax.plotH; }
     function yOfV(v){ return ax.plotB - ((v-vMin)/(vMax-vMin||1))*ax.plotH; }
 
-    // dashed reference levels at r_peri / r_apo
+    // dashed reference levels at r_peri / r_apo (in r's own color, not the Sun's amber)
     [rPeri, rApo].forEach(function(r){
       ctx.save(); ctx.setLineDash([4,4]);
-      ctx.strokeStyle = hexAlpha(COLORS.amber, 0.35); ctx.lineWidth = 1;
+      ctx.strokeStyle = creamColor(0.35); ctx.lineWidth = 1;
       const y = yOfR(r);
       ctx.beginPath(); ctx.moveTo(ax.plotL,y); ctx.lineTo(ax.plotR,y); ctx.stroke();
       ctx.restore();
     });
 
     if(samples.length>1){
-      ctx.strokeStyle = COLORS.amber; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = creamColor(0.9); ctx.lineWidth = 1.5;
       ctx.beginPath();
       samples.forEach(function(s,i){ const x=xOf(s.t), y=yOfR(s.o.r); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
       ctx.stroke();
-      ctx.strokeStyle = COLORS.cyan; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 1.5;
       ctx.beginPath();
       samples.forEach(function(s,i){ const x=xOf(s.t), y=yOfV(s.o.v); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
       ctx.stroke();
     }
     ctx.font = "9px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="top";
-    ctx.fillStyle = COLORS.amber; ctx.fillText("r (AU)", ax.plotL, 2);
-    ctx.fillStyle = COLORS.cyan; ctx.textAlign="right"; ctx.fillText("v (AU/d)", ax.plotR, 2);
+    ctx.fillStyle = creamColor(0.9); ctx.fillText("r (AU)", ax.plotL, 2);
+    ctx.fillStyle = COLORS.magenta; ctx.textAlign="right"; ctx.fillText("v (AU/d)", ax.plotR, 2);
   } else { // "sum": r1+r2 = 2a
     const yMax = 2*p.a*1.1;
     function yOf(v){ return ax.plotB - (v/(yMax||1))*ax.plotH; }
     if(samples.length>1){
       const F2 = g.F2;
-      ctx.strokeStyle = COLORS.amber; ctx.lineWidth = 1.25;
+      ctx.strokeStyle = creamColor(0.9); ctx.lineWidth = 1.25;
       ctx.beginPath();
       samples.forEach(function(s,i){ const x=xOf(s.t), y=yOf(s.o.r); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
       ctx.stroke();
-      ctx.strokeStyle = COLORS.purple; ctx.lineWidth = 1.25;
+      ctx.strokeStyle = COLORS.muted; ctx.lineWidth = 1.25;
       ctx.beginPath();
       samples.forEach(function(s,i){
         const r2 = Math.hypot(s.o.x-F2.x, s.o.y-F2.y);
@@ -1987,17 +2159,43 @@ function drawEllipseStrip(ctx,w,h){
       });
       ctx.stroke();
       ctx.save(); ctx.setLineDash([5,3]);
-      ctx.strokeStyle = COLORS.green; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = creamColor(); ctx.lineWidth = 1.5;
       const y2a = yOf(2*p.a);
       ctx.beginPath(); ctx.moveTo(ax.plotL,y2a); ctx.lineTo(ax.plotR,y2a); ctx.stroke();
       ctx.restore();
     }
     ctx.font="9px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="top";
-    ctx.fillStyle = COLORS.amber; ctx.fillText("r₁", ax.plotL, 2);
-    ctx.fillStyle = COLORS.purple; ctx.fillText("r₂", ax.plotL+16, 2);
-    ctx.fillStyle = COLORS.green; ctx.fillText("r₁+r₂ = 2a", ax.plotL+32, 2);
+    ctx.fillStyle = creamColor(0.9); ctx.fillText("r₁", ax.plotL, 2);
+    ctx.fillStyle = COLORS.muted; ctx.fillText("r₂", ax.plotL+16, 2);
+    ctx.fillStyle = creamColor(); ctx.fillText("r₁+r₂ = 2a", ax.plotL+32, 2);
   }
   drawAxisFrame(ctx, ax);
+}
+
+// Shades the same equal-time intervals as the orbit's sectors (same k, n, same alternation so
+// band i lines up with sector i) as vertical bands spanning each interval, each labeled at the
+// top with its swept area -- used by every Equal-areas strip mode. The current (partial) interval
+// is left unshaded until it completes, matching drawAreasMain's n=0 convention.
+function drawEqualTimeBands(ctx, ax, xOf, tMin, tMax, dt, dAdt, p){
+  const j0 = Math.floor(state.t/dt);
+  for(let n=p.n; n>=1; n--){
+    const j = j0 - n;
+    const tStart = j*dt, tEnd = (j+1)*dt;
+    if(tEnd <= tMin || tStart >= tMax) continue;
+    const xA = clamp(xOf(tStart), ax.plotL, ax.plotR);
+    const xB = clamp(xOf(tEnd), ax.plotL, ax.plotR);
+    if(xB <= xA) continue;
+    const alt = ((j%2)+2)%2;
+    ctx.fillStyle = hexAlpha(COLORS.amber, alt ? 0.16 : 0.10);
+    ctx.fillRect(xA, ax.plotT, xB-xA, ax.plotH);
+    if(xB-xA > 28){
+      const area = dAdt*(tEnd-tStart);
+      ctx.font = "8.5px Inter, sans-serif";
+      ctx.fillStyle = hexAlpha(COLORS.amber, 0.85);
+      ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.fillText(area.toFixed(3)+" AU²", (xA+xB)/2, ax.plotT+2);
+    }
+  }
 }
 
 function drawAreasStrip(ctx,w,h){
@@ -2024,7 +2222,9 @@ function drawAreasStrip(ctx,w,h){
     const dtS = windowDays/300;
     const times = timeGridSamples(tMin, tMax, dtS);
 
-    ctx.strokeStyle = COLORS.amber; ctx.lineWidth = 1.5;
+    drawEqualTimeBands(ctx, ax, xOf, tMin, tMax, dt, dAdt, p);
+
+    ctx.strokeStyle = creamColor(0.9); ctx.lineWidth = 1.5;
     ctx.beginPath();
     times.forEach(function(t,i){ const o=computeOrbit(p.a,p.e,t); const x=xOf(t), y=yOfR(o.r); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
     ctx.stroke();
@@ -2036,19 +2236,32 @@ function drawAreasStrip(ctx,w,h){
 
     const yH = yOfV(h);
     ctx.save(); ctx.setLineDash([6,3]);
-    ctx.strokeStyle = COLORS.cyan; ctx.lineWidth = 1.75;
+    ctx.strokeStyle = COLORS.amber; ctx.lineWidth = 1.75;
     ctx.beginPath(); ctx.moveTo(ax.plotL,yH); ctx.lineTo(ax.plotR,yH); ctx.stroke();
     ctx.restore();
 
     ctx.font="9px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="top";
-    ctx.fillStyle = COLORS.amber; ctx.fillText("r (AU)", ax.plotL, 2);
+    ctx.fillStyle = creamColor(0.9); ctx.fillText("r (AU)", ax.plotL, 2);
     ctx.fillStyle = COLORS.magenta; ctx.textAlign="right"; ctx.fillText("v⊥ (AU/d)", ax.plotR, 2);
     const labelY = clamp(yH-4, ax.plotT+10, ax.plotB-4);
-    ctx.fillStyle = COLORS.cyan; ctx.textAlign="right"; ctx.textBaseline="bottom";
+    ctx.fillStyle = COLORS.amber; ctx.textAlign="right"; ctx.textBaseline="bottom";
     ctx.fillText("r·v⊥ = "+h.toFixed(4)+" (constant)", ax.plotR-2, labelY);
   } else if(state.stripMode === "area"){
     const areaSpan = dAdt*windowDays;
     function yOf(A){ return ax.plotB - (A/(areaSpan||1))*ax.plotH; }
+
+    drawEqualTimeBands(ctx, ax, xOf, tMin, tMax, dt, dAdt, p);
+
+    // flat dA/dt reference: a fixed-height dashed line (dA/dt is constant, unlike the rising
+    // accumulated-area curve below) -- annotative, not to the same numeric scale as the area axis.
+    const yRate = ax.plotT + 0.18*ax.plotH;
+    ctx.save(); ctx.setLineDash([5,3]);
+    ctx.strokeStyle = hexAlpha(COLORS.amber, 0.55); ctx.lineWidth = 1.25;
+    ctx.beginPath(); ctx.moveTo(ax.plotL,yRate); ctx.lineTo(ax.plotR,yRate); ctx.stroke();
+    ctx.restore();
+    ctx.font="8.5px Inter, sans-serif"; ctx.fillStyle=hexAlpha(COLORS.amber,0.85); ctx.textAlign="right"; ctx.textBaseline="bottom";
+    ctx.fillText("dA/dt = "+dAdt.toFixed(6)+" AU²/d (constant)", ax.plotR-2, yRate-2);
+
     ctx.strokeStyle = COLORS.amber; ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(xOf(tMin), yOf(0));
@@ -2062,13 +2275,18 @@ function drawAreasStrip(ctx,w,h){
     });
     ctx.font="9px Inter, sans-serif"; ctx.fillStyle=COLORS.amber; ctx.textAlign="left"; ctx.textBaseline="top";
     ctx.fillText("swept area (AU², relative to window start)", ax.plotL, 2);
+    ctx.font="8.5px Inter, sans-serif"; ctx.fillStyle=hexAlpha(COLORS.muted,0.85); ctx.textAlign="right"; ctx.textBaseline="bottom";
+    ctx.fillText("equal widths (equal Δt) × constant dA/dt = equal areas", ax.plotR-2, ax.plotB-2);
   } else { // "speed"
     const vp = vPeriApo(p.a, p.e);
     const vMin = vp.vApo*0.9, vMax = vp.vPeri*1.1;
     function yOf(v){ return ax.plotB - ((v-vMin)/(vMax-vMin||1))*ax.plotH; }
     const dtS = windowDays/300;
     const times = timeGridSamples(tMin, tMax, dtS);
-    ctx.strokeStyle = COLORS.cyan; ctx.lineWidth = 1.5;
+
+    drawEqualTimeBands(ctx, ax, xOf, tMin, tMax, dt, dAdt, p);
+
+    ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 1.5;
     ctx.beginPath();
     times.forEach(function(t,i){
       const o = computeOrbit(p.a,p.e,t);
@@ -2076,10 +2294,64 @@ function drawAreasStrip(ctx,w,h){
       if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     });
     ctx.stroke();
-    ctx.font="9px Inter, sans-serif"; ctx.fillStyle=COLORS.cyan; ctx.textAlign="left"; ctx.textBaseline="top";
+    ctx.font="9px Inter, sans-serif"; ctx.fillStyle=COLORS.magenta; ctx.textAlign="left"; ctx.textBaseline="top";
     ctx.fillText("v (AU/d)", ax.plotL, 2);
   }
   drawAxisFrame(ctx, ax);
+}
+
+// Static label layout for the linear P-a chart: points default to directly above their marker;
+// when several are bunched (the inner planets), later ones (by x) stack further up with a thin
+// leader line back down to the point. No temporal smoothing needed -- this chart doesn't animate
+// with time, only with the custom-a slider, so a fresh static layout every draw is fine.
+function layoutLinearLabels(ctx, ax, points){
+  const size = 10;
+  ctx.font = size + "px Inter, sans-serif";
+  const items = points.map(function(p){ return { name:p.name, color:p.color, px:p.x, py:p.y }; });
+  items.sort(function(a,b){ return a.px-b.px; });
+  const placed = [];
+  items.forEach(function(it){
+    const textW = ctx.measureText(it.name).width;
+    const boxW = textW + 6, boxH = size + 6;
+    let offY = 12;
+    let lx = it.px, ly = it.py - offY;
+    function boxAt(x,y){ return { l:x-boxW/2, r:x+boxW/2, t:y-boxH/2, b:y+boxH/2 }; }
+    let box = boxAt(lx,ly);
+    let tries = 0;
+    while(tries < 6){
+      let collides = false;
+      for(let i=0;i<placed.length;i++){
+        const ob = placed[i];
+        const ox = Math.min(box.r,ob.r) - Math.max(box.l,ob.l);
+        const oy = Math.min(box.b,ob.b) - Math.max(box.t,ob.t);
+        if(ox > 0 && oy > 0){ collides = true; break; }
+      }
+      if(!collides) break;
+      offY += boxH;
+      ly = it.py - offY;
+      box = boxAt(lx,ly);
+      tries++;
+    }
+    const cxpos = clamp(lx, ax.plotL + boxW/2 + 1, ax.plotR - boxW/2 - 1);
+    const cypos = clamp(ly, ax.plotT + boxH/2 + 1, ax.plotB - boxH/2 - 1);
+    box = boxAt(cxpos, cypos);
+    placed.push(box);
+    it.lx = cxpos; it.ly = cypos;
+  });
+  items.forEach(function(it){
+    const dist = Math.hypot(it.lx-it.px, it.ly-it.py);
+    if(dist > 14){
+      ctx.save();
+      ctx.strokeStyle = hexAlpha(it.color, 0.5);
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(it.px,it.py); ctx.lineTo(it.lx,it.ly); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.font = size + "px Inter, sans-serif";
+    ctx.fillStyle = it.color;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(it.name, it.lx, it.ly);
+  });
 }
 
 function drawHarmonicStrip(ctx,w,h){
@@ -2170,17 +2442,21 @@ function drawHarmonicStrip(ctx,w,h){
     for(let i=0;i<=60;i++){ const a=xMax*i/60; const x=xOf(a), y=yOf(Math.pow(a,1.5)); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
     ctx.stroke();
 
+    const labelPts = [];
     bodies.forEach(function(b){
       const s = { x:xOf(b.a), y:yOf(Math.pow(b.a,1.5)) };
       const faded = (b.key==="halley");
       const color = faded?COLORS.muted:COLORS[b.color];
       ctx.fillStyle = faded?hexAlpha(color,0.5):color;
       ctx.beginPath(); ctx.arc(s.x,s.y,faded?3:4,0,TAU); ctx.fill();
+      labelPts.push({ name:b.name, color:color, x:s.x, y:s.y });
     });
     const ca = state.p.customA;
     const cs = { x:xOf(ca), y:yOf(Math.pow(ca,1.5)) };
     ctx.fillStyle = COLORS.cyan;
     ctx.beginPath(); ctx.arc(cs.x,cs.y,4.5,0,TAU); ctx.fill();
+    labelPts.push({ name:"custom", color:COLORS.cyan, x:cs.x, y:cs.y });
+    if(labelsOn()) layoutLinearLabels(ctx, ax, labelPts);
   }
   drawAxisFrame(ctx, ax);
 }
