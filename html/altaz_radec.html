@@ -1793,18 +1793,13 @@ function rebuildDiurnalCircle(){
   // read as hidden below the ground, not as a second prominent feature.
   runs.forEach(function(run){
     if(run.above){
-      const glowPts = run.pts.map(function(p){ return p.clone().multiplyScalar(1.006); });
       const pathPts = run.pts.map(function(p){ return p.clone().multiplyScalar(1.008); });
-      const glow = makeFatLineStrip(glowPts, COLORI.amber, 0.16, 7);
-      glow.material.userData.baseOpacity = 0.16;
-      glow.material.userData.baseLinewidth = 7;
-      diurnalGroup.add(glow.line);
-      const path = makeFatLineStrip(pathPts, COLORI.amber, 0.95, 3);
+      const path = makeFatLineStrip(pathPts, COLORI.text, 0.75, 2);
       path.material.userData.baseOpacity = 0.95;
       path.material.userData.baseLinewidth = 3;
       diurnalGroup.add(path.line);
     } else {
-      const below = makeFatLineRaw(COLORI.amber, 0.35, 3, true, run.pts.length);
+      const below = makeFatLineRaw(COLORI.text, 0.3, 2, true, run.pts.length);
       below.material.dashSize = 0.05;
       below.material.gapSize = 0.03;
       setLinePoints(below, run.pts); // fills the geometry + calls computeLineDistances() (dashed+fat)
@@ -1824,7 +1819,7 @@ function rebuildDiurnalCircle(){
     const dRad = state.dec*RAD;
     const poleDir = toThreeVec3(pHatModel(state.phi)).normalize();
     const geo = new THREE.CircleGeometry(Math.max(0.0005, Math.cos(dRad)), 64);
-    const mat = new THREE.MeshBasicMaterial({ color:COLORI.amber, transparent:true, opacity:0.07, side:THREE.DoubleSide, depthWrite:false });
+    const mat = new THREE.MeshBasicMaterial({ color:COLORI.text, transparent:true, opacity:0.05, side:THREE.DoubleSide, depthWrite:false });
     const disk = new THREE.Mesh(geo, mat);
     disk.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), poleDir);
     disk.position.copy(poleDir).multiplyScalar(Math.sin(dRad));
@@ -1833,7 +1828,7 @@ function rebuildDiurnalCircle(){
     diurnalDisk = disk; // applyHighlight() gives this its own (non-generic) hover opacity
   }
 
-  // rise/set markers: an amber dot + a short radial tick crossing the
+  // rise/set markers: a cream dot + a short radial tick crossing the
   // horizon ring + a "rises"/"sets" label, omitted for circumpolar stars (no
   // crossing exists) or stars that never rise above the horizon at all
   const rs = riseSetInfo(state.phi, state.dec);
@@ -1845,7 +1840,7 @@ function rebuildDiurnalCircle(){
       const p = toThreeVec3(eqToVec(cross.Hd, state.dec, state.phi)); // unit length -- also its own outward/radial direction
 
       const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012,10,8),
-        new THREE.MeshBasicMaterial({ color:COLORI.amber, transparent:true, opacity:0.95 }));
+        new THREE.MeshBasicMaterial({ color:COLORI.text, transparent:true, opacity:0.9 }));
       dot.position.copy(p);
       dot.material.userData.baseOpacity = 0.95;
       diurnalGroup.add(dot);
@@ -1857,12 +1852,12 @@ function rebuildDiurnalCircle(){
       const tickGeo = new THREE.BufferGeometry().setFromPoints([
         p.clone().multiplyScalar(1 - tickHalf), p.clone().multiplyScalar(1 + tickHalf)
       ]);
-      const tickMat = new THREE.LineBasicMaterial({ color:COLORI.amber, transparent:true, opacity:0.7, depthWrite:false });
+      const tickMat = new THREE.LineBasicMaterial({ color:COLORI.text, transparent:true, opacity:0.6, depthWrite:false });
       const tick = new THREE.Line(tickGeo, tickMat);
       tick.material.userData.baseOpacity = 0.7;
       diurnalGroup.add(tick);
 
-      const label = makeTextSprite(cross.text, COLORS.amber, { pixelHeight:12 });
+      const label = makeTextSprite(cross.text, COLORS.text, { pixelHeight:12 });
       label.position.copy(p.clone().multiplyScalar(1.13)); // just outside the horizon ring
       diurnalGroup.add(label);
       if(cross.ref === "diurnalRiseLabel") diurnalRiseLabel = label; else diurnalSetLabel = label;
@@ -1880,7 +1875,7 @@ function rebuildDiurnalCircle(){
     const sepDeg = Math.acos(clamp(transitV.dot(starV), -1, 1))*DEG;
     const labelHd = (sepDeg <= 6) ? (starH >= 0 ? -25 : 25) : 0; // 25 deg along the circle, away from the star
     const labelV = toThreeVec3(eqToVec(labelHd, state.dec, state.phi));
-    diurnalCircleLabel = makeTextSprite("diurnal circle", COLORS.amber, { pixelHeight:14 });
+    diurnalCircleLabel = makeTextSprite("diurnal circle", COLORS.text, { pixelHeight:14 });
     diurnalCircleLabel.position.copy(labelV.multiplyScalar(1.12));
     diurnalCircleLabel.visible = !!state.display.labels || state.highlightKey === "labels"; // Labels-toggle-gated -- see applyDisplayVisibility()
     diurnalGroup.add(diurnalCircleLabel);
