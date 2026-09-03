@@ -23,6 +23,7 @@
     --purple:#a99bff;
     --amber:#ffcc66;
     --green:#56dc72;
+    --coral:#ff7f66;
     --on-accent:#0c181b;
     --control-hover:#343a41;
     --cyan-wash: rgb(86 199 217/10%);
@@ -349,6 +350,7 @@
             <span>t = <b id="readoutT" class="tabular">0</b> d</span>
             <span id="lambdaReadout">&lambda; = <b id="readoutLambda" class="tabular">0.0</b>&deg;</span>
             <span id="ddtReadout" style="display:none">d&lambda;/dt = <b class="tabular">0.00</b> &deg;/d</span>
+            <span id="sunReadouts" style="display:none"><span class="math">&delta;&#9737;</span> = <b id="readoutSunDecl" class="tabular">+0.0</b>&deg; &nbsp; noon El (40.7&deg; N) = <b id="readoutNoonEl" class="tabular">49.3</b>&deg;</span>
             <span id="compareReadouts" style="display:none">&lambda;<sub>geo</sub> = <b id="readoutLambdaGeo" class="tabular">0.0</b>&deg; &nbsp; &lambda;<sub>helio</sub> = <b id="readoutLambdaHelio" class="tabular">0.0</b>&deg; &nbsp; &Delta;&lambda; = <b id="readoutDeltaLambda" class="tabular">0.00</b>&deg;</span>
             <span id="motionBadge" class="pill pill-direct">DIRECT</span>
           </div>
@@ -365,6 +367,7 @@
             <span><i class="swatch" style="background:var(--amber)"></i>&lambda; geocentric</span>
             <span><i class="swatch" style="background:var(--cyan)"></i>&lambda; heliocentric</span>
           </div>
+          <div class="panel-readouts" id="sunYearCaption" style="display:none">equatorial chart &middot; the Sun's yearly path is the ecliptic</div>
           <div class="segmented" id="stripModeToggle" role="tablist" aria-label="Strip panel mode">
             <button type="button" data-mode="plot" class="active" role="tab" aria-selected="true">&lambda;&ndash;t plot</button>
             <button type="button" data-mode="atlas" role="tab" aria-selected="false">Sky atlas</button>
@@ -393,6 +396,9 @@ const PERIOD_SUN        = 365.25;  // days — solar / eccentric deferent
 const PERIOD_MARS_DEF   = 687;     // days — Mars-like deferent / equant
 const PERIOD_MARS_EPI   = 365.25;  // days — Mars-like epicycle
 
+const OBLIQUITY_DEG = 23.44;       // obliquity of the ecliptic, epsilon -- eccentric (Sun) tab's "Sun's year" atlas
+const LAT_NEWARK = 40.7;           // observer latitude (deg N) for the eccentric tab's noon-altitude readout
+
 const TRACE_DT = 0.5;              // fixed trace-sampling grid spacing, in days
 const GRID_CAP = 200;              // per-frame cap on grid crossings recorded (trace and strip, independently)
 const STRIP_SAMPLES = 900;         // target sample count spanning a full strip window
@@ -402,7 +408,7 @@ const COLORS = {};
 function loadColors(){
   ["background","rail","canvas","panel-deep","panel","panel-raised","border",
    "border-strong","border-hover","text","muted","cyan","magenta","purple",
-   "amber","green","on-accent"].forEach(function(n){ COLORS[n] = cssVar("--"+n); });
+   "amber","green","on-accent","coral"].forEach(function(n){ COLORS[n] = cssVar("--"+n); });
 }
 
 function hexToRgb(hex){
@@ -509,6 +515,22 @@ function computeBeta(m, inclinationDeg){
   const d = Math.hypot(xr, yr);
   const i = inclinationDeg * RAD;
   return Math.atan2(Math.sin(i) * m.orbitY, d) * DEG;
+}
+
+// Ecliptic longitude -> equatorial (RA/Dec), for the eccentric (Sun) tab's "Sun's year" atlas
+// and header readouts. delta = asin(sin(eps) sin(lambda)); alpha = atan2(cos(eps) sin(lambda), cos(lambda)),
+// returned in hours on [0,24). The Sun always sits ON this curve by definition (beta=0 for the Sun).
+function eclipticToEquatorial(lambdaDeg){
+  const lam = lambdaDeg * RAD;
+  const eps = OBLIQUITY_DEG * RAD;
+  const delta = Math.asin(clamp(Math.sin(eps) * Math.sin(lam), -1, 1)) * DEG;
+  const alphaDeg = norm360(Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)) * DEG);
+  return { alpha: alphaDeg / 15, delta: delta };
+}
+
+function fmtSigned(v, decimals){
+  const s = v.toFixed(decimals);
+  return (v >= 0 && s.charAt(0) !== "-") ? "+" + s : s;
 }
 
 /* =========================================================================
@@ -736,7 +758,8 @@ const TAB_CONFIG = {
     aboutHTML:
       '<p>The Sun drifts through the zodiac at an uneven rate: Hipparchus knew the seasons have unequal lengths (spring &asymp; 94.5 days, autumn &asymp; 88.5). Yet Greek astronomy demanded perfectly uniform circular motion.</p>' +
       '<p>The eccentric keeps the motion uniform on the circle &mdash; but displaces Earth from the circle\'s center by a distance <span class="math">e</span>. Seen from Earth, the Sun then appears fastest at perigee and slowest at apogee, with no actual change of speed.</p>' +
-      '<p>Hipparchus (&sim;150 BCE) fit the Sun with <span class="math">e</span> &asymp; 1/24 of the radius; the slider here is exaggerated so the effect is easy to see.</p>'
+      '<p>Hipparchus (&sim;150 BCE) fit the Sun with <span class="math">e</span> &asymp; 1/24 of the radius; the slider here is exaggerated so the effect is easy to see.</p>' +
+      '<p>In an equatorial chart the Sun\'s yearly path is the ecliptic, a sine wave 23.4&deg; high: north in summer, south in winter &mdash; the seasons, and the reason the noon Sun stands 47&deg; higher in June than in December. The uneven spacing of the dots along the wave is the eccentric at work: the Sun really does cross the summer half of the sky more slowly than the winter half &mdash; a few days\' difference in the lengths of the seasons that Hipparchus measured and this device reproduces.</p>'
   },
   epicycle: {
     label: "Epicycle",
@@ -842,6 +865,7 @@ const state = {
   mainW: 0, mainH: 0, stripW: 0, stripH: 0,
   _lastT: null, _lastDirect: null, _lastLambdaStr: null, _lastDdtStr: null,
   _lastGeoStr: null, _lastHelioStr: null, _lastDeltaStr: null,
+  _lastSunDeclStr: null, _lastNoonElStr: null,
   // splitter-drag flag (Task A) -- this page's own resize path is cheap (2D
   // canvas only), so nothing gates on it besides the splitter's own rAF
   // coalescing, but it's kept for parity/testability with the sky page
@@ -969,6 +993,7 @@ function cacheEls(){
    "paramsFields","displayCard","aboutCard","aboutTitle","aboutBody",
    "mainPanelTitle","readoutT","readoutLambda","ddtReadout","motionBadge",
    "lambdaReadout","compareReadouts","readoutLambdaGeo","readoutLambdaHelio","readoutDeltaLambda",
+   "sunReadouts","readoutSunDecl","readoutNoonEl","sunYearCaption",
    "toggleMarkers","toggleVectors","stripLegend","stripModeToggle",
    "mainCanvas","stripCanvas"].forEach(function(id){ els[id] = document.getElementById(id); });
 }
@@ -1164,6 +1189,17 @@ function updateMainPanelTitle(){
   els.mainPanelTitle.textContent = "Orbital diagram — " + cfg.label + suffix;
 }
 
+// Eccentric (Sun) tab only: header decl./noon-altitude readouts, the strip
+// mode-toggle's "atlas" button label ("Sun's year" vs "Sky atlas" elsewhere),
+// and the strip header's equatorial-chart caption (shown only in atlas mode).
+function updateEccentricAtlasUI(){
+  const isEcc = state.tab === "eccentric";
+  if(els.sunReadouts) els.sunReadouts.style.display = isEcc ? "" : "none";
+  const atlasBtn = els.stripModeToggle.querySelector('[data-mode="atlas"]');
+  if(atlasBtn) atlasBtn.textContent = isEcc ? "Sun's year" : "Sky atlas";
+  if(els.sunYearCaption) els.sunYearCaption.style.display = (isEcc && state.stripMode === "atlas") ? "" : "none";
+}
+
 function buildAboutCard(){
   const cfg = TAB_CONFIG[state.tab];
   els.aboutCard.className = "card about tint-" + cfg.tint;
@@ -1269,6 +1305,7 @@ function wireStripModeToggle(){
         b.classList.toggle("active", active);
         b.setAttribute("aria-selected", active ? "true" : "false");
       });
+      updateEccentricAtlasUI();
       state.stripDirty = true;
       render();
     });
@@ -1315,10 +1352,12 @@ function switchTab(tabId){
   els.lambdaReadout.style.display = isCompare ? "none" : "";
   els.compareReadouts.style.display = isCompare ? "" : "none";
   els.ddtReadout.style.display = isEquant ? "" : "none"; // structural: was previously never un-hidden anywhere
+  updateEccentricAtlasUI();
 
   // force every readout to repaint at least once on the new tab
   state._lastT = null; state._lastDirect = null; state._lastLambdaStr = null; state._lastDdtStr = null;
   state._lastGeoStr = null; state._lastHelioStr = null; state._lastDeltaStr = null;
+  state._lastSunDeclStr = null; state._lastNoonElStr = null;
 
   fullClearAndSeed();
   render();
@@ -2180,6 +2219,214 @@ function drawAtlasMode(ctx, w, h){
   }
 }
 
+/* ---- "Sun's year": eccentric tab only, atlas mode. An EQUATORIAL (RA/Dec) chart --
+   x = right ascension alpha (0-24h), y = declination delta (+-30deg). The Sun always
+   sits ON the ecliptic curve by definition; what the trail shows is how UNEVENLY it
+   moves along that curve, which is exactly the eccentric's effect. Mirrors the
+   ecliptic-longitude atlas's cached-background approach (regenerated on resize), just
+   with an equatorial grid instead of an ecliptic-longitude one, and no retrograde
+   coloring (the Sun never retrogrades). ---- */
+const CARDINAL_POINTS = [
+  { lambda:0,   label: ZODIAC_SYMBOLS[0] + " Mar 20 · equinox" },
+  { lambda:90,  label: ZODIAC_SYMBOLS[3] + " Jun 21 · solstice" },
+  { lambda:180, label: ZODIAC_SYMBOLS[6] + " Sep 22 · equinox" },
+  { lambda:270, label: ZODIAC_SYMBOLS[9] + " Dec 21 · solstice" }
+];
+let sunYearBg = null; // {canvas,cssW,cssH,dpr,plotL,plotR,plotT,plotB,plotW,plotH}
+
+function xOfAlphaSY(bg, alphaHours){ return bg.plotL + (alphaHours/24)*bg.plotW; }
+function yOfDeltaSY(bg, deltaDeg){ return bg.plotT + (1 - (deltaDeg+30)/60)*bg.plotH; }
+
+function regenerateSunYearBackground(cssW, cssH){
+  const dpr = window.devicePixelRatio || 1;
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(cssW*dpr));
+  c.height = Math.max(1, Math.round(cssH*dpr));
+  const actx = c.getContext("2d");
+  actx.setTransform(dpr,0,0,dpr,0,0);
+
+  const padL=36, padR=8, padT=8, padB=26;
+  const plotL=padL, plotR=cssW-padR, plotT=padT, plotB=cssH-padB;
+  const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
+  const bg = { canvas:c, cssW:cssW, cssH:cssH, dpr:dpr, plotL:plotL, plotR:plotR, plotT:plotT, plotB:plotB, plotW:plotW, plotH:plotH };
+
+  actx.fillStyle = COLORS.canvas;
+  actx.fillRect(0,0,cssW,cssH);
+
+  // deterministic "illustrative" star field -- same recipe as the ecliptic atlas's background
+  const rand = mulberry32(1337);
+  actx.save();
+  actx.beginPath(); actx.rect(plotL,plotT,plotW,plotH); actx.clip();
+  const nStars=180, nBright=12;
+  for(let i=0;i<nStars;i++){
+    const x = plotL + rand()*plotW;
+    const y = plotT + rand()*plotH;
+    const bright = i < nBright;
+    const r = bright ? (1.6+rand()*0.6) : (0.5+rand()*1.1);
+    const a = bright ? (0.6+rand()*0.3) : (0.15+rand()*0.55);
+    actx.fillStyle = bright ? ("rgba(224,240,255,"+a+")") : hexAlpha(COLORS.text, a);
+    actx.beginPath(); actx.arc(x,y,r,0,TAU); actx.fill();
+  }
+  actx.restore();
+
+  // vertical gridlines every 2h, labeled 0h..22h
+  actx.lineWidth = 1;
+  actx.font = "9px Inter, sans-serif";
+  actx.textAlign = "center"; actx.textBaseline = "top";
+  for(let hh=0; hh<=24; hh+=2){
+    const x = xOfAlphaSY(bg, hh);
+    actx.strokeStyle = hexAlpha(COLORS.border, 0.35);
+    actx.beginPath(); actx.moveTo(x,plotT); actx.lineTo(x,plotB); actx.stroke();
+    if(hh < 24){
+      actx.fillStyle = COLORS.muted;
+      actx.fillText(hh+"h", x, plotB+3);
+    }
+  }
+
+  // horizontal gridlines every 10deg (0 is the celestial equator, drawn separately below)
+  actx.textAlign = "right"; actx.textBaseline = "middle";
+  for(let d=-30; d<=30; d+=10){
+    if(d === 0) continue;
+    const y = yOfDeltaSY(bg, d);
+    actx.strokeStyle = hexAlpha(COLORS.border, 0.35);
+    actx.beginPath(); actx.moveTo(plotL,y); actx.lineTo(plotR,y); actx.stroke();
+    actx.fillStyle = COLORS.muted;
+    actx.fillText((d>0?"+":"")+d+"°", plotL-4, y);
+  }
+
+  // caption
+  actx.font = "8px Inter, sans-serif";
+  actx.fillStyle = hexAlpha(COLORS.muted, 0.6);
+  actx.textAlign = "right"; actx.textBaseline = "top";
+  actx.fillText("star field illustrative", plotR, plotB+14);
+
+  // celestial equator (delta = 0), amber, labeled at the left end
+  const yEq = yOfDeltaSY(bg, 0);
+  actx.strokeStyle = COLORS.amber;
+  actx.lineWidth = 1.5;
+  actx.beginPath(); actx.moveTo(plotL,yEq); actx.lineTo(plotR,yEq); actx.stroke();
+  actx.font = "9px Inter, sans-serif";
+  actx.fillStyle = COLORS.amber;
+  actx.textAlign = "left"; actx.textBaseline = "bottom";
+  actx.fillText("celestial equator", plotL+3, yEq-2);
+
+  // the ecliptic itself: (alpha(lambda), delta(lambda)) for lambda = 0..360 -- this IS the
+  // Sun's yearly path; alpha increases monotonically with lambda, so one continuous stroke suffices
+  actx.strokeStyle = COLORS.coral;
+  actx.lineWidth = 2;
+  actx.beginPath();
+  for(let k=0;k<=360;k+=2){
+    const eq = eclipticToEquatorial(k);
+    const x = xOfAlphaSY(bg, eq.alpha), y = yOfDeltaSY(bg, eq.delta);
+    if(k===0) actx.moveTo(x,y); else actx.lineTo(x,y);
+  }
+  actx.stroke();
+
+  // "ecliptic" label near the curve's maximum (lambda=90 -> alpha=6h, delta=+epsilon) --
+  // offset a bit past the peak (lambda=115) so it doesn't collide with the Jun-solstice
+  // cardinal-point dot/label, which sits exactly at the peak itself
+  {
+    const eqLbl = eclipticToEquatorial(115);
+    const x = xOfAlphaSY(bg, eqLbl.alpha), y = yOfDeltaSY(bg, eqLbl.delta);
+    actx.font = "9px Inter, sans-serif";
+    actx.fillStyle = COLORS.coral;
+    actx.textAlign = "left"; actx.textBaseline = "bottom";
+    actx.fillText("ecliptic", x+4, y-3);
+  }
+
+  // zodiac sign glyphs ON the ecliptic curve, at each sign's center longitude
+  actx.font = "10px Inter, sans-serif";
+  actx.textAlign = "center";
+  for(let s=0;s<12;s++){
+    const lamCenter = s*30 + 15;
+    const eq = eclipticToEquatorial(lamCenter);
+    const x = xOfAlphaSY(bg, eq.alpha), y = yOfDeltaSY(bg, eq.delta);
+    const above = eq.delta >= 0;
+    actx.fillStyle = COLORS.muted;
+    actx.textBaseline = above ? "bottom" : "top";
+    actx.fillText(ZODIAC_SYMBOLS[s], x, y + (above ? -5 : 5));
+  }
+
+  // four cardinal points -- dated equinoxes/solstices
+  actx.font = "10px Inter, sans-serif";
+  actx.textAlign = "center";
+  CARDINAL_POINTS.forEach(function(cp){
+    const eq = eclipticToEquatorial(cp.lambda);
+    const x = xOfAlphaSY(bg, eq.alpha), y = yOfDeltaSY(bg, eq.delta);
+    actx.fillStyle = COLORS.muted;
+    actx.beginPath(); actx.arc(x,y,2,0,TAU); actx.fill();
+    const above = eq.delta >= 0;
+    actx.textBaseline = above ? "bottom" : "top";
+    actx.fillText(cp.label, x, y + (above ? -7 : 7));
+  });
+
+  actx.strokeStyle = COLORS.border;
+  actx.lineWidth = 1;
+  actx.strokeRect(plotL+0.5, plotT+0.5, plotW-1, plotH-1);
+
+  sunYearBg = bg;
+}
+
+function ensureSunYearBackground(cssW, cssH){
+  const dpr = window.devicePixelRatio || 1;
+  if(sunYearBg && sunYearBg.cssW===cssW && sunYearBg.cssH===cssH && sunYearBg.dpr===dpr) return;
+  regenerateSunYearBackground(cssW, cssH);
+}
+
+function drawSunYearMode(ctx, w, h){
+  ensureSunYearBackground(w, h);
+  const bg = sunYearBg;
+  ctx.drawImage(bg.canvas, 0, 0, bg.cssW, bg.cssH);
+
+  // Atlas draw window: only the most recent 365.25 days of the (longer, ~4yr) strip
+  // history -- one loop of the trail, not several overlapping ones.
+  const tMin = state.t - PERIOD_SUN;
+  const all = state.stripHistory;
+  const pts = [];
+  for(let i=0;i<all.length;i++){ if(all[i].t >= tMin) pts.push(all[i]); }
+  const n = pts.length;
+
+  // dot cadence anchored to absolute sample time, same rule as the ecliptic atlas
+  const dotDt = 3 * (state.windowDays / 900);
+
+  if(n > 1){
+    for(let i=1;i<n;i++){
+      const p0 = pts[i-1], p1 = pts[i];
+      const jump = Math.abs(p1.lambda - p0.lambda) > 180; // 360-wrap guard, no retrograde possible here
+      const alpha = 0.15 + 0.80*(i/(n-1));
+      const eq0 = eclipticToEquatorial(p0.lambda), eq1 = eclipticToEquatorial(p1.lambda);
+      const x0 = xOfAlphaSY(bg, eq0.alpha), y0 = yOfDeltaSY(bg, eq0.delta);
+      const x1 = xOfAlphaSY(bg, eq1.alpha), y1 = yOfDeltaSY(bg, eq1.delta);
+
+      if(!jump){
+        ctx.strokeStyle = hexAlpha(COLORS.amber, alpha);
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+      }
+
+      // uneven dot spacing here IS the eccentric's effect: bunched near apogee, spread near perigee
+      if(Math.floor(p1.t/dotDt) !== Math.floor(p0.t/dotDt)){
+        ctx.fillStyle = hexAlpha(COLORS.amber, alpha);
+        ctx.beginPath(); ctx.arc(x1,y1,1.6,0,TAU); ctx.fill();
+      }
+    }
+    const eqFirst = eclipticToEquatorial(pts[0].lambda);
+    ctx.fillStyle = hexAlpha(COLORS.amber, 0.15);
+    ctx.beginPath();
+    ctx.arc(xOfAlphaSY(bg, eqFirst.alpha), yOfDeltaSY(bg, eqFirst.delta), 1.6, 0, TAU);
+    ctx.fill();
+  }
+
+  const cm = state.currentModel;
+  if(cm){
+    const eq = eclipticToEquatorial(cm.lambda);
+    const x = xOfAlphaSY(bg, eq.alpha), y = yOfDeltaSY(bg, eq.delta);
+    drawGlow(ctx, glowSprite, x, y, 18);
+    ctx.fillStyle = COLORS.amber;
+    ctx.beginPath(); ctx.arc(x,y,3,0,TAU); ctx.fill();
+  }
+}
+
 function drawStrip(){
   const canvas = els.stripCanvas;
   const ctx = canvas.getContext("2d");
@@ -2187,8 +2434,10 @@ function drawStrip(){
   const h = state.stripH || canvas.clientHeight;
   ctx.clearRect(0,0,w,h);
   if(w<=0 || h<=0) return;
-  if(state.stripMode === "atlas") drawAtlasMode(ctx, w, h);
-  else drawPlotMode(ctx, w, h);
+  if(state.stripMode === "atlas"){
+    if(state.tab === "eccentric") drawSunYearMode(ctx, w, h);
+    else drawAtlasMode(ctx, w, h);
+  } else drawPlotMode(ctx, w, h);
 }
 
 function drawPlotMode(ctx, w, h){
@@ -2321,6 +2570,14 @@ function updateReadouts(){
     if(state.tab === "equant"){
       const ddt = state.dLambdaDt.toFixed(2);
       if(state._lastDdtStr !== ddt){ els.ddtReadout.querySelector("b").textContent = ddt; state._lastDdtStr = ddt; }
+    }
+    if(state.tab === "eccentric"){
+      const eq = eclipticToEquatorial(m.lambda);
+      const declStr = fmtSigned(eq.delta, 1);
+      if(state._lastSunDeclStr !== declStr){ els.readoutSunDecl.textContent = declStr; state._lastSunDeclStr = declStr; }
+      const noonEl = 90 - Math.abs(LAT_NEWARK - eq.delta);
+      const noonElStr = noonEl.toFixed(1);
+      if(state._lastNoonElStr !== noonElStr){ els.readoutNoonEl.textContent = noonElStr; state._lastNoonElStr = noonElStr; }
     }
   }
 }
