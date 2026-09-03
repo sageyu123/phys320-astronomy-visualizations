@@ -1385,7 +1385,7 @@ function updateStripTitle(){
 function updateStripLegend(){
   const tab = state.tab;
   const isCompare = tab === "compare";
-  const isEquantLike = (state.tab === "equant");
+  const isEquantLike = tab === "equant" && state.stripMode === "plot";
   const isEccRef = false; // mean-Sun reference line retired (user request)
   const show = isCompare || isEquantLike || isEccRef;
   els.stripLegend.style.display = show ? "" : "none";
