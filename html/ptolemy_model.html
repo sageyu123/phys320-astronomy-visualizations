@@ -57,16 +57,13 @@
     background:var(--rail); border-bottom:1px solid var(--border);
     min-width:0; overflow:hidden;
   }
-  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; }
+  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; text-decoration:none; color:inherit; }
   .brand-icon{ flex:0 0 auto; filter:drop-shadow(0 0 5px rgb(86 199 217/28%)); }
   .brand-text{ display:flex; flex-direction:column; line-height:1.15; min-width:0; }
-  .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
+  .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; transition:color .12s ease; }
   .brand-sub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-  .home-btn{ display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; margin-right:10px; min-height:28px; padding:0 11px; border-radius:999px;
-    color:var(--muted); background:var(--panel-raised); border:1px solid var(--border); font-size:12px; text-decoration:none; white-space:nowrap; }
-  .home-btn:hover{ color:var(--text); background:var(--control-hover); border-color:var(--border-hover); }
-  body.embed .home-btn{ display:none; }
+  .brand:hover .brand-title{ color:var(--cyan); }
+  .brand:hover .brand-sub{ text-decoration:underline; }
   .tabbar{ flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:thin; }
   .tabbar::-webkit-scrollbar{ height:4px; }
   .tabbar::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
@@ -306,7 +303,7 @@
 <div id="app">
 
   <div class="topbar">
-    <div class="brand">
+    <a class="brand" href="../index.html" title="Back to the visualizations index">
       <svg class="brand-icon" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
         <circle cx="10" cy="10" r="7.5" fill="none" stroke="#4a5057" stroke-width="1.4"/>
         <circle cx="10" cy="10" r="2.6" fill="#56c7d9"/>
@@ -314,10 +311,9 @@
       </svg>
       <div class="brand-text">
         <div class="brand-title">PTOLEMY'S MODEL</div>
-        <div class="brand-sub">PHYS 320 · Geocentric Astronomy</div>
+        <div class="brand-sub">&lsaquo; PHYS 320 Visualizations &middot; Geocentric Astronomy</div>
       </div>
-    </div>
-    <a class="home-btn" href="../index.html" title="Back to the visualizations index">&#8962; Home</a>
+    </a>
     <div class="tabbar">
       <div class="segmented" id="tabBar" role="tablist" aria-label="Model device">
         <button type="button" data-tab="eccentric" class="active" role="tab" aria-selected="true">Eccentric</button>
@@ -3236,7 +3232,12 @@ function updateEquantFormulas(){
     String.raw`\rho(\varphi) = -e\cos\varphi + \sqrt{R^2 - e^2\sin^2\varphi}`,
     "(the point on the deferent reached by sweeping a uniform angle &phi; about the equant)",
     '&rho;(' + phiStr + '&deg;) = &minus;(' + eStr + ')cos(' + phiStr + '&deg;) + &radic;(1 &minus; (' + eStr + ')<sup>2</sup>sin<sup>2</sup>(' + phiStr + '&deg;)) = <b>' + rhoStr + '</b>',
-    String.raw`\rho(${phiStr}^\circ) = -(${eStr})\cos(${phiStr}^\circ) + \sqrt{1 - (${eStr})^2\sin^2(${phiStr}^\circ)} = \mathbf{${rhoStr}}`,
+    String.raw`\begin{aligned}
+&\rho(${phiStr}^\circ) = \\
+&-(${eStr})\cos(${phiStr}^\circ) \\
+&{}+ \sqrt{1 - (${eStr})^2\sin^2(${phiStr}^\circ)} \\
+&= \mathbf{${rhoStr}}
+\end{aligned}`,
     "(<i>R</i> = 1, the deferent radius)"
   );
 }
@@ -3256,21 +3257,36 @@ function updateEccentricFormulas(){
     String.raw`\sin\delta_\odot = \sin\epsilon\sin\lambda_\odot`,
     "",
     'sin ' + epsStr + '&deg; sin ' + lamStr + '&deg; = <b>' + sinDeltaVal.toFixed(3) + '</b> &rarr; <span class="math">&delta;</span>&#9737; = <b>' + fmtSigned(eq.delta,1) + '&deg;</b>',
-    String.raw`\sin ${epsStr}^\circ \sin ${lamStr}^\circ = \mathbf{${sinDeltaVal.toFixed(3)}} \Rightarrow \delta_\odot = \mathbf{${fmtSigned(eq.delta,1)}^\circ}`,
+    String.raw`\begin{aligned}
+&\sin ${epsStr}^\circ \sin ${lamStr}^\circ \\
+&= \mathbf{${sinDeltaVal.toFixed(3)}} \\
+&\Rightarrow \delta_\odot = \mathbf{${fmtSigned(eq.delta,1)}^\circ}
+\end{aligned}`,
     ""
   );
 
   const defPlainB = 'tan <span class="math">&alpha;</span>&#9737; = cos <span class="math">&epsilon;</span> tan <span class="math">&lambda;</span>&#9737; (<span class="math">&alpha;</span>&#9737; in the same quadrant as <span class="math">&lambda;</span>&#9737;)';
-  const defLatexB = String.raw`\tan\alpha_\odot = \cos\epsilon\tan\lambda_\odot\ \ (\alpha_\odot\text{ in the same quadrant as }\lambda_\odot)`;
+  const defLatexB = String.raw`\begin{aligned}
+&\tan\alpha_\odot = \cos\epsilon\tan\lambda_\odot \\
+&(\alpha_\odot\text{ in the same quadrant as }\lambda_\odot)
+\end{aligned}`;
   const cosLambda = Math.cos(m.lambda*RAD);
   let subPlainB, subLatexB;
   if(Math.abs(cosLambda) < 1e-6){
     subPlainB = 'undefined here (cos &lambda;&#9737; &asymp; 0, a solstice) &mdash; <span class="math">&alpha;</span>&#9737; = <b>' + eq.alpha.toFixed(2) + 'h</b> directly';
-    subLatexB = String.raw`\text{undefined here }(\cos\lambda_\odot \approx 0\text{, a solstice}) \Rightarrow \alpha_\odot = \mathbf{${eq.alpha.toFixed(2)}\text{h}}\text{ directly}`;
+    subLatexB = String.raw`\begin{aligned}
+&\text{undefined here} \\
+&(\cos\lambda_\odot \approx 0\text{, a solstice}) \\
+&\Rightarrow \alpha_\odot = \mathbf{${eq.alpha.toFixed(2)}\text{h}}\text{ directly}
+\end{aligned}`;
   } else {
     const tanAlpha = Math.cos(OBLIQUITY_DEG*RAD) * Math.tan(m.lambda*RAD);
     subPlainB = 'cos ' + epsStr + '&deg; tan ' + lamStr + '&deg; = <b>' + tanAlpha.toFixed(3) + '</b> &rarr; <span class="math">&alpha;</span>&#9737; = <b>' + eq.alpha.toFixed(2) + 'h</b>';
-    subLatexB = String.raw`\cos ${epsStr}^\circ \tan ${lamStr}^\circ = \mathbf{${tanAlpha.toFixed(3)}} \Rightarrow \alpha_\odot = \mathbf{${eq.alpha.toFixed(2)}\text{h}}`;
+    subLatexB = String.raw`\begin{aligned}
+&\cos ${epsStr}^\circ \tan ${lamStr}^\circ \\
+&= \mathbf{${tanAlpha.toFixed(3)}} \\
+&\Rightarrow \alpha_\odot = \mathbf{${eq.alpha.toFixed(2)}\text{h}}
+\end{aligned}`;
   }
   fillFormulaLine(fEls.fB, defPlainB, defLatexB, "", subPlainB, subLatexB, "");
 
@@ -3282,7 +3298,11 @@ function updateEccentricFormulas(){
     String.raw`\text{EoT} = L - \alpha_\odot`,
     "(degrees of right ascension &times; 4 = minutes of time)",
     '<i>L</i> &minus; <span class="math">&alpha;</span>&#9737; = ' + m.L.toFixed(1) + '&deg; &minus; ' + alphaDeg.toFixed(1) + '&deg; = <b>' + fmtSigned(eotDeg,2) + '&deg;</b> &rarr; EoT = <b>' + fmtSigned(eotMin,1) + ' min</b>',
-    String.raw`L - \alpha_\odot = ${m.L.toFixed(1)}^\circ - ${alphaDeg.toFixed(1)}^\circ = \mathbf{${fmtSigned(eotDeg,2)}^\circ} \Rightarrow \text{EoT} = \mathbf{${fmtSigned(eotMin,1)}\ \text{min}}`,
+    String.raw`\begin{aligned}
+&L - \alpha_\odot = ${m.L.toFixed(1)}^\circ - ${alphaDeg.toFixed(1)}^\circ \\
+&= \mathbf{${fmtSigned(eotDeg,2)}^\circ} \\
+&\Rightarrow \text{EoT} = \mathbf{${fmtSigned(eotMin,1)}\ \text{min}}
+\end{aligned}`,
     ""
   );
 }
