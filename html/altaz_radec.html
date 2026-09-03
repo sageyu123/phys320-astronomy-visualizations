@@ -680,7 +680,7 @@
         <div class="panel-header">
           <div class="panel-title" id="stripPanelTitle">RA/Dec map</div>
           <div class="panel-readouts" id="stripLegend">
-            <span id="legendRadec"><i class="swatch" style="background:var(--cyan)"></i>horizon (now) &nbsp; <i class="swatch" style="background:var(--amber)"></i>star's diurnal path &nbsp; <i class="swatch" style="background:var(--muted)"></i>Z = zenith</span>
+            <span id="legendRadec"><i class="swatch" style="background:var(--cyan)"></i>horizon (now) &nbsp; <i class="swatch" style="background:var(--amber)"></i>star's diurnal path &nbsp; <i class="swatch" style="background:var(--muted)"></i>Z = zenith &nbsp; <i class="swatch" style="background:var(--cyan)"></i>N E S W = compass points of the horizon</span>
             <span id="legendOrigin" style="display:none"><i class="swatch" style="background:var(--coral)"></i>ecliptic &nbsp; <i class="swatch" style="background:var(--amber)"></i>Sun</span>
           </div>
         </div>
@@ -1366,7 +1366,7 @@ function makeFatLineRaw(colorInt, opacity, linewidthPx, dashed, capacityPts){
   geo.setPositions(positions); // degenerate seed; real points arrive via setLinePoints() before first visible use
   const mat = new LineMaterial({
     color: colorInt, linewidth: linewidthPx, transparent: true, opacity: opacity,
-    worldUnits: false, depthWrite: false, dashed: !!dashed
+    worldUnits: false, depthWrite: false, dashed: !!dashed, alphaToCoverage: true
   });
   if(dashed){ mat.dashSize = 0.045; mat.gapSize = 0.025; mat.dashScale = 1; }
   mat.resolution.set(state.mainW||1, state.mainH||1);
@@ -1390,7 +1390,7 @@ function makeFatLineLoop(points, colorInt, opacity, linewidthPx){
   const closed = points.concat([points[0]]);
   const geo = new LineGeometry();
   geo.setPositions(fatFlatFromPoints(closed));
-  const mat = new LineMaterial({ color:colorInt, linewidth:linewidthPx, transparent:true, opacity:opacity, worldUnits:false, depthWrite:false });
+  const mat = new LineMaterial({ color:colorInt, linewidth:linewidthPx, transparent:true, opacity:opacity, worldUnits:false, depthWrite:false, alphaToCoverage:true });
   mat.resolution.set(state.mainW||1, state.mainH||1);
   const line = new Line2(geo, mat);
   line.frustumCulled = false;
@@ -1400,7 +1400,7 @@ function makeFatLineLoop(points, colorInt, opacity, linewidthPx){
 function makeFatLineStrip(points, colorInt, opacity, linewidthPx){
   const geo = new LineGeometry();
   geo.setPositions(fatFlatFromPoints(points));
-  const mat = new LineMaterial({ color:colorInt, linewidth:linewidthPx, transparent:true, opacity:opacity, worldUnits:false, depthWrite:false });
+  const mat = new LineMaterial({ color:colorInt, linewidth:linewidthPx, transparent:true, opacity:opacity, worldUnits:false, depthWrite:false, alphaToCoverage:true });
   mat.resolution.set(state.mainW||1, state.mainH||1);
   const line = new Line2(geo, mat);
   line.frustumCulled = false;
@@ -2351,11 +2351,11 @@ function updateWedgeLabel(sprite, pts, visible){
 }
 
 function buildDynamicArcsGroup(){
-  arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 4.0, false);
-  arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 4.0, false);
-  arcDec = makeFatDynamicLine(COLORI.amber, 1.0, 4.0, false);
-  arcH   = makeFatDynamicLine(COLORI.magenta, 1.0, 4.0, true);  // dashed hour-angle arc, on delta=-4
-  arcRA  = makeFatDynamicLine(COLORI.amber, 1.0, 4.0, false);   // solid right-ascension arc, on the equator
+  arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false);
+  arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false);
+  arcDec = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false);
+  arcH   = makeFatDynamicLine(COLORI.magenta, 1.0, 2.75, true);  // dashed hour-angle arc, on delta=-4
+  arcRA  = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false);   // solid right-ascension arc, on the equator
   arrowAz  = makeArrowCone(COLORI.cyan);
   arrowAlt = makeArrowCone(COLORI.cyan);
   arrowDec = makeArrowCone(COLORI.amber);
@@ -2397,9 +2397,9 @@ function buildDynamicArcsGroup(){
   wedgeLabelAlpha = makeTextSprite("α", "#ff9d4d", { math:true, pixelHeight:15 });
   scene.add(wedgeLabelAz, wedgeLabelEl, wedgeLabelDec, wedgeLabelAlpha);
 
-  hlstAlpha = makeFatDynamicLine(COLORI.amber, 1.0, 3.5, false);
-  hlstH     = makeFatDynamicLine(COLORI.magenta, 1.0, 3.5, true); // dashed, matching the main h arc
-  hlstLst   = makeFatDynamicLine(COLORI.cyan, 1.0, 3.5, false);
+  hlstAlpha = makeFatDynamicLine(COLORI.amber, 1.0, 2.5, false);
+  hlstH     = makeFatDynamicLine(COLORI.magenta, 1.0, 2.5, true); // dashed, matching the main h arc
+  hlstLst   = makeFatDynamicLine(COLORI.cyan, 1.0, 2.5, false);
   hlstAlphaArrow = makeArrowCone(COLORI.amber);
   hlstHArrow     = makeArrowCone(COLORI.magenta);
   hlstLstArrow   = makeArrowCone(COLORI.cyan);
@@ -2542,9 +2542,9 @@ function threeArc(A, B, n){
 }
 
 function buildTriangleGroup(){
-  sideZP = makeFatDynamicLine(COLORI.text, 0.85, 3.0, false);
-  sidePS = makeFatDynamicLine(COLORI.amber, 0.85, 3.0, false);
-  sideZS = makeFatDynamicLine(COLORI.cyan, 0.85, 3.0, false);
+  sideZP = makeFatDynamicLine(COLORI.text, 0.85, 2.0, false);
+  sidePS = makeFatDynamicLine(COLORI.amber, 0.85, 2.0, false);
+  sideZS = makeFatDynamicLine(COLORI.cyan, 0.85, 2.0, false);
 
   const fanCap = 3*ARC_N; // triangles in the boundary fan
   triFillPositions = new Float32Array(fanCap*3*3);
@@ -3027,6 +3027,20 @@ function drawRadecMap(ctx, w, h){
     ctx.strokeStyle = hexAlpha(COLORS.border,0.35);
     ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
   }
+
+  // wrap cue: alpha=0 (right edge) and alpha=24 (left edge) are the SAME
+  // meridian, so this chart is a cylinder cut open and unrolled flat -- a
+  // subtle dashed line just inside each edge says so (drawn early, under
+  // everything else, so later text/labels sit cleanly on top of it; see
+  // PROBLEM/FIX brief: "the horizon is a ring; what you show is a curve").
+  ctx.save();
+  ctx.setLineDash([3,3]);
+  ctx.strokeStyle = hexAlpha(COLORS.muted, 0.35); ctx.lineWidth = 1;
+  [plotL+2, plotR-2].forEach(function(sx){
+    ctx.beginPath(); ctx.moveTo(sx,plotT); ctx.lineTo(sx,plotB); ctx.stroke();
+  });
+  ctx.restore();
+
   // celestial equator (delta=0) emphasized -- the reference the whole
   // equatorial (alpha,delta) grid hangs on, so it gets its own weight
   // instead of blending into the generic 30deg gridlines above. Its text
@@ -3073,8 +3087,9 @@ function drawRadecMap(ctx, w, h){
     });
     ctx.strokeStyle = COLORS.cyan; ctx.lineWidth=1.5; ctx.stroke();
 
-    // shade whichever side is below horizon (determined per-column, robust to hemisphere)
-    ctx.fillStyle = hexAlpha(COLORS.cyan, 0.06);
+    // shade whichever side is below horizon (determined per-column, robust to
+    // hemisphere); strengthened from 0.06 -- see PROBLEM/FIX brief item 3
+    ctx.fillStyle = hexAlpha(COLORS.cyan, 0.07);
     for(let i=0;i<nCols;i++){
       const p0 = horizonPts[i], p1 = horizonPts[i+1];
       const Hd = hourAngleDeg(lst, p0.alphaH);
@@ -3088,6 +3103,108 @@ function drawRadecMap(ctx, w, h){
       ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.lineTo(x1,yEdge); ctx.lineTo(x0,yEdge); ctx.closePath();
       ctx.fill();
     }
+  }
+
+  // region labels: name the shaded/open halves so the shading reads as
+  // meaning, not just texture -- see PROBLEM/FIX brief item 3. Positions
+  // are derived from the curve itself (scanning columns for the open side's
+  // vertical clearance), so the labels never land on the curve or the
+  // star's own diurnal line.
+  {
+    const clearOfStar = function(alphaH){
+      let d = Math.abs(alphaH - wrap24(state.ra));
+      d = Math.min(d, 24-d);
+      return d >= 1.5;
+    };
+    function pickRegionSpot(wantAbove){
+      if(Math.abs(tphi) < tiny){
+        // equator: the whole column is one region (above-horizon iff within
+        // 6h of the meridian) -- any x inside that wedge works, so just
+        // avoid the star's own column and the plot's horizontal margins
+        const center = wantAbove ? wrap24(lst) : wrap24(lst+12);
+        const offsets = [3,-3,4.5,-4.5,1.5,-1.5];
+        for(let i=0;i<offsets.length;i++){
+          const alphaH = wrap24(center+offsets[i]);
+          const x = xOf(alphaH);
+          if(x < plotL+20 || x > plotR-20) continue;
+          if(!clearOfStar(alphaH)) continue;
+          return { x:x, y:(plotT+plotB)/2 };
+        }
+        return { x: xOf(center), y:(plotT+plotB)/2 };
+      }
+      let best = null, bestRoom = -1;
+      const marginX = Math.max(20, plotW*0.08);
+      const steps = 48;
+      for(let k=0;k<=steps;k++){
+        const alphaH = 24*k/steps;
+        const x = xOf(alphaH);
+        if(x < plotL+marginX || x > plotR-marginX) continue;
+        if(!clearOfStar(alphaH)) continue;
+        const Hd = hourAngleDeg(lst, alphaH);
+        const delta = Math.atan(-Math.cos(Hd*RAD)/tphi)*DEG;
+        const y = yOf(delta);
+        const testDelta = clamp(delta+0.5, -89.9, 89.9);
+        const aTest = altAzFromEq(phi, testDelta, Hd).a;
+        // testing slightly above the curve (higher delta / smaller y) --
+        // aTest>=0 means that side (the plotT side) is the one above horizon
+        const isAboveOnTop = aTest >= 0;
+        const roomTop = y - plotT, roomBottom = plotB - y;
+        const openIsTop = wantAbove ? isAboveOnTop : !isAboveOnTop;
+        const room = openIsTop ? roomTop : roomBottom;
+        if(room > bestRoom){
+          bestRoom = room;
+          best = { x:x, y: openIsTop ? (plotT+y)/2 : (y+plotB)/2 };
+        }
+      }
+      return best;
+    }
+    const aboveSpot = pickRegionSpot(true);
+    const belowSpot = pickRegionSpot(false);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(plotL,plotT,plotW,plotH); ctx.clip();
+    ctx.font = "9px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.75);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    if(aboveSpot) ctx.fillText("above the horizon now", aboveSpot.x, aboveSpot.y);
+    if(belowSpot) ctx.fillText("below the horizon now", belowSpot.x, belowSpot.y);
+    ctx.restore();
+  }
+
+  // cardinal points of the horizon (N/E/S/W) -- marks the cyan curve as the
+  // horizon GREAT CIRCLE unrolled flat, not an arbitrary squiggle (see
+  // PROBLEM/FIX brief item 1). Recomputed every draw from phi/lst, so they
+  // sweep together with the curve as sidereal time advances.
+  {
+    const lim = declLimits(phi);
+    const poleSign = phi >= 0 ? 1 : -1;
+    const cardPts = [
+      { key:"N", alphaH: wrap24(lst+12), delta: poleSign*lim.up },
+      { key:"E", alphaH: wrap24(lst+6),  delta: 0 },
+      { key:"S", alphaH: wrap24(lst),    delta: -poleSign*lim.up },
+      { key:"W", alphaH: wrap24(lst-6),  delta: 0 },
+    ];
+    ctx.font = "10px Inter, sans-serif";
+    cardPts.forEach(function(c){
+      const cx = xOf(c.alphaH), cy = yOf(c.delta);
+      ctx.fillStyle = COLORS.cyan;
+      ctx.beginPath(); ctx.arc(cx,cy,2.5,0,TAU); ctx.fill();
+
+      // vertical offset: away from the equator (always clears the curve,
+      // since each column crosses it exactly once), flipped inward if that
+      // would run past the plot box's top/bottom edge
+      let dy = (c.delta >= 0) ? -9 : 9;
+      if(cy + dy < plotT + 8) dy = 9;
+      else if(cy + dy > plotB - 8) dy = -9;
+
+      // horizontal alignment: default just right of the dot, flipped to
+      // the left near the right plot edge so the label stays on-canvas
+      const textW = ctx.measureText(c.key).width;
+      let align = "left", dx = 5;
+      if(cx + dx + textW > plotR - 2){ align = "right"; dx = -5; }
+
+      ctx.fillStyle = COLORS.cyan;
+      ctx.textAlign = align; ctx.textBaseline = dy < 0 ? "bottom" : "top";
+      ctx.fillText(c.key, cx + dx, cy + dy);
+    });
   }
 
   // zenith
@@ -3149,6 +3266,47 @@ function drawRadecMap(ctx, w, h){
       l: flipLeft ? nameX-nameW : nameX, r: flipLeft ? nameX : nameX+nameW,
       t: flipDown ? sy+6 : sy-6-13, b: flipDown ? sy+6+13 : sy-6
     };
+  }
+
+  // rise/set intersections: where the star's amber diurnal line crosses the
+  // cyan horizon curve are exactly its rise and set points (see PROBLEM/FIX
+  // brief item 4). alpha = LST +- H0deg/15 is confirmed algebraically and
+  // numerically to land on both the star's own delta line AND the horizon
+  // curve (see the drawRadecMap verification notes); "rises"/"sets" match
+  // the sphere's own wording for these two crossings (rebuildDiurnalCircle()
+  // above -- the sphere itself draws them in COLORS.text/cream, not amber;
+  // amber is used here instead to stay consistent with this map's own
+  // star-colour convention). Circumpolar/never-rises stars have no
+  // crossings at all, so a note explains the absence instead.
+  {
+    const rs = riseSetInfo(phi, state.dec);
+    ctx.font = "10px Inter, sans-serif";
+    if(rs.circumpolar || rs.neverRises){
+      const text = rs.circumpolar ? "circumpolar: never crosses the horizon" : "never rises: always below";
+      const nearBottom = yStar > plotB - 24;
+      const flipDown = (yStar - 12) < plotT + 4;
+      ctx.fillStyle = COLORS.amber;
+      ctx.textAlign = "right";
+      ctx.textBaseline = flipDown ? "top" : "bottom";
+      const ty = flipDown ? yStar+6 : (nearBottom ? yStar-16 : yStar-6);
+      ctx.fillText(text, plotR-4, ty);
+    } else if(rs.H0deg != null){
+      const riseAlpha = wrap24(lst + rs.H0deg/15);
+      const setAlpha  = wrap24(lst - rs.H0deg/15);
+      [ {alphaH:riseAlpha, text:"rises"}, {alphaH:setAlpha, text:"sets"} ].forEach(function(c){
+        const cx = xOf(c.alphaH), cy = yStar; // on the star's own delta line by construction
+        ctx.strokeStyle = COLORS.amber; ctx.lineWidth = 1.25;
+        ctx.beginPath(); ctx.arc(cx,cy,3.5,0,TAU); ctx.stroke();
+        ctx.fillStyle = COLORS.amber;
+        const flipDown = cy - 12 < plotT + 4;
+        let align = "center";
+        if(cx < plotL+20) align = "left"; else if(cx > plotR-20) align = "right";
+        ctx.textAlign = align;
+        ctx.textBaseline = flipDown ? "top" : "bottom";
+        const tx = align === "left" ? cx+3 : align === "right" ? cx-3 : cx;
+        ctx.fillText(c.text, tx, cy + (flipDown ? 6 : -6));
+      });
+    }
   }
 
   // celestial equator text label -- drawn here (after the star) rather than
@@ -3219,9 +3377,22 @@ function drawRadecMap(ctx, w, h){
   // essential labels first" idea as the Dec-tick priority list above.
   ctx.font = "9.5px Inter, sans-serif"; ctx.fillStyle = COLORS.muted;
   const raTitle = "right ascension α (h)";
+  let raTitleDrawn = false;
   if(ctx.measureText(raTitle).width + 12 <= plotW){
     ctx.textAlign = "right"; ctx.textBaseline = "bottom";
     ctx.fillText(raTitle, plotR-4, plotB-4);
+    raTitleDrawn = true;
+  }
+  // wrap-cue note: explains the dashed seam lines drawn near the two plot
+  // edges earlier -- stacked just above the RA axis title (or in its place
+  // if that title didn't fit), see PROBLEM/FIX brief item 2
+  {
+    ctx.font = "8.5px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.7);
+    const wrapNote = "0h = 24h: the curve closes here";
+    if(ctx.measureText(wrapNote).width + 8 <= plotW){
+      ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+      ctx.fillText(wrapNote, plotR-4, raTitleDrawn ? plotB-15 : plotB-4);
+    }
   }
   const decTitle = "declination δ (deg)";
   if(ctx.measureText(decTitle).width + 10 <= plotH){
@@ -3235,12 +3406,36 @@ function drawRadecMap(ctx, w, h){
 
   // caption -- clipped to the plot box so it is always "inside the canvas"
   // regardless of strip width, and stacked just above the SCP label so the
-  // two never collide at the panel's smallest (120px) height
+  // two never collide at the panel's smallest (120px) height. Wraps to a
+  // second line (stacked above the first) when the plot is too narrow for
+  // the whole sentence to fit -- see PROBLEM/FIX brief item 5.
   ctx.save();
   ctx.beginPath(); ctx.rect(plotL,plotT,plotW,plotH); ctx.clip();
   ctx.font = "8.5px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.75);
   ctx.textAlign = "left"; ctx.textBaseline = "bottom";
-  ctx.fillText("the sky's own grid, flattened - the cyan curve is your horizon right now; it sweeps as sidereal time advances", plotL+3, plotB-12);
+  {
+    const captionText = "the horizon is a great circle; unrolled here it waves between delta = +(90 deg - phi) at the north point and -(90 deg - phi) at the south, crossing the equator due east and due west";
+    const maxW = plotW - 6;
+    let lines;
+    if(ctx.measureText(captionText).width <= maxW){
+      lines = [captionText];
+    } else {
+      const words = captionText.split(" ");
+      let line1 = "", i = 0;
+      for(; i<words.length; i++){
+        const test = line1 ? line1+" "+words[i] : words[i];
+        if(ctx.measureText(test).width > maxW && line1) break;
+        line1 = test;
+      }
+      lines = [line1, words.slice(i).join(" ")];
+    }
+    if(lines.length === 1){
+      ctx.fillText(lines[0], plotL+3, plotB-12);
+    } else {
+      ctx.fillText(lines[0], plotL+3, plotB-23);
+      ctx.fillText(lines[1], plotL+3, plotB-12);
+    }
+  }
   ctx.restore();
 
   ctx.strokeStyle = COLORS.border; ctx.lineWidth=1;
