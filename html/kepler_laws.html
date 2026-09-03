@@ -140,6 +140,10 @@
   .panel-title{ font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .panel-readouts{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); white-space:nowrap; flex:0 0 auto; }
   .panel-readouts b{ color:var(--text); font-weight:600; }
+  .panel-caption{
+    flex:0 0 auto; font-size:11px; line-height:1.35; color:var(--muted);
+    padding:5px 10px; background:var(--panel-deep); border-bottom:1px solid var(--border);
+  }
   .panel-body{ flex:1 1 auto; min-height:0; min-width:0; position:relative; }
   .panel-body canvas{ display:block; width:100%; height:100%; }
 
@@ -265,6 +269,7 @@
   body.embed .splitter,
   body.embed #stripPanel,
   body.embed .panel-header,
+  body.embed .panel-caption,
   body.embed .drag-hint{ display:none; }
   body.embed #app{ grid-template-rows:1fr; }
   body.embed .body{ grid-template-columns:1fr; }
@@ -312,8 +317,8 @@
         <div class="field">
           <label class="field-label" for="speedRange">Speed</label>
           <div class="field-row">
-            <input type="range" id="speedRange" min="1" max="200" step="1" value="20">
-            <input type="number" id="speedNum" class="num-input" min="1" max="200" step="1" value="20">
+            <input type="range" id="speedRange" min="1" max="600" step="1" value="20">
+            <input type="number" id="speedNum" class="num-input" min="1" max="600" step="1" value="20">
             <span class="unit">d/s</span>
           </div>
         </div>
@@ -357,9 +362,11 @@
           </div>
           <div class="panel-readouts" id="rdAreas" style="display:none">
             t = <b id="vArT" class="tabular">0</b> d &nbsp;
-            <span class="math">v</span> = <b id="vArV" class="tabular">0.0000</b> AU/d &nbsp;
-            d<span class="math">A</span>/d<span class="math">t</span> = <b id="vArDadt" class="tabular">0.000000</b> AU&sup2;/d &nbsp;
-            last sector = <b id="vArSector" class="tabular">0.000</b> AU&sup2;
+            <span class="math">r</span> = <b id="vArR" class="tabular">0.000</b> &nbsp;
+            <span class="math">v</span>&perp; = <b id="vArVperp" class="tabular">0.0000</b> &nbsp;
+            <span class="math">r</span>&middot;<span class="math">v</span>&perp; = <b id="vArRvperp" class="tabular">0.0000</b> &nbsp;
+            d<span class="math">A</span>/d<span class="math">t</span> = <b id="vArDadt" class="tabular">0.000000</b> &nbsp;
+            sector = <b id="vArSector" class="tabular">0.000</b>
           </div>
           <div class="panel-readouts" id="rdHarmonic" style="display:none">
             custom <span class="math">a</span> = <b id="vHarA" class="tabular">1.00</b> AU &nbsp;
@@ -367,11 +374,12 @@
             <span class="math">P</span>&sup2;/<span class="math">a</span>&sup3; = <b id="vHarCheck" class="tabular">1.000</b>
           </div>
           <div class="panel-readouts" id="rdEquant" style="display:none">
-            &Delta;&lambda; = <b id="vEqDlam" class="tabular">+0.00</b>&prime; &nbsp;
+            Ptolemy runs <b id="vEqLead" class="tabular">AHEAD</b> by <b id="vEqDlam" class="tabular">0.00</b>&prime; &nbsp;
             max|&Delta;&lambda;| = <b id="vEqDlamMax" class="tabular">0.00</b>&prime; &nbsp;
             <span class="math">e</span> = <b id="vEqE" class="tabular">0.093</b>
           </div>
         </div>
+        <div class="panel-caption" id="mainPanelCaption" hidden></div>
         <div class="panel-body"><canvas id="mainCanvas"></canvas></div>
       </div>
 
@@ -437,6 +445,13 @@ function fmtNum(v, step){ return Number(v).toFixed(decimalsFromStep(step)); }
 function fmtSigned(v, decimals){
   const s = v.toFixed(decimals);
   return (v >= 0 && s.charAt(0) !== "-") ? "+" + s : s;
+}
+// Format a non-negative angle given in degrees as "D°M′" (rounds to the nearest arcminute).
+function fmtDegArcmin(absDeg){
+  let d = Math.floor(absDeg);
+  let m = Math.round((absDeg - d) * 60);
+  if(m >= 60){ m = 0; d += 1; }
+  return d + "°" + m + "′";
 }
 
 /* pre-rendered radial glow sprite, drawn with drawImage instead of shadowBlur
@@ -628,10 +643,14 @@ const TAB_ORDER = ["ellipse","areas","harmonic","equant"];
 const TAB_LABEL = { ellipse:"Ellipses", areas:"Equal areas", harmonic:"Harmonic law", equant:"Ptolemy's shadow" };
 const TAB_TINT  = { ellipse:"cyan", areas:"amber", harmonic:"green", equant:"magenta" };
 const TAB_SPEED = { ellipse:20, areas:20, harmonic:30, equant:20 };
+// Whether the current tab's strip chart depends on the playback clock at all -- the harmonic
+// tab's log-log/linear charts are a function only of (customA, view), never of t, so the
+// animation loop must not mark them dirty every frame (that redraw was the main jitter source).
+const TAB_STRIP_USES_TIME = { ellipse:true, areas:true, harmonic:false, equant:true };
 
 const STRIP_MODES = {
   ellipse:  [ { key:"rv",   label:"r & v vs time" }, { key:"sum",   label:"r₁ + r₂" } ],
-  areas:    [ { key:"area", label:"Swept area vs time" }, { key:"speed", label:"Speed vs time" } ],
+  areas:    [ { key:"rvperp", label:"r, v⊥ and r·v⊥ vs time" }, { key:"area", label:"Swept area vs time" }, { key:"speed", label:"Speed vs time" } ],
   harmonic: [ { key:"loglog", label:"log–log chart" }, { key:"linear", label:"P vs a (linear)" } ],
   equant:   [ { key:"dlambda", label:"Δλ vs time" }, { key:"ratio", label:"Distance ratio" } ]
 };
@@ -645,7 +664,8 @@ const TOGGLE_TIPS = {
   areas: {
     labels: 'Names for the Sun and the planet.',
     velocity: "The planet's instantaneous velocity vector — long near perihelion, short near aphelion.",
-    sectors: 'The last few equal-time slices swept by the Sun&ndash;planet line — equal area, very unequal shape.'
+    sectors: 'The last few equal-time slices swept by the Sun&ndash;planet line — equal area, very unequal shape.',
+    whyEqual: 'Gravity points at the Sun, so it can change the planet\'s speed toward or away from the Sun but never its sideways motion: <span class="math">r&middot;v&perp;</span> stays constant — and <span class="math">&frac12;&middot;r&middot;v&perp;</span> is the area swept per unit time.'
   },
   harmonic: {
     labels: 'Names for each planet.',
@@ -668,7 +688,8 @@ const ABOUT = {
     title: "Equal Areas — the rhythm of an orbit",
     html:
       "<p>Kepler's second law: the line from the Sun to the planet sweeps out equal areas in equal times. Near perihelion the planet is fast and the sector is short and fat; near aphelion it is slow and the sector is long and thin — the same area.</p>" +
-      '<p>In modern language this is conservation of angular momentum. Ptolemy\'s equant had captured the rhythm fourteen centuries earlier: uniform angular motion about the empty focus is the equal-area law to first order in <span class="math">e</span>.</p>'
+      '<p>In modern language this is conservation of angular momentum. Ptolemy\'s equant had captured the rhythm fourteen centuries earlier: uniform angular motion about the empty focus is the equal-area law to first order in <span class="math">e</span>.</p>' +
+      '<p>Why are the areas equal? Because the Sun\'s pull points straight at the Sun. A force along the radius can speed the planet up or slow it down as it falls in or climbs out, but it can never push sideways — so the product <span class="math">r&middot;v&perp;</span> of the distance and the sideways speed cannot change. In a short time <span class="math">&Delta;t</span> the radius sweeps a thin triangle of area <span class="math">&frac12;&middot;r&middot;v&perp;&middot;&Delta;t</span>: constant <span class="math">r&middot;v&perp;</span> means equal areas in equal times. Newton would name <span class="math">r&middot;v&perp;</span> (times the mass) the angular momentum; Kepler had found its conservation without knowing why.</p>'
   },
   harmonic: {
     title: "The Harmonic Law — P² ∝ a³",
@@ -680,6 +701,7 @@ const ABOUT = {
   equant: {
     title: "Ptolemy's Shadow — the equant vs the ellipse",
     html:
+      '<p>What is compared here: the direction of the planet as seen from the Sun, which plays the role of Ptolemy\'s observer.</p>' +
       '<p>Put Ptolemy\'s best device beside Kepler\'s ellipse: a circle of radius <span class="math">a</span>, the Sun off-centre by <span class="math">ae</span>, and uniform motion about the equant at the mirror point — exactly where Kepler\'s empty focus sits.</p>' +
       '<p>For Mars the two directions differ by less than 10 arcminutes anywhere on the orbit: the equant was a first-order approximation to the equal-area law, good enough for naked-eye astronomy for fourteen centuries.</p>' +
       '<p>Tycho Brahe\'s observations, accurate to about 2 arcminutes, were what exposed the difference — the 8 arcminutes Kepler refused to ignore.</p>'
@@ -693,11 +715,11 @@ const els = {};
 function cacheEls(){
   ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum",
    "paramsFields","displayFields","formulasBody","aboutTitle","aboutBody",
-   "mainPanelTitle","rdEllipse","rdAreas","rdHarmonic","rdEquant",
+   "mainPanelTitle","mainPanelCaption","rdEllipse","rdAreas","rdHarmonic","rdEquant",
    "vEllT","vEllR1","vEllR2","vEllSum","vEllV",
-   "vArT","vArV","vArDadt","vArSector",
+   "vArT","vArR","vArVperp","vArRvperp","vArDadt","vArSector",
    "vHarA","vHarPd","vHarPy","vHarCheck",
-   "vEqDlam","vEqDlamMax","vEqE",
+   "vEqLead","vEqDlam","vEqDlamMax","vEqE",
    "stripModeToggle","stripPanelTitle","mainCanvas","stripCanvas"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
 }
@@ -912,7 +934,7 @@ function buildHarmonicParams(c){
   paramWidgets.customAW = buildSliderField(c, {
     label: 'Custom planet <span class="math">a</span>', value: state.p.customA,
     min:0.2, max:20, step:0.01, unit:"AU",
-    onChange: function(v){ state.p.customA = v; updateFormulasCard(); render(); }
+    onChange: function(v){ state.p.customA = v; clearTrail("custom"); updateFormulasCard(); render(); }
   });
 
   const note = document.createElement("div");
@@ -923,7 +945,28 @@ function buildHarmonicParams(c){
 }
 
 function buildEquantParams(c){
-  buildOrbitControls(c, { hideA:true, quickPresets:[ { text:"Exaggerate e = 0.3", value:0.3 } ] });
+  buildOrbitControls(c, { hideA:true });
+  const field = document.createElement("div");
+  field.className = "field";
+  field.style.marginTop = "-4px";
+  const row = document.createElement("div");
+  row.style.display = "flex";
+  row.style.gap = "6px";
+  function mkQuickBtn(text, onClick){
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn";
+    b.style.flex = "1 1 0"; b.style.fontSize = "11px"; b.style.padding = "0 6px";
+    b.textContent = text;
+    b.addEventListener("click", onClick);
+    row.appendChild(b);
+  }
+  mkQuickBtn("Exaggerated (e = 0.30)", function(){
+    state.p.preset = "custom"; state.p.e = 0.30;
+    syncOrbitSliders(); updateMainPanelTitle(); onParamsChanged();
+  });
+  mkQuickBtn("Mars (e = 0.093)", function(){ applyPreset("mars"); });
+  field.appendChild(row);
+  c.appendChild(field);
 }
 
 /* =========================================================================
@@ -931,7 +974,7 @@ function buildEquantParams(c){
    ========================================================================= */
 const TAB_TOGGLES = {
   ellipse: [ {key:"labels", label:"Labels", def:true}, {key:"circleA", label:"Circle of radius a", def:false}, {key:"focal", label:"Focal lines", def:true} ],
-  areas:   [ {key:"labels", label:"Labels", def:true}, {key:"velocity", label:"Velocity vector", def:true}, {key:"sectors", label:"Equal-time sectors", def:true} ],
+  areas:   [ {key:"labels", label:"Labels", def:true}, {key:"velocity", label:"Velocity vector", def:true}, {key:"sectors", label:"Equal-time sectors", def:true}, {key:"whyEqual", label:"Why equal? (r·v⊥)", def:true} ],
   harmonic:[ {key:"labels", label:"Labels", def:true}, {key:"customPlanet", label:"Custom planet", def:true} ],
   equant:  [ {key:"labels", label:"Labels", def:true} ]
 };
@@ -1148,7 +1191,7 @@ function defaultParamsFor(tab){
   if(tab === "harmonic") return { view:"all", customA:1.0 };
   if(tab === "equant"){
     const mars = presetByKey("mars");
-    return { preset:"mars", a:mars.a, e:mars.e };
+    return { preset:"custom", a:mars.a, e:0.30 }; // "Exaggerated (e = 0.30)" default -- see buildEquantParams
   }
   return {};
 }
@@ -1160,6 +1203,7 @@ function switchTab(tabId){
   els.speedRange.value = state.speed; els.speedNum.value = state.speed;
   state.highlightKey = null;
   state._last = {};
+  clearAllTrails();
 
   els.tabBar.querySelectorAll("button").forEach(function(b){
     const active = b.dataset.tab === tabId;
@@ -1171,6 +1215,13 @@ function switchTab(tabId){
   ["rdEllipse","rdAreas","rdHarmonic","rdEquant"].forEach(function(id){
     els[id].style.display = (id === activeReadoutId) ? "" : "none";
   });
+
+  if(tabId === "equant"){
+    els.mainPanelCaption.textContent = "Comparing the planet's direction as seen from the Sun: Kepler's ellipse (cyan) vs Ptolemy's equant circle (magenta). Ptolemy's Earth sits where the Sun is here; his equant Q sits at Kepler's empty focus.";
+    els.mainPanelCaption.hidden = false;
+  } else {
+    els.mainPanelCaption.hidden = true;
+  }
 
   buildParamsCard();
   buildDisplayCard();
@@ -1201,13 +1252,15 @@ function updatePlayButton(){
 let rafId = null, lastFrameTs = null;
 function startLoop(){ if(rafId == null){ lastFrameTs = null; rafId = requestAnimationFrame(loop); } }
 function stopLoop(){ if(rafId != null){ cancelAnimationFrame(rafId); rafId = null; } }
+const MAX_FRAME_DT = 1/30; // seconds -- cap the simulated advance per frame so a stall drops the
+                            // backlog instead of jumping the planets forward all at once
 function loop(ts){
   if(lastFrameTs == null) lastFrameTs = ts;
   const dtSec = (ts - lastFrameTs) / 1000;
   lastFrameTs = ts;
-  if(dtSec <= 0.25){
-    state.t += state.speed * dtSec;
-    state.stripDirty = true;
+  if(dtSec > 0){
+    state.t += state.speed * Math.min(dtSec, MAX_FRAME_DT);
+    if(TAB_STRIP_USES_TIME[state.tab]) state.stripDirty = true;
   }
   render();
   rafId = requestAnimationFrame(loop);
@@ -1221,10 +1274,10 @@ function wirePlayback(){
     updatePlayButton();
     if(state.playing) startLoop(); else stopLoop();
   });
-  els.btnReset.addEventListener("click", function(){ state.t = 0; state.stripDirty = true; render(); });
+  els.btnReset.addEventListener("click", function(){ state.t = 0; state.stripDirty = true; clearAllTrails(); render(); });
 
   function syncSpeed(v){
-    v = clamp(v, 1, 200);
+    v = clamp(v, 1, 600);
     state.speed = v;
     els.speedRange.value = v;
     els.speedNum.value = v;
@@ -1486,6 +1539,85 @@ function drawEllipseMain(ctx,w,h){
   drawLabel(ctx, planetS.x, planetS.y, "planet", outwardDir(planetS.x,planetS.y,cx,cy), {color:COLORS.cyan, size:11});
 }
 
+// Radial/tangential decomposition of the velocity at orbit state `o`: r-hat points away from the
+// Sun, t-hat is r-hat rotated +90 deg (the direction of increasing true anomaly, i.e. the sense of
+// travel for these orbits) so v_perp = v . t-hat comes out positive and equals h/r = 2*dAdt/r.
+function radialTangential(o){
+  const rmag = Math.max(1e-9, o.r);
+  const rhatx = o.x/rmag, rhaty = o.y/rmag;
+  const tHatx = -rhaty, tHaty = rhatx;
+  return {
+    rhat:{x:rhatx,y:rhaty}, that:{x:tHatx,y:tHaty},
+    vr: o.vx*rhatx + o.vy*rhaty,
+    vperp: o.vx*tHatx + o.vy*tHaty
+  };
+}
+
+// Draws, at the planet: the velocity split into radial v_r (dim magenta) and tangential v_perp
+// (bright magenta, labelled), the gravitational force (amber, aimed at the Sun, length ~ 1/r^2,
+// labelled "F"), and a thin amber sector-triangle for a short interval dt = P/120 labelled with
+// the swept-area formula -- the visual argument for why r*v_perp (and so dA/dt) stays constant.
+function drawWhyEqualLayer(ctx, p, o, sunS, planetS, toScreen, style){
+  const alpha = style.alpha, mul = style.mul;
+  const rt = radialTangential(o);
+  // world-space unit vectors, converted to screen-space direction (canvas y is flipped vs world y)
+  const rHatS = { x: rt.rhat.x, y: -rt.rhat.y };
+  const tHatS = { x: rt.that.x, y: -rt.that.y };
+  const vp = vPeriApo(p.a, p.e);
+  const S = 42 / (vp.vPeri || 1); // px per AU/day, referenced so v_perp = v_peri draws ~42px
+
+  // radial velocity component v_r (dim magenta) -- points in +/- r-hat depending on sign
+  if(Math.abs(rt.vr) > 1e-9){
+    const lenR = Math.abs(rt.vr) * S * mul;
+    const sign = rt.vr >= 0 ? 1 : -1;
+    const tipR = { x: planetS.x + rHatS.x*lenR*sign, y: planetS.y + rHatS.y*lenR*sign };
+    drawArrow(ctx, planetS, tipR, COLORS.magenta, 0.4*alpha, 0.85*mul);
+  }
+
+  // tangential velocity component v_perp (bright magenta), labelled
+  const lenT = rt.vperp * S * mul;
+  const tipT = { x: planetS.x + tHatS.x*lenT, y: planetS.y + tHatS.y*lenT };
+  drawArrow(ctx, planetS, tipT, COLORS.magenta, alpha, 1.4*mul);
+  ctx.font = "600 11px Inter, sans-serif";
+  ctx.fillStyle = hexAlpha(COLORS.magenta, alpha);
+  ctx.textAlign = tHatS.x > 0.15 ? "left" : (tHatS.x < -0.15 ? "right" : "center");
+  ctx.textBaseline = tHatS.y > 0.15 ? "top" : (tHatS.y < -0.15 ? "bottom" : "middle");
+  ctx.fillText("v⊥", tipT.x + tHatS.x*10, tipT.y + tHatS.y*10);
+
+  // gravitational force (amber), from the planet exactly at the Sun, length ~ 1/r^2
+  const rPeri = p.a * (1 - p.e);
+  const Fref = 46; // px, at r = r_peri (the strongest pull anywhere on this orbit)
+  const lenF = Fref * (rPeri*rPeri) / (o.r*o.r) * mul;
+  const tipF = { x: planetS.x - rHatS.x*lenF, y: planetS.y - rHatS.y*lenF };
+  drawArrow(ctx, planetS, tipF, COLORS.amber, alpha, 1.3*mul);
+  ctx.font = "600 11px Inter, sans-serif";
+  ctx.fillStyle = hexAlpha(COLORS.amber, alpha);
+  ctx.textAlign = (-rHatS.x) > 0.15 ? "left" : ((-rHatS.x) < -0.15 ? "right" : "center");
+  ctx.textBaseline = (-rHatS.y) > 0.15 ? "top" : ((-rHatS.y) < -0.15 ? "bottom" : "middle");
+  ctx.fillText("F", tipF.x - rHatS.x*10, tipF.y - rHatS.y*10);
+
+  // thin sector-triangle for a short interval dt = P/120: sides are r (Sun-planet) and the short
+  // arc, approximately v_perp*dt, to the planet's position one dt later
+  const dt = periodDays(p.a) / 120;
+  const oNext = computeOrbit(p.a, p.e, state.t + dt);
+  const nextS = toScreen({x:oNext.x, y:oNext.y});
+  ctx.fillStyle = hexAlpha(COLORS.amber, 0.35*alpha);
+  ctx.beginPath();
+  ctx.moveTo(sunS.x, sunS.y); ctx.lineTo(planetS.x, planetS.y); ctx.lineTo(nextS.x, nextS.y);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = hexAlpha(COLORS.amber, 0.7*alpha);
+  ctx.lineWidth = 1*mul;
+  ctx.stroke();
+
+  const midx = (sunS.x+planetS.x+nextS.x)/3, midy = (sunS.y+planetS.y+nextS.y)/3;
+  const outDir = outwardDir(midx, midy, sunS.x, sunS.y);
+  ctx.font = "10px Inter, sans-serif";
+  ctx.fillStyle = hexAlpha(COLORS.amber, alpha);
+  ctx.textAlign = outDir.dx > 0.15 ? "left" : (outDir.dx < -0.15 ? "right" : "center");
+  ctx.textBaseline = outDir.dy > 0.15 ? "top" : (outDir.dy < -0.15 ? "bottom" : "middle");
+  ctx.fillText("ΔA = ½ r·v⊥·Δt", midx + outDir.dx*14, midy + outDir.dy*14);
+}
+
 function drawAreasMain(ctx,w,h){
   const p = state.p;
   const g = ellipseGeometry(p.a, p.e);
@@ -1540,9 +1672,9 @@ function drawAreasMain(ctx,w,h){
     state._lastSectorArea = lastCompleteArea;
   }
 
-  // velocity vector
+  // velocity vector -- superseded by the radial/tangential split below when "Why equal?" is on
   const velStyle = layerStyle("velocity");
-  if(velStyle.show){
+  if(velStyle.show && !state.display.whyEqual){
     const vp = vPeriApo(p.a, p.e);
     const span = Math.max(1e-9, vp.vPeri - vp.vApo);
     const frac = clamp((o.v - vp.vApo)/span, 0, 1);
@@ -1550,6 +1682,14 @@ function drawAreasMain(ctx,w,h){
     const dirLen = Math.hypot(o.vx,o.vy) || 1;
     const tip = { x: planetS.x + (o.vx/dirLen)*lenPx, y: planetS.y - (o.vy/dirLen)*lenPx };
     drawArrow(ctx, planetS, tip, COLORS.magenta, velStyle.alpha, velStyle.mul);
+  }
+
+  // "Why equal?" layer: v_r / v_perp split, the gravitational force (~1/r^2, aimed at the Sun),
+  // and a thin shaded sector for a short interval dt = P/120 -- makes the r*v_perp = const
+  // argument for equal areas visible at the planet, rather than just asserted.
+  const whyStyle = layerStyle("whyEqual");
+  if(whyStyle.show){
+    drawWhyEqualLayer(ctx, p, o, sunS, planetS, toScreen, whyStyle);
   }
 
   // Sun
@@ -1563,6 +1703,57 @@ function drawAreasMain(ctx,w,h){
   ctx.fillStyle = COLORS.cyan;
   ctx.beginPath(); ctx.arc(planetS.x,planetS.y,6,0,TAU); ctx.fill();
   drawLabel(ctx, planetS.x, planetS.y, "planet", outwardDir(planetS.x,planetS.y,cx,cy), {color:COLORS.cyan, size:11});
+}
+
+/* ---- short fading trails (harmonic tab) ----------------------------------------------------
+   Preallocated per-planet ring buffers of recent (x,y,nu) samples, one push per rendered frame.
+   Drawing filters the buffer down to samples within the last ~25 deg of true anomaly and fades
+   them with age, so fast inner planets read as continuous motion instead of a strobing dot even
+   when a single frame's angular step is large. */
+const TRAIL_SPAN = 25 * RAD;
+const TRAIL_CAP = 90;
+const trails = {};
+function trailFor(key){
+  if(!trails[key]){
+    const buf = new Array(TRAIL_CAP);
+    for(let i=0;i<TRAIL_CAP;i++) buf[i] = { x:0, y:0, nu:0, valid:false };
+    trails[key] = { buf:buf, head:0, count:0 };
+  }
+  return trails[key];
+}
+function pushTrail(key, x, y, nu){
+  const t = trailFor(key);
+  const slot = t.buf[t.head];
+  slot.x = x; slot.y = y; slot.nu = nu; slot.valid = true;
+  t.head = (t.head+1) % TRAIL_CAP;
+  if(t.count < TRAIL_CAP) t.count++;
+}
+function clearTrail(key){ delete trails[key]; }
+function clearAllTrails(){ Object.keys(trails).forEach(clearTrail); }
+function drawTrail(ctx, toScreen, key, curNu, colorHex){
+  const t = trails[key];
+  if(!t || t.count < 2) return;
+  const pts = [];
+  for(let i=0;i<t.count;i++){
+    const idx = (t.head - 1 - i + TRAIL_CAP) % TRAIL_CAP;
+    const s = t.buf[idx];
+    if(!s.valid) continue;
+    const age = (((curNu - s.nu) % TAU) + TAU) % TAU; // how far behind, wrapped forward into [0,TAU)
+    if(age > TRAIL_SPAN) break; // buffer is time-ordered, so nothing further back can qualify
+    pts.push({ x:s.x, y:s.y, age:age });
+  }
+  if(pts.length < 2) return;
+  ctx.save();
+  ctx.lineWidth = 1.25;
+  ctx.lineCap = "round";
+  for(let i=0;i<pts.length-1;i++){
+    const alpha = clamp(1 - pts[i].age/TRAIL_SPAN, 0, 1) * 0.55;
+    if(alpha <= 0.01) continue;
+    const p0 = toScreen(pts[i]), p1 = toScreen(pts[i+1]);
+    ctx.strokeStyle = hexAlpha(colorHex, alpha);
+    ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawHarmonicMain(ctx,w,h){
@@ -1593,8 +1784,10 @@ function drawHarmonicMain(ctx,w,h){
 
   HARMONIC_PLANETS.forEach(function(pl){
     const o = computeOrbit(pl.a, pl.e, state.t);
-    const s = toScreen({x:o.x,y:o.y});
     const color = COLORS[pl.color];
+    pushTrail(pl.key, o.x, o.y, o.nu);
+    drawTrail(ctx, toScreen, pl.key, o.nu, color);
+    const s = toScreen({x:o.x,y:o.y});
     ctx.fillStyle = color;
     ctx.beginPath(); ctx.arc(s.x,s.y,5,0,TAU); ctx.fill();
     drawLabel(ctx, s.x, s.y, pl.name, outwardDir(s.x,s.y,cx,cy), {color:color, size:10});
@@ -1602,11 +1795,15 @@ function drawHarmonicMain(ctx,w,h){
 
   if(customStyle.show){
     const o = computeOrbit(state.p.customA, 0, state.t);
+    pushTrail("custom", o.x, o.y, o.nu);
+    drawTrail(ctx, toScreen, "custom", o.nu, COLORS.cyan);
     const s = toScreen({x:o.x,y:o.y});
     drawGlow(ctx, glowSpriteCyan, s.x, s.y, 20);
     ctx.fillStyle = COLORS.cyan;
     ctx.beginPath(); ctx.arc(s.x,s.y,5.5,0,TAU); ctx.fill();
     drawLabel(ctx, s.x, s.y, "custom", outwardDir(s.x,s.y,cx,cy), {color:COLORS.cyan, size:10});
+  } else {
+    clearTrail("custom");
   }
 }
 
@@ -1625,8 +1822,8 @@ function drawEquantMain(ctx,w,h){
   ctx.beginPath(); ctx.arc(cC.x,cC.y, Math.max(0,p.a*scale), 0, TAU); ctx.stroke();
 
   // Kepler ellipse
-  ctx.strokeStyle = COLORS["border-strong"];
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.9);
+  ctx.lineWidth = 1.25;
   drawEllipsePath(ctx, toScreen, p.a, p.e);
 
   const sunS = toScreen({x:0,y:0});
@@ -1639,41 +1836,49 @@ function drawEquantMain(ctx,w,h){
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(qS.x,qS.y); ctx.lineTo(ptolemyS.x,ptolemyS.y); ctx.stroke();
 
-  // dashed sight lines from the Sun to both planets
+  // sight lines from the Sun to both planets: solid cyan to Kepler's, dashed magenta to Ptolemy's
   ctx.save();
-  ctx.setLineDash([4,4]);
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.7);
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.9);
   ctx.beginPath(); ctx.moveTo(sunS.x,sunS.y); ctx.lineTo(keplerS.x,keplerS.y); ctx.stroke();
-  ctx.strokeStyle = hexAlpha(COLORS.magenta, 0.7);
+  ctx.setLineDash([7,5]);
+  ctx.strokeStyle = hexAlpha(COLORS.magenta, 0.9);
   ctx.beginPath(); ctx.moveTo(sunS.x,sunS.y); ctx.lineTo(ptolemyS.x,ptolemyS.y); ctx.stroke();
   ctx.restore();
 
-  // small arc at the Sun showing the angular difference, labelled "Delta lambda" -- always
-  // sweep the SHORTER way round (the two sight lines are always within a few degrees of each
-  // other), so the arc never flips to the long way round near the +/-180 deg wrap at aphelion.
+  // filled translucent wedge at the Sun showing the angular difference, labelled "Delta lambda"
+  // (degrees + arcminutes) -- always sweep the SHORTER way round (the two sight lines are always
+  // within a few degrees of each other), so the wedge never flips to the long way round near the
+  // +/-180 deg wrap at aphelion.
   const lamK = Math.atan2(keplerS.y-sunS.y, keplerS.x-sunS.x);
   const lamE = Math.atan2(ptolemyS.y-sunS.y, ptolemyS.x-sunS.x);
   let arcSpan = lamE - lamK;
   arcSpan = ((arcSpan + Math.PI) % TAU + TAU) % TAU - Math.PI;
   const lamE2 = lamK + arcSpan;
-  const arcR = 26;
-  ctx.strokeStyle = COLORS.text;
-  ctx.lineWidth = 1.25;
+  const arcR = 32;
+  ctx.fillStyle = hexAlpha(COLORS.magenta, 0.18);
+  ctx.beginPath();
+  ctx.moveTo(sunS.x, sunS.y);
+  ctx.arc(sunS.x, sunS.y, arcR, lamK, lamE2, arcSpan<0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = hexAlpha(COLORS.magenta, 0.6);
+  ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(sunS.x, sunS.y, arcR, lamK, lamE2, arcSpan<0); ctx.stroke();
   const midAng = lamK + arcSpan/2;
-  drawLabel(ctx, sunS.x+Math.cos(midAng)*(arcR+10), sunS.y+Math.sin(midAng)*(arcR+10), "Δλ", {dx:Math.cos(midAng), dy:Math.sin(midAng)}, {color:COLORS.text, size:11, offset:0});
+  const dlamLabel = "Δλ = " + fmtDegArcmin(Math.abs(arcSpan)*DEG);
+  drawLabel(ctx, sunS.x+Math.cos(midAng)*(arcR+10), sunS.y+Math.sin(midAng)*(arcR+10), dlamLabel, {dx:Math.cos(midAng), dy:Math.sin(midAng)}, {color:COLORS.text, size:11, offset:0});
 
   // Q (equant) marker
   ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(qS.x,qS.y,5,0,TAU); ctx.stroke();
   drawLabel(ctx, qS.x, qS.y, "Q = F₂", outwardDir(qS.x,qS.y,cx,cy), {color:COLORS.magenta, size:10});
 
-  // Sun
+  // Sun -- the observer, in Ptolemy's construction
   drawGlow(ctx, glowSprite, sunS.x, sunS.y, 30);
   ctx.fillStyle = COLORS.amber;
   ctx.beginPath(); ctx.arc(sunS.x,sunS.y,6.5,0,TAU); ctx.fill();
-  drawLabel(ctx, sunS.x, sunS.y, "Sun", outwardDir(sunS.x,sunS.y,cx,cy), {color:COLORS.amber, size:11});
+  drawLabel(ctx, sunS.x, sunS.y, "Sun (Ptolemy's observer)", outwardDir(sunS.x,sunS.y,cx,cy), {color:COLORS.amber, size:11});
 
   // Kepler planet (cyan)
   ctx.fillStyle = COLORS.cyan;
@@ -1807,7 +2012,41 @@ function drawAreasStrip(ctx,w,h){
 
   function xOf(t){ return ax.plotL + ((t-tMin)/(windowDays||1))*ax.plotW; }
 
-  if(state.stripMode === "area"){
+  if(state.stripMode === "rvperp"){
+    const g = ellipseGeometry(p.a, p.e);
+    const rPeri = g.peri.x, rApo = -g.apo.x;
+    const vp = vPeriApo(p.a, p.e);
+    const h = 2*dAdt; // = r*v_perp, exactly constant -- this is the point of this mode
+    const rMin = rPeri*0.92, rMax = rApo*1.08;
+    const vMin = vp.vApo*0.85, vMax = vp.vPeri*1.15;
+    function yOfR(r){ return ax.plotB - ((r-rMin)/(rMax-rMin||1))*ax.plotH; }
+    function yOfV(v){ return ax.plotB - ((v-vMin)/(vMax-vMin||1))*ax.plotH; }
+    const dtS = windowDays/300;
+    const times = timeGridSamples(tMin, tMax, dtS);
+
+    ctx.strokeStyle = COLORS.amber; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    times.forEach(function(t,i){ const o=computeOrbit(p.a,p.e,t); const x=xOf(t), y=yOfR(o.r); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+    ctx.stroke();
+
+    ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    times.forEach(function(t,i){ const o=computeOrbit(p.a,p.e,t); const vperp=h/o.r; const x=xOf(t), y=yOfV(vperp); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+    ctx.stroke();
+
+    const yH = yOfV(h);
+    ctx.save(); ctx.setLineDash([6,3]);
+    ctx.strokeStyle = COLORS.cyan; ctx.lineWidth = 1.75;
+    ctx.beginPath(); ctx.moveTo(ax.plotL,yH); ctx.lineTo(ax.plotR,yH); ctx.stroke();
+    ctx.restore();
+
+    ctx.font="9px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="top";
+    ctx.fillStyle = COLORS.amber; ctx.fillText("r (AU)", ax.plotL, 2);
+    ctx.fillStyle = COLORS.magenta; ctx.textAlign="right"; ctx.fillText("v⊥ (AU/d)", ax.plotR, 2);
+    const labelY = clamp(yH-4, ax.plotT+10, ax.plotB-4);
+    ctx.fillStyle = COLORS.cyan; ctx.textAlign="right"; ctx.textBaseline="bottom";
+    ctx.fillText("r·v⊥ = "+h.toFixed(4)+" (constant)", ax.plotR-2, labelY);
+  } else if(state.stripMode === "area"){
     const areaSpan = dAdt*windowDays;
     function yOf(A){ return ax.plotB - (A/(areaSpan||1))*ax.plotH; }
     ctx.strokeStyle = COLORS.amber; ctx.lineWidth = 1.5;
@@ -2029,8 +2268,12 @@ function updateReadouts(){
     setText(els.vEllV, "v", o.v.toFixed(4));
   } else if(state.tab === "areas"){
     const o = computeOrbit(p.a,p.e,state.t);
+    const vperp = 2*o.dAdt/o.r; // = h/r, exact (avoids re-deriving the radial/tangential split)
+    const rvperp = 2*o.dAdt;    // = h, identically constant for this orbit
     setText(els.vArT, "t", String(Math.round(state.t)));
-    setText(els.vArV, "v", o.v.toFixed(4));
+    setText(els.vArR, "r", o.r.toFixed(3));
+    setText(els.vArVperp, "vperp", vperp.toFixed(4));
+    setText(els.vArRvperp, "rvperp", Number(rvperp).toPrecision(4));
     setText(els.vArDadt, "dadt", o.dAdt.toFixed(6));
     setText(els.vArSector, "sector", (state._lastSectorArea||0).toFixed(3));
   } else if(state.tab === "harmonic"){
@@ -2042,7 +2285,8 @@ function updateReadouts(){
     setText(els.vHarCheck, "hchk", check.toFixed(3));
   } else if(state.tab === "equant"){
     const d = equantDeltaLambdaArcmin(p.a, p.e, state.t);
-    setText(els.vEqDlam, "dlam", fmtSigned(d,2)+"");
+    setText(els.vEqLead, "lead", d >= 0 ? "AHEAD" : "BEHIND");
+    setText(els.vEqDlam, "dlam", Math.abs(d).toFixed(2));
     setText(els.vEqDlamMax, "dlammax", maxDeltaLambdaArcmin(p.a,p.e).toFixed(2));
     setText(els.vEqE, "eqe", p.e.toFixed(3));
   }
