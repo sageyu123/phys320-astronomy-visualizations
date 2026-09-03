@@ -58,16 +58,13 @@
     background:var(--rail); border-bottom:1px solid var(--border);
     min-width:0; overflow:hidden;
   }
-  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; }
+  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; text-decoration:none; color:inherit; }
   .brand-icon{ flex:0 0 auto; filter:drop-shadow(0 0 5px rgb(86 199 217/28%)); }
   .brand-text{ display:flex; flex-direction:column; line-height:1.15; min-width:0; }
-  .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
+  .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; transition:color .12s ease; }
   .brand-sub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-  .home-btn{ display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; margin-right:10px; min-height:28px; padding:0 11px; border-radius:999px;
-    color:var(--muted); background:var(--panel-raised); border:1px solid var(--border); font-size:12px; text-decoration:none; white-space:nowrap; }
-  .home-btn:hover{ color:var(--text); background:var(--control-hover); border-color:var(--border-hover); }
-  body.embed .home-btn{ display:none; }
+  .brand:hover .brand-title{ color:var(--cyan); }
+  .brand:hover .brand-sub{ text-decoration:underline; }
   .tabbar{ flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:thin; }
   .tabbar::-webkit-scrollbar{ height:4px; }
   .tabbar::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
@@ -407,7 +404,7 @@
 <div id="app">
 
   <div class="topbar">
-    <div class="brand">
+    <a class="brand" href="../index.html" title="Back to the visualizations index">
       <svg class="brand-icon" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
         <path d="M1.5 13.5 A 8.5 3 0 0 1 18.5 13.5" fill="none" stroke="#56c7d9" stroke-width="1.3"/>
         <ellipse cx="10" cy="9" rx="6.5" ry="6.5" transform="rotate(-28 10 9)" fill="none" stroke="#ffcc66" stroke-width="1.1" opacity="0.85"/>
@@ -415,10 +412,9 @@
       </svg>
       <div class="brand-text">
         <div class="brand-title">SKY COORDINATES</div>
-        <div class="brand-sub">PHYS 320 · Az-El &#8646; RA/Dec</div>
+        <div class="brand-sub">&lsaquo; PHYS 320 Visualizations &middot; Az-El &#8644; RA/Dec</div>
       </div>
-    </div>
-    <a class="home-btn" href="../index.html" title="Back to the visualizations index">&#8962; Home</a>
+    </a>
     <div class="tabbar">
       <div class="segmented" id="tabBar" role="tablist" aria-label="Teaching stage">
         <button type="button" data-tab="origin" class="active" role="tab" aria-selected="true">Origin &#9800;</button>
@@ -579,6 +575,7 @@
           </div>
           <button type="button" class="toggle" data-key="triangle" aria-pressed="false"><span>Astronomical triangle</span><span class="dot"></span></button>
           <button type="button" class="toggle" data-key="labels" aria-pressed="true"><span>Labels</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="allskyInset" data-simple aria-pressed="true"><span>All-sky inset</span><span class="dot"></span></button>
         </div>
         <div id="displayTogglesOrigin" style="display:none">
           <button type="button" class="toggle" data-key="ghosts" aria-pressed="true"><span>Ghost Earths</span><span class="dot"></span></button>
@@ -586,6 +583,7 @@
           <button type="button" class="toggle" data-key="sunArcs" aria-pressed="true"><span>Sun arcs</span><span class="dot"></span></button>
           <button type="button" class="toggle" data-key="eqGrid" aria-pressed="true"><span>Equatorial grid</span><span class="dot"></span></button>
           <button type="button" class="toggle" data-key="labels" aria-pressed="true"><span>Labels</span><span class="dot"></span></button>
+          <button type="button" class="toggle" data-key="analemmaInset" aria-pressed="true"><span>Analemma inset</span><span class="dot"></span></button>
         </div>
       </div>
 
@@ -669,20 +667,10 @@
 
       <div class="panel" id="stripPanel">
         <div class="panel-header">
-          <div class="panel-title">Sky chart</div>
+          <div class="panel-title" id="stripPanelTitle">RA/Dec map</div>
           <div class="panel-readouts" id="stripLegend">
-            <span id="legendAllsky"><i class="swatch" style="background:var(--cyan)"></i>horizontal &nbsp; <i class="swatch" style="background:var(--amber)"></i>equatorial</span>
-            <span id="legendRadec" style="display:none"><i class="swatch" style="background:var(--cyan)"></i>horizon &nbsp; <i class="swatch" style="background:var(--amber)"></i>diurnal path</span>
+            <span id="legendRadec"><i class="swatch" style="background:var(--cyan)"></i>horizon &nbsp; <i class="swatch" style="background:var(--amber)"></i>diurnal path</span>
             <span id="legendOrigin" style="display:none"><i class="swatch" style="background:var(--coral)"></i>ecliptic &nbsp; <i class="swatch" style="background:var(--amber)"></i>Sun</span>
-            <span id="legendAnalemma" style="display:none">same clock time every day &middot; height = declination (23.4&deg;) &middot; width = equation of time</span>
-          </div>
-          <div class="segmented" id="stripModeToggle" role="tablist" aria-label="Strip panel mode">
-            <button type="button" data-mode="allsky" class="active" role="tab" aria-selected="true">All-sky view</button>
-            <button type="button" data-mode="radec" role="tab" aria-selected="false">RA/Dec map</button>
-          </div>
-          <div class="segmented" id="originStripModeToggle" role="tablist" aria-label="Origin strip panel mode" style="display:none">
-            <button type="button" data-mode="ecliptic" role="tab" aria-selected="false">Ecliptic map</button>
-            <button type="button" data-mode="analemma" class="active" role="tab" aria-selected="true">Analemma</button>
           </div>
         </div>
         <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
@@ -799,7 +787,20 @@ function drawGlow(ctx, sprite, x, y, destSize){
   const s = destSize || sprite.cssSize;
   ctx.drawImage(sprite.canvas, x-s/2, y-s/2, s, s);
 }
-let glowSprite = null; // amber, used by the strip panel
+let glowSprite = null; // amber, used by the strip panel + main-panel insets
+
+/* rounded-rect path helper (manual arcTo-based, not relying on ctx.roundRect)
+   -- used by the main-panel "All-sky inset" and the Origin-tab "Analemma
+   inset" frames (see drawAllskyInset()/drawAnalemmaInset() below). */
+function roundedRectPath(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
 
 /* =========================================================================
    1b. KATEX TYPESETTING (vendored, offline -- vendor/katex/, loaded via
@@ -982,7 +983,7 @@ const TAB_CONFIG = {
     // on the tab id) -- harmless placeholder values, same shape as "grids".
     phi: 40.7, lst: 6, star: "vega",
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true, allskyInset:true },
     sectorPair: "none",
     gridAlpha: { h:1, e:1 },
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:true,
@@ -1001,7 +1002,7 @@ const TAB_CONFIG = {
     tint: "cyan",
     phi: 40.7, lst: 15.0, star: "vega", // El~49 deg, Az~74 deg (up in the east, all arcs short & clear)
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true, allskyInset:true },
     sectorPair: "radec",
     // raised from CAM_DEFAULT's 28 deg elevation to 38 deg so the alpha wedge
     // (which lies in the equatorial plane) is not seen nearly edge-on -- keeps
@@ -1020,7 +1021,7 @@ const TAB_CONFIG = {
     // LST works, and 8h separates the "S"/coordinate-arc labels from a screen-space overlap
     // that lst=6 produced at the default camera vantage
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true, allskyInset:true },
     sectorPair: "none",
     gridAlpha: { h:1, e:1 },
     badge: "none", poleReadout:true, locationHighlight:true, hlstReadout:false, formulasExpanded:false,
@@ -1033,7 +1034,7 @@ const TAB_CONFIG = {
     tint: "magenta",
     phi: 40.7, lst: 5.0, star: "sirius", // h~-1.75h, just before transit -- play shows it culminate then set
     playing: true, speed: 1.0,
-    display: { hGrid:false, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+    display: { hGrid:false, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true, allskyInset:true },
     sectorPair: "none",
     gridAlpha: { h:1, e:1 },
     badge: "diurnal", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
@@ -1046,7 +1047,7 @@ const TAB_CONFIG = {
     tint: "green",
     phi: 40.7, lst: 21.0, star: "vega",
     playing: false, speed: 0.5,
-    display: { hGrid:false, eGrid:true, meridian:true, diurnal:false, arcs:false, triangle:false, labels:true },
+    display: { hGrid:false, eGrid:true, meridian:true, diurnal:false, arcs:false, triangle:false, labels:true, allskyInset:true },
     sectorPair: "none",
     gridAlpha: { h:1, e:0.5 },
     badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:true, formulasExpanded:false,
@@ -1064,7 +1065,7 @@ const TAB_CONFIG = {
     // numeric check against computeDerived().
     phi: 40.7, lst: 18.5, star: "arcturus",
     playing: false, speed: 1.0,
-    display: { hGrid:true, eGrid:true, meridian:true, diurnal:false, arcs:true, triangle:true, labels:true },
+    display: { hGrid:true, eGrid:true, meridian:true, diurnal:false, arcs:true, triangle:true, labels:true, allskyInset:true },
     sectorPair: "none",
     // viewpoint above the SW horizon (camera azimuth 225 deg) looking back toward
     // the NE, elevation 20 deg -- spreads Z (top), P (north, El 40.7) and S (WSW,
@@ -1089,13 +1090,11 @@ const state = {
   starKey: "vega", ra: 18.615, dec: 38.78,
   playing: false, speed: 1.0,      // speed = hours/s, used by the LST-based tabs
   day: 79, speedDays: 20,          // day = day-of-year, speedDays = days/s -- Origin tab only
-  originDisplay: { ghosts:true, zodiac:true, sunArcs:true, eqGrid:true, labels:true }, // Origin tab's own Display-card state
-  originStripMode: "analemma", // "ecliptic" | "analemma" -- Origin tab's own strip-panel toggle
+  originDisplay: { ghosts:true, zodiac:true, sunArcs:true, eqGrid:true, labels:true, analemmaInset:true }, // Origin tab's own Display-card state
   originClockHr: 12.00,        // Origin tab: clock time (h) for the analemma's Az/El calc + readouts
-  display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true },
+  display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true, allskyInset:true },
   sectorPair: "radec",        // "none" | "azel" | "radec" -- which pair of coordinate-sector fans is shown
   gridAlpha: { h:1, e:1 },
-  stripMode: "allsky",        // "allsky" | "radec"
   derived: null,              // computeDerived(...) result for the current instant
   // three.js orbit-camera state (spherical, around a fixed target)
   cam: { theta: 0, phiAngle: 0, radius: 3.2, target: { x:0, y:0.15, z:0 }, isDefault: true },
@@ -2646,10 +2645,20 @@ function drawOverlay(){
   const w = state.overlayW || canvas.clientWidth;
   const h = state.overlayH || canvas.clientHeight;
   ctx.clearRect(0,0,w,h);
-  if(!w || !h || state.tab !== "hlst"){ setDialHoverZone(null); return; }
-  const geom = dialGeometry(w, h);
-  drawHlstDial(ctx, w, h, geom);
-  setDialHoverZone(geom);
+  if(!w || !h){ setDialHoverZone(null); return; }
+  if(state.tab === "origin"){
+    setDialHoverZone(null);
+    if(state.originDisplay.analemmaInset) drawAnalemmaInset(ctx, w, h);
+    return;
+  }
+  if(state.display.allskyInset && state.derived) drawAllskyInset(ctx, w, h);
+  if(state.tab === "hlst"){
+    const geom = dialGeometry(w, h);
+    drawHlstDial(ctx, w, h, geom);
+    setDialHoverZone(geom);
+  } else {
+    setDialHoverZone(null);
+  }
 }
 
 function drawHlstDial(ctx, w, h, geom){
@@ -2750,11 +2759,13 @@ function drawHlstDial(ctx, w, h, geom){
 }
 
 /* =========================================================================
-   10. STRIP PANEL — Canvas 2D. "All-sky view": azimuthal-equidistant, zenith
-       at centre, North at top, EAST ON THE LEFT (sky-chart convention).
-       "RA/Dec map": rectangular chart, alpha increasing to the LEFT (24h at
-       left, 0h at right), delta from -90 (bottom) to +90 (top). Redrawn only
-       on a dirty flag, not every animation frame (unless playing).
+   10. STRIP PANEL — Canvas 2D. Observer tabs show ONLY the "RA/Dec map"
+       (rectangular chart, alpha increasing to the LEFT (24h at left, 0h at
+       right), delta from -90 (bottom) to +90 (top)); the Origin tab shows
+       ONLY the "Ecliptic map". The all-sky/zenith-centred chart and the
+       analemma no longer live here -- they are drawn as square insets on the
+       overlay canvas instead (drawAllskyInset()/drawAnalemmaInset() below).
+       Redrawn only on a dirty flag, not every animation frame (unless playing).
    ========================================================================= */
 function drawStrip(){
   const canvas = document.getElementById("stripCanvas");
@@ -2764,13 +2775,11 @@ function drawStrip(){
   ctx.clearRect(0,0,w,h);
   if(w<=0 || h<=0) return; // defensive
   if(state.tab === "origin"){
-    if(state.originStripMode === "analemma") drawOriginAnalemma(ctx,w,h);
-    else drawOriginMap(ctx,w,h); // no observer/horizon
+    drawOriginMap(ctx,w,h); // ecliptic map -- no observer/horizon
     return;
   }
   if(!state.derived) return; // defensive: derived quantities not yet computed
-  if(state.stripMode === "radec") drawRadecMap(ctx,w,h);
-  else drawAllSky(ctx,w,h);
+  drawRadecMap(ctx,w,h);
 }
 
 function allskyPoint(A_deg, a_deg, R, cx, cy){
@@ -2779,8 +2788,17 @@ function allskyPoint(A_deg, a_deg, R, cx, cy){
   return { x: cx - Math.sin(A)*r, y: cy - Math.cos(A)*r }; // East on the left, North at top
 }
 
-function drawAllSky(ctx, w, h){
-  const pad = 26;
+/* All-sky chart content (rings, N/E/S/W rim, equatorial grid, diurnal track,
+   Az/El arcs, the star). Originally the strip panel's own full-size chart;
+   now reused (unchanged geometry, just parameterized) as the drawing engine
+   for the main-panel "All-sky inset" (drawAllskyInset() below) -- the ONLY
+   remaining caller. `padOverride` lets the inset use a tighter rim padding
+   than the old strip did; `showCaption` (default true) draws the bottom
+   "E on the left" caption inline -- the inset frame supplies its own instead,
+   so it calls this with showCaption=false. */
+function drawAllSky(ctx, w, h, padOverride, showCaption){
+  const pad = (padOverride != null) ? padOverride : 26;
+  if(showCaption == null) showCaption = true;
   const R = Math.max(4, Math.min(w,h)/2 - pad);
   const cx = w/2, cy = h/2;
 
@@ -2882,10 +2900,45 @@ function drawAllSky(ctx, w, h){
   ctx.fillText("S", cx, cy+R+9);
   ctx.fillText("E", cx-R-9, cy);
   ctx.fillText("W", cx+R+9, cy);
-  ctx.font = "8px Inter, sans-serif";
-  ctx.fillStyle = hexAlpha(COLORS.muted,0.7);
-  ctx.textAlign = "left"; ctx.textBaseline="bottom";
-  ctx.fillText("E on the left: you are looking up", 6, h-4);
+  if(showCaption){
+    ctx.font = "8px Inter, sans-serif";
+    ctx.fillStyle = hexAlpha(COLORS.muted,0.7);
+    ctx.textAlign = "left"; ctx.textBaseline="bottom";
+    ctx.fillText("E on the left: you are looking up", 6, h-4);
+  }
+}
+
+/* =========================================================================
+   9b. MAIN-PANEL INSET -- "All-sky view" (observer tabs: grids, latitude,
+   diurnal, hlst, triangle). A square, panel-deep-background inset drawn at
+   the top-left of the main panel's overlay canvas, below the 34px header
+   (the overlay canvas's own (0,0) already starts there). Toggle:
+   state.display.allskyInset (Display card, default ON, hidden on the Origin
+   tab). Redrawn every drawOverlay() call under the same dirty conditions the
+   rest of that function uses (state.needsRender/requestRender()).
+   ========================================================================= */
+function drawAllskyInset(ctx, panelW, panelH){
+  const S = clamp(0.26*Math.min(panelW,panelH), 180, 300);
+  const x = 12, y = 12;
+  const TOP_RESERVE = 16, BOTTOM_RESERVE = 14; // room for the title / caption bands
+  ctx.save();
+  roundedRectPath(ctx, x, y, S, S, 4);
+  ctx.fillStyle = hexAlpha(COLORS["panel-deep"], 0.85);
+  ctx.fill();
+  ctx.lineWidth = 1; ctx.strokeStyle = COLORS.border; ctx.stroke();
+  ctx.clip();
+
+  ctx.font = "11px Inter, sans-serif"; ctx.fillStyle = COLORS.muted;
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("All-sky view", x+8, y+5);
+
+  ctx.font = "8.5px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.85);
+  ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  ctx.fillText("E on the left · you are looking up", x+8, y+S-4);
+
+  ctx.translate(x, y+TOP_RESERVE);
+  drawAllSky(ctx, S, S-TOP_RESERVE-BOTTOM_RESERVE, 20, false);
+  ctx.restore();
 }
 
 function drawRadecMap(ctx, w, h){
@@ -3135,10 +3188,8 @@ function drawOriginMap(ctx, w, h){
 }
 
 /* =========================================================================
-   10c. ORIGIN-TAB STRIP MAP -- THE ANALEMMA (toggle in the strip header:
-   "Ecliptic map" | "Analemma", state.originStripMode, default "analemma";
-   see wireOriginStripModeToggle()). Because the Sun's position is
-   closed-form, the WHOLE YEAR is drawn at once: for every day of year, at a
+   10c. LEFT-VIEWPORT INSET (Origin tab) -- THE ANALEMMA. Because the Sun's
+   position is closed-form, the WHOLE YEAR is drawn at once: for every day of year, at a
    fixed clock time (state.originClockHr) and observer latitude (state.phi),
    the Sun's azimuth/elevation traces a figure 8 -- height from the 23.4 deg
    declination swing, width from the equation of time (a mix of the
@@ -3152,6 +3203,9 @@ const ORIGIN_ANALEMMA_CARDINALS = [
   { day: ORIGIN_CARDINAL_DAYS[2], label: ORIGIN_CARDINAL_READOUTS[2] },
   { day: ORIGIN_CARDINAL_DAYS[3], label: ORIGIN_CARDINAL_READOUTS[3] }
 ];
+// short labels for the small inset (the strip's own room for the long
+// "Mar 20 · ♈ equinox"-style labels no longer applies at inset scale)
+const ORIGIN_ANALEMMA_SHORT_LABELS = ["Mar 20","Jun 21","Sep 22","Dec 21"];
 
 /* Sun's TRUE-longitude declination + equation of time (degrees), for a given
    day of year -- mirrors altaz_origin_stage.js's own sunTrueLongitudeDeg() +
@@ -3179,14 +3233,17 @@ function originSunAltAz(dayOfYear, clockHr, phiDeg){
   return altAzFromEq(phiDeg, sun.decDeg, hDeg);
 }
 
-function drawOriginAnalemma(ctx, w, h){
-  const padL=14, padR=14, padT=18, padB=18;
-  const plotL=padL, plotR=w-padR, plotT=padT, plotB=h-padB;
-  const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
-
-  ctx.fillStyle = COLORS.canvas; ctx.fillRect(0,0,w,h);
-
-  const phi = state.phi, clockHr = state.originClockHr;
+/* The year's (Az,El) curve depends only on (clockHr, phi, eccentricity,
+   apogee) -- NOT on state.day -- so it is cached and only recomputed when one
+   of those actually changes (eccentricity/apogee are fixed constants on this
+   page, included in the key for future-proofing only). drawAnalemmaInset()
+   below calls this every frame (drawOverlay() has no dirty-flag gate, unlike
+   drawStrip()) but the 366-point trig sweep itself only re-runs on a real
+   change; per frame only the current-date Sun dot is recomputed. */
+let _analemmaCurveCache = null; // { key, pts, minAz, maxAz, minEl, maxEl }
+function getAnalemmaCurve(clockHr, phi){
+  const key = clockHr.toFixed(4) + "|" + phi.toFixed(4) + "|" + ORIGIN_ECC + "|" + ORIGIN_APOGEE_DEG;
+  if(_analemmaCurveCache && _analemmaCurveCache.key === key) return _analemmaCurveCache;
   const pts = [];
   let minAz=Infinity, maxAz=-Infinity, minEl=Infinity, maxEl=-Infinity;
   for(let d=0; d<=365; d++){
@@ -3196,90 +3253,131 @@ function drawOriginAnalemma(ctx, w, h){
     if(altaz.a<minEl) minEl=altaz.a; if(altaz.a>maxEl) maxEl=altaz.a;
   }
   if(!isFinite(minAz)){ minAz=170; maxAz=190; } // degenerate fallback (e.g. phi = +-90)
+  _analemmaCurveCache = { key:key, pts:pts, minAz:minAz, maxAz:maxAz, minEl:minEl, maxEl:maxEl };
+  return _analemmaCurveCache;
+}
 
-  // auto-range each axis to the curve: 8% padding, at least 20 deg span
-  function padRange(lo, hi){
-    const span0 = Math.max(1e-6, hi-lo);
-    const pad = span0*0.08;
-    let a = lo-pad, b = hi+pad;
-    if((b-a) < 20){ const mid=(a+b)/2; a=mid-10; b=mid+10; }
-    return { lo:a, hi:b };
-  }
-  const azR = padRange(minAz,maxAz), elR = padRange(minEl,maxEl);
-  function xOf(az){ return plotL + (az-azR.lo)/(azR.hi-azR.lo)*plotW; }
-  function yOf(el){ return plotB - (el-elR.lo)/(elR.hi-elR.lo)*plotH; }
-  function gridStep(span){ return span<=60 ? 5 : 10; } // gridlines every 5 or 10 deg
+/* square inset, top-left of the LEFT (solar-system) viewport, below its own
+   "SOLAR SYSTEM ..." HUD caption and the full-width timeline strip.
+   EQUAL-DEGREE SCALING: `scale` (px/deg) is the SAME for both axes -- chosen
+   as whichever axis is more constrained by the box, so the figure is drawn
+   at true 1:1 aspect (tall & narrow at noon, tilted off-noon) rather than
+   each axis being auto-fit independently. */
+function drawAnalemmaInset(ctx, panelW, panelH){
+  if(!originStage) return;
+  const vp = originStage.getViewportRects();
+  const L = vp.L;
+  if(L.w <= 0 || L.h <= 0) return;
+  const S = clamp(0.34*Math.min(L.w, panelH), 220, 340);
+  const topClear = originHudInsetPx() + 26; // timeline strip + the viewport's own HUD caption
+  const boxX = L.x + 12, boxY = L.y + topClear;
 
-  // gridlines
-  const azStep = gridStep(azR.hi-azR.lo), elStep = gridStep(elR.hi-elR.lo);
+  const AN_PAD = 8, AN_TITLE_H = 14, AN_CAPTION_H = 12, AN_AXIS_L = 13, AN_AXIS_B = 12;
+  const plotL = boxX + AN_PAD + AN_AXIS_L, plotR = boxX + S - AN_PAD;
+  const plotT = boxY + AN_PAD + AN_TITLE_H, plotB = boxY + S - AN_PAD - AN_CAPTION_H - AN_AXIS_B;
+  const plotW = Math.max(1, plotR-plotL), plotH = Math.max(1, plotB-plotT);
+
+  const phi = state.phi, clockHr = state.originClockHr;
+  const curve = getAnalemmaCurve(clockHr, phi);
+  const azSpan0 = Math.max(1e-6, curve.maxAz-curve.minAz), elSpan0 = Math.max(1e-6, curve.maxEl-curve.minEl);
+  const azSpanP = azSpan0*1.16, elSpanP = elSpan0*1.16; // 8% padding on each side
+  const scale = Math.min(plotW/azSpanP, plotH/elSpanP); // px per degree -- SAME on both axes
+  const azShow = plotW/scale, elShow = plotH/scale;
+  const azMid = (curve.minAz+curve.maxAz)/2, elMid = (curve.minEl+curve.maxEl)/2;
+  const azLo = azMid-azShow/2, azHi = azMid+azShow/2;
+  const elLo = elMid-elShow/2, elHi = elMid+elShow/2;
+  function xOf(az){ return plotL + (az-azLo)/(azHi-azLo)*plotW; }
+  function yOf(el){ return plotB - (el-elLo)/(elHi-elLo)*plotH; }
+
+  ctx.save();
+  roundedRectPath(ctx, boxX, boxY, S, S, 4);
+  ctx.fillStyle = hexAlpha(COLORS["panel-deep"], 0.85);
+  ctx.fill();
+  ctx.lineWidth = 1; ctx.strokeStyle = COLORS.border; ctx.stroke();
+  ctx.clip();
+
+  ctx.font = "11px Inter, sans-serif"; ctx.fillStyle = COLORS.muted;
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("Analemma · same clock time every day", boxX+8, boxY+5);
+
+  ctx.font = "8.5px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.85);
+  ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  ctx.fillText("height = declination (23.4°) · width = equation of time", boxX+8, boxY+S-4);
+
+  // gridlines every 10 deg (light)
   ctx.lineWidth=1; ctx.strokeStyle = hexAlpha(COLORS.border,0.35);
-  for(let a=Math.ceil(azR.lo/azStep)*azStep; a<=azR.hi; a+=azStep){
+  for(let a=Math.ceil(azLo/10)*10; a<=azHi; a+=10){
     const x = xOf(a);
     ctx.beginPath(); ctx.moveTo(x,plotT); ctx.lineTo(x,plotB); ctx.stroke();
   }
-  for(let e=Math.ceil(elR.lo/elStep)*elStep; e<=elR.hi; e+=elStep){
+  for(let e=Math.ceil(elLo/10)*10; e<=elHi; e+=10){
     const y = yOf(e);
     ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
   }
 
   // horizon (El=0), muted, only when in range
-  if(elR.lo <= 0 && elR.hi >= 0){
+  if(elLo <= 0 && elHi >= 0){
     ctx.strokeStyle = hexAlpha(COLORS.muted,0.5); ctx.lineWidth=1.2;
     const y = yOf(0);
     ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
   }
 
-  // the year's curve: thin cream polyline, with a dot every 7 days (alpha 0.6)
+  // the year's curve: thin cream polyline, with a sparse dot every 14 days
   ctx.strokeStyle = hexAlpha(ORIGIN_ANALEMMA_CREAM, 0.85); ctx.lineWidth = 1.3;
   ctx.beginPath();
   let started = false;
-  pts.forEach(function(p){
+  curve.pts.forEach(function(p){
     if(isNaN(p.A)){ started=false; return; }
     const x = xOf(p.A), y = yOf(p.El);
     if(!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
   });
   ctx.stroke();
   ctx.fillStyle = hexAlpha(ORIGIN_ANALEMMA_CREAM, 0.6);
-  pts.forEach(function(p){
-    if(isNaN(p.A) || p.day % 7 !== 0) return;
+  curve.pts.forEach(function(p){
+    if(isNaN(p.A) || p.day % 14 !== 0) return;
     const x = xOf(p.A), y = yOf(p.El);
-    ctx.beginPath(); ctx.arc(x,y,1.6,0,TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(x,y,1.3,0,TAU); ctx.fill();
   });
 
-  // the four cardinal dates: ringed markers + small muted labels
-  ctx.font = "10px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="bottom";
-  ORIGIN_ANALEMMA_CARDINALS.forEach(function(c){
+  // the four cardinal dates: ringed markers + short muted labels
+  ctx.font = "8px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="bottom";
+  ORIGIN_ANALEMMA_CARDINALS.forEach(function(c, i){
     const altaz = originSunAltAz(c.day, clockHr, phi);
     if(isNaN(altaz.A)) return;
     const x = xOf(altaz.A), y = yOf(altaz.a);
-    ctx.strokeStyle = COLORS.muted; ctx.lineWidth=1.2;
-    ctx.beginPath(); ctx.arc(x,y,4,0,TAU); ctx.stroke();
+    ctx.strokeStyle = COLORS.muted; ctx.lineWidth=1.1;
+    ctx.beginPath(); ctx.arc(x,y,3,0,TAU); ctx.stroke();
     ctx.fillStyle = hexAlpha(COLORS.muted,0.9);
-    ctx.fillText(c.label, x+6, y-4);
+    ctx.fillText(ORIGIN_ANALEMMA_SHORT_LABELS[i], x+5, y-3);
   });
 
-  // the CURRENT date's Sun: glow + 3px amber dot -- moves along the 8 as the
-  // timeline plays (drawStrip() is re-invoked every time state.day changes)
+  // the CURRENT date's Sun: glow + dot -- moves along the 8 as the timeline
+  // plays (only this per-frame lookup runs every frame; the curve is cached)
   {
     const altaz = originSunAltAz(state.day, clockHr, phi);
     if(!isNaN(altaz.A)){
       const x = xOf(altaz.A), y = yOf(altaz.a);
-      drawGlow(ctx, glowSprite, x, y, 20);
+      drawGlow(ctx, glowSprite, x, y, 16);
       ctx.fillStyle = COLORS.amber;
-      ctx.beginPath(); ctx.arc(x,y,3,0,TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y,2.6,0,TAU); ctx.fill();
     }
   }
 
-  // axis titles
-  ctx.font = "10px Inter, sans-serif";
-  ctx.fillStyle = hexAlpha(COLORS.muted, 0.8);
-  ctx.textAlign = "left"; ctx.textBaseline = "top";
-  ctx.fillText("elevation (°)", plotL+4, plotT+4);
-  ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-  ctx.fillText("azimuth (°)", plotR-4, plotB-4);
-
   ctx.strokeStyle = COLORS.border; ctx.lineWidth=1;
   ctx.strokeRect(plotL+0.5,plotT+0.5,plotW-1,plotH-1);
+
+  // axis titles: "azimuth (°)" along the bottom, "elevation (°)" rotated along the left
+  ctx.font = "8px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.8);
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillText("azimuth (°)", (plotL+plotR)/2, plotB+2);
+  ctx.save();
+  ctx.translate(boxX+AN_PAD+4, (plotT+plotB)/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("elevation (°)", 0, 0);
+  ctx.restore();
+
+  ctx.restore();
 }
 
 /* =========================================================================
@@ -3301,7 +3399,7 @@ function cacheEls(){
    "originDateLabel","originDayNum","originLambda","originAlpha","originDelta","originSeasonN","originSeasonS",
    "originEot","originNoonEl",
    "aboutCard","aboutTitle","aboutBody","formulasCard","formulasHead","formulasBody",
-   "stripModeToggle","originStripModeToggle","legendAllsky","legendRadec","legendOrigin","legendAnalemma","dialHoverZone"
+   "stripPanelTitle","legendRadec","legendOrigin","dialHoverZone"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
 }
 
@@ -3601,7 +3699,8 @@ const ORIGIN_TOGGLE_TIPS = {
   zodiac: 'The twelve signs, 30&deg; each counted eastward from &#9800;; the Sun appears in the highlighted sign.',
   sunArcs: 'The Sun\'s right ascension <span class="math">&alpha;</span>&#9737; (from &#9800; along the equator), declination <span class="math">&delta;</span>&#9737; (from the equator), and ecliptic longitude <span class="math">&lambda;</span>&#9737; (from &#9800; along the ecliptic).',
   eqGrid: "Declination circles and hour circles of the equatorial system.",
-  labels: "Names for the poles, equinoxes, solstices and the Sun's angles."
+  labels: "Names for the poles, equinoxes, solstices and the Sun's angles.",
+  analemmaInset: "The Sun's position at the same clock time through the year &mdash; a figure 8 whose height is the declination swing and whose width is the equation of time."
 };
 function wireOriginToggles(){
   const tip = document.getElementById("sharedTip");
@@ -3652,27 +3751,6 @@ function wireOriginToggles(){
     btn.addEventListener("keydown", function(ev){ if(ev.key === "Escape") btn.blur(); });
   });
   window.addEventListener("resize", function(){ if(!tip.hidden) hideTip(); });
-}
-
-/* Origin tab's "Ecliptic map" | "Analemma" strip-panel toggle (state.
-   originStripMode) -- styling/wiring pattern mirrors wireStripModeToggle()
-   above (the OTHER tabs' own strip toggle), just a second independent
-   toggle scoped to this tab (see switchTab()'s show/hide of each). */
-function wireOriginStripModeToggle(){
-  els.originStripModeToggle.querySelectorAll("button").forEach(function(btn){
-    btn.addEventListener("click", function(){
-      state.originStripMode = btn.dataset.mode;
-      els.originStripModeToggle.querySelectorAll("button").forEach(function(b){
-        const active = b === btn;
-        b.classList.toggle("active", active);
-        b.setAttribute("aria-selected", active ? "true" : "false");
-      });
-      els.legendOrigin.style.display = (state.originStripMode === "ecliptic") ? "" : "none";
-      els.legendAnalemma.style.display = (state.originStripMode === "analemma") ? "" : "none";
-      state.stripDirty = true;
-      requestRender();
-    });
-  });
 }
 
 /* Origin tab's Date-card "Clock time" / "Latitude" sliders -- these feed
@@ -3754,7 +3832,8 @@ const TOGGLE_TIPS = {
   arcs: 'The star\'s coordinates drawn as arcs: <span class="math">Az</span> and <span class="math">El</span> in cyan, <span class="math">&delta;</span> and <span class="math">&alpha;</span> in amber, hour angle <span class="math">h</span> in magenta.',
   sectorsControl: "Translucent sectors from the observer out to one pair of arcs — the planes in which that pair is measured. Show one pair at a time.",
   triangle: "The spherical triangle zenith–pole–star whose sides and angles convert between the two systems.",
-  labels: "Names and symbols for points, arcs and cardinal directions."
+  labels: "Names and symbols for points, arcs and cardinal directions.",
+  allskyInset: "The sky as you see it looking up — zenith at the centre, horizon at the rim, east on the left."
 };
 
 function wireDisplayToggles(){
@@ -3809,7 +3888,7 @@ function wireDisplayToggles(){
     btn.removeAttribute("aria-describedby");
   }
 
-  document.querySelectorAll("#displayTogglesNormal .toggle").forEach(function(btn){
+  document.querySelectorAll("#displayTogglesNormal .toggle:not([data-simple])").forEach(function(btn){
     btn.addEventListener("click", function(){
       const key = btn.dataset.key;
       state.display[key] = !state.display[key];
@@ -3833,6 +3912,26 @@ function wireDisplayToggles(){
     btn.addEventListener("keydown", function(ev){
       if(ev.key === "Escape") btn.blur(); // triggers leaveHighlight() via the blur handler above
     });
+  });
+
+  // "All-sky inset" (data-simple): a main-panel overlay toggle, not a 3D-scene
+  // layer -- click flips state.display.allskyInset and just repaints (no
+  // applyDisplayVisibility()/updateDynamicArcs(), and no highlight preview:
+  // it has no "other layers dim" counterpart, so it's excluded from the
+  // generic loop above and only gets the plain tooltip, same pattern as the
+  // Sectors "None" option below).
+  document.querySelectorAll('#displayTogglesNormal .toggle[data-simple]').forEach(function(btn){
+    btn.addEventListener("click", function(){
+      const key = btn.dataset.key;
+      state.display[key] = !state.display[key];
+      btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
+      requestRender();
+    });
+    btn.addEventListener("pointerenter", function(ev){ if(ev.pointerType === "touch") return; scheduleShowTip(btn); });
+    btn.addEventListener("pointerleave", function(){ hideTip(); });
+    btn.addEventListener("focus", function(){ scheduleShowTip(btn); });
+    btn.addEventListener("blur", function(){ hideTip(); });
+    btn.addEventListener("keydown", function(ev){ if(ev.key === "Escape") btn.blur(); });
   });
 
   // Sectors segmented control (None / Az·El / α·δ): click selects state.sectorPair;
@@ -3920,23 +4019,6 @@ function wireDialTooltip(){
   window.addEventListener("resize", function(){ if(!tip.hidden) hide(); });
 }
 
-function wireStripModeToggle(){
-  els.stripModeToggle.querySelectorAll("button").forEach(function(btn){
-    btn.addEventListener("click", function(){
-      state.stripMode = btn.dataset.mode;
-      els.stripModeToggle.querySelectorAll("button").forEach(function(b){
-        const active = b === btn;
-        b.classList.toggle("active", active);
-        b.setAttribute("aria-selected", active ? "true" : "false");
-      });
-      els.legendAllsky.style.display = (state.stripMode === "allsky") ? "" : "none";
-      els.legendRadec.style.display = (state.stripMode === "radec") ? "" : "none";
-      state.stripDirty = true;
-      requestRender();
-    });
-  });
-}
-
 function wireTabs(){
   els.tabBar.querySelectorAll("button").forEach(function(btn){
     btn.addEventListener("click", function(){ switchTab(btn.dataset.tab); });
@@ -4010,11 +4092,6 @@ function switchTab(tabId){
     const key = btn.dataset.key;
     btn.setAttribute("aria-pressed", state.originDisplay[key] ? "true" : "false");
   });
-  els.originStripModeToggle.querySelectorAll("button").forEach(function(b){
-    const active = b.dataset.mode === state.originStripMode;
-    b.classList.toggle("active", active);
-    b.setAttribute("aria-selected", active ? "true" : "false");
-  });
 
   document.querySelectorAll("#sectorsControl button").forEach(function(b){
     const active = b.dataset.pair === state.sectorPair;
@@ -4053,14 +4130,12 @@ function switchTab(tabId){
   els.displayTogglesNormal.style.display = isOrigin ? "none" : "";
   els.displayTogglesOrigin.style.display = isOrigin ? "" : "none";
 
-  // Strip panel: the Origin tab shows its own toggle (Ecliptic map/Analemma)
-  // instead of the other tabs' stripModeToggle (All-sky/RA-Dec).
-  els.stripModeToggle.style.display = isOrigin ? "none" : "";
-  els.originStripModeToggle.style.display = isOrigin ? "" : "none";
-  els.legendAllsky.style.display = (!isOrigin && state.stripMode === "allsky") ? "" : "none";
-  els.legendRadec.style.display = (!isOrigin && state.stripMode === "radec") ? "" : "none";
-  els.legendOrigin.style.display = (isOrigin && state.originStripMode === "ecliptic") ? "" : "none";
-  els.legendAnalemma.style.display = (isOrigin && state.originStripMode === "analemma") ? "" : "none";
+  // Strip panel: the Origin tab always shows the ecliptic map, every other
+  // tab always shows the RA/Dec map -- no mode toggle any more (Task 1/2:
+  // the all-sky view and the analemma moved to overlay-canvas insets).
+  els.stripPanelTitle.textContent = isOrigin ? "Ecliptic map · the Sun's RA/Dec through the year" : "RA/Dec map";
+  els.legendRadec.style.display = isOrigin ? "none" : "";
+  els.legendOrigin.style.display = isOrigin ? "" : "none";
 
   updatePlayButton();
   if(state.playing) startLoop(); else stopLoop();
@@ -4189,21 +4264,36 @@ function updateOriginFormulas(){
     String.raw`\sin\delta_\odot = \sin\epsilon\sin\lambda_\odot`,
     "",
     'sin ' + ORIGIN_EPS_DEG.toFixed(2) + '&deg; sin ' + fmtNum(lambdaDeg,0.1) + '&deg; = <b>' + sinDelta.toFixed(3) + '</b> &rarr; <span class="math">&delta;</span>&#9737; = <b>' + fmtSigned(s.decDeg,1) + '&deg;</b>',
-    String.raw`\sin ${ORIGIN_EPS_DEG.toFixed(2)}^\circ \sin ${fmtNum(lambdaDeg,0.1)}^\circ = \mathbf{${sinDelta.toFixed(3)}} \Rightarrow \delta_\odot = \mathbf{${fmtSigned(s.decDeg,1)}^\circ}`,
+    String.raw`\begin{aligned}
+&\sin ${ORIGIN_EPS_DEG.toFixed(2)}^\circ\sin ${fmtNum(lambdaDeg,0.1)}^\circ\\
+&= \mathbf{${sinDelta.toFixed(3)}}\\
+&\Rightarrow\ \delta_\odot = \mathbf{${fmtSigned(s.decDeg,1)}^\circ}
+\end{aligned}`,
     ""
   );
 
   const defPlainB = '<span class="math">tan &alpha;</span>&#9737; = <span class="math">cos &epsilon; tan &lambda;</span>&#9737; (<span class="math">&alpha;</span>&#9737; in the same quadrant as <span class="math">&lambda;</span>&#9737;)';
-  const defLatexB = String.raw`\tan\alpha_\odot = \cos\epsilon\tan\lambda_\odot\ \ (\alpha_\odot\text{ in the same quadrant as }\lambda_\odot)`;
+  const defLatexB = String.raw`\begin{aligned}
+&\tan\alpha_\odot = \cos\epsilon\tan\lambda_\odot\\
+&(\alpha_\odot\text{ same quadrant as }\lambda_\odot)
+\end{aligned}`;
   const cosLambda = Math.cos(lambdaDeg*RAD);
   let subPlainB, subLatexB;
   if(Math.abs(cosLambda) < 1e-6){
     subPlainB = 'undefined here (cos &lambda;&#9737; &asymp; 0, a solstice) &mdash; <span class="math">&alpha;</span>&#9737; = <b>' + s.raHours.toFixed(2) + 'h</b> directly (a quarter/three-quarter turn from &#9800;)';
-    subLatexB = String.raw`\text{undefined here }(\cos\lambda_\odot \approx 0\text{, a solstice}) \Rightarrow \alpha_\odot = \mathbf{${s.raHours.toFixed(2)}\text{h}}\text{ directly}`;
+    subLatexB = String.raw`\begin{aligned}
+&\text{undefined here}\\
+&(\cos\lambda_\odot \approx 0\text{, a solstice})\\
+&\Rightarrow\ \alpha_\odot = \mathbf{${s.raHours.toFixed(2)}\text{h}}\ \text{directly}
+\end{aligned}`;
   } else {
     const tanAlpha = Math.cos(ORIGIN_EPS)*Math.tan(lambdaDeg*RAD);
     subPlainB = 'cos ' + ORIGIN_EPS_DEG.toFixed(2) + '&deg; tan ' + fmtNum(lambdaDeg,0.1) + '&deg; = <b>' + tanAlpha.toFixed(3) + '</b> &rarr; <span class="math">&alpha;</span>&#9737; = <b>' + s.raHours.toFixed(2) + 'h</b>';
-    subLatexB = String.raw`\cos ${ORIGIN_EPS_DEG.toFixed(2)}^\circ \tan ${fmtNum(lambdaDeg,0.1)}^\circ = \mathbf{${tanAlpha.toFixed(3)}} \Rightarrow \alpha_\odot = \mathbf{${s.raHours.toFixed(2)}\text{h}}`;
+    subLatexB = String.raw`\begin{aligned}
+&\cos ${ORIGIN_EPS_DEG.toFixed(2)}^\circ\tan ${fmtNum(lambdaDeg,0.1)}^\circ\\
+&= \mathbf{${tanAlpha.toFixed(3)}}\\
+&\Rightarrow\ \alpha_\odot = \mathbf{${s.raHours.toFixed(2)}\text{h}}
+\end{aligned}`;
   }
   fillFormulaLine(fEls.fB, defPlainB, defLatexB, "", subPlainB, subLatexB, "");
 }
@@ -4217,27 +4307,48 @@ function updateFormulas(){
 
   fillFormulaLine(fEls.fA,
     '<span class="math">sin</span> <span class="math-upright">El</span> = <span class="math">sin &phi; sin &delta; + cos &phi; cos &delta; cos h</span>',
-    String.raw`\sin \text{El} = \sin\varphi\sin\delta + \cos\varphi\cos\delta\cos h`,
+    String.raw`\begin{aligned}
+&\sin \text{El} = \sin\varphi\sin\delta\\
+&{}+ \cos\varphi\cos\delta\cos h
+\end{aligned}`,
     "",
     'sin ' + fmtNum(phi,0.1) + '&deg; sin ' + fmtSigned(dec,1) + '&deg; + cos ' + fmtNum(phi,0.1) + '&deg; cos ' + fmtSigned(dec,1) + '&deg; cos(' + fmtSigned(hDeg,1) + '&deg;) = <b>' + sinA_.toFixed(3) + '</b> &rarr; <span class="math-upright">El</span> = <b>' + d.a_deg.toFixed(1) + '&deg;</b>',
-    String.raw`\sin ${fmtNum(phi,0.1)}^\circ \sin(${fmtSigned(dec,1)}^\circ) + \cos ${fmtNum(phi,0.1)}^\circ \cos(${fmtSigned(dec,1)}^\circ) \cos(${fmtSigned(hDeg,1)}^\circ) = \mathbf{${sinA_.toFixed(3)}} \Rightarrow \text{El} = \mathbf{${d.a_deg.toFixed(1)}^\circ}`,
+    String.raw`\begin{aligned}
+&\sin ${fmtNum(phi,0.1)}^\circ\sin(${fmtSigned(dec,1)}^\circ)\\
+&{}+ \cos ${fmtNum(phi,0.1)}^\circ\cos(${fmtSigned(dec,1)}^\circ)\\
+&{}\cos(${fmtSigned(hDeg,1)}^\circ) = \mathbf{${sinA_.toFixed(3)}}\\
+&\Rightarrow\ \text{El} = \mathbf{${d.a_deg.toFixed(1)}^\circ}
+\end{aligned}`,
     ""
   );
 
   const defPlainAz = '<span class="math">cos</span> <span class="math-upright">Az</span> = <span class="math">(sin &delta; &minus; sin &phi; sin</span> <span class="math-upright">El</span><span class="math">) / (cos &phi; cos</span> <span class="math-upright">El</span><span class="math">)</span>';
-  const defLatexAz = String.raw`\cos \text{Az} = \dfrac{\sin\delta - \sin\varphi\sin\text{El}}{\cos\varphi\cos\text{El}}`;
+  const defLatexAz = String.raw`\begin{aligned}
+&\cos \text{Az} =\\
+&\dfrac{\sin\delta - \sin\varphi\sin\text{El}}{\cos\varphi\cos\text{El}}
+\end{aligned}`;
   const cosAdenom = Math.cos(phi*RAD)*Math.cos(d.a_deg*RAD);
   let defNoteAz = "", subPlainAz, subLatexAz, subNoteAz = "";
   if(Math.abs(cosAdenom) < 1e-9){
     subPlainAz = 'undefined here (cos &phi; cos <span class="math-upright">El</span> &asymp; 0) &mdash; <span class="math-upright">Az</span> = &mdash;';
-    subLatexAz = String.raw`\text{undefined here }(\cos\varphi\cos\text{El} \approx 0) \Rightarrow \text{Az} = \mathbf{-}`;
+    subLatexAz = String.raw`\begin{aligned}
+&\text{undefined here}\\
+&(\cos\varphi\cos\text{El} \approx 0)\\
+&\Rightarrow\ \text{Az} = \mathbf{-}
+\end{aligned}`;
   } else {
     const cosAval = clamp((Math.sin(dec*RAD) - Math.sin(phi*RAD)*Math.sin(d.a_deg*RAD)) / cosAdenom, -1, 1);
     const westEast = (Math.sin(hDeg*RAD) > 0) ? "west" : "east";
     defNoteAz = ', <span class="math-upright">Az</span> &rarr; 360&deg; &minus; <span class="math-upright">Az</span> when sin h &gt; 0';
     const azStr = isNaN(d.A_deg) ? String.raw`\mathbf{-}` : String.raw`\mathbf{${d.A_deg.toFixed(1)}^\circ}`;
     subPlainAz = '(sin ' + fmtSigned(dec,1) + '&deg; &minus; sin ' + fmtNum(phi,0.1) + '&deg; sin ' + d.a_deg.toFixed(1) + '&deg;) / (cos ' + fmtNum(phi,0.1) + '&deg; cos ' + d.a_deg.toFixed(1) + '&deg;) = <b>' + cosAval.toFixed(3) + '</b> &rarr; <span class="math-upright">Az</span> = <b>' + (isNaN(d.A_deg)?"&mdash;":d.A_deg.toFixed(1)+'&deg;') + '</b>';
-    subLatexAz = String.raw`(\sin(${fmtSigned(dec,1)}^\circ) - \sin ${fmtNum(phi,0.1)}^\circ\sin ${d.a_deg.toFixed(1)}^\circ) / (\cos ${fmtNum(phi,0.1)}^\circ\cos ${d.a_deg.toFixed(1)}^\circ) = \mathbf{${cosAval.toFixed(3)}} \Rightarrow \text{Az} = ` + azStr;
+    subLatexAz = String.raw`\begin{aligned}
+&\sin(${fmtSigned(dec,1)}^\circ)\\
+&{}- \sin ${fmtNum(phi,0.1)}^\circ\sin ${d.a_deg.toFixed(1)}^\circ\\
+&{}/\ \cos ${fmtNum(phi,0.1)}^\circ\cos ${d.a_deg.toFixed(1)}^\circ\\
+&= \mathbf{${cosAval.toFixed(3)}}\\
+&\Rightarrow\ \text{Az} = ${azStr}
+\end{aligned}`;
     subNoteAz = ' (h ' + (hDeg>=0?'&gt;':'&lt;') + ' 0 &rarr; star ' + westEast + ' of meridian)';
   }
   fillFormulaLine(fEls.fB, defPlainAz, defLatexAz, defNoteAz, subPlainAz, subLatexAz, subNoteAz);
@@ -4559,8 +4670,6 @@ function init(){
   wireDisplayToggles();
   wireOriginToggles();
   wireDialTooltip();
-  wireStripModeToggle();
-  wireOriginStripModeToggle();
   wirePlayback();
   wireOriginDate();
   wireOriginTimeline();

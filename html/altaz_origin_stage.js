@@ -71,7 +71,12 @@
        detachPointer(),      // undo attachPointer
        resetView(),          // restore both cameras' default orbit + renders once
        setVisible(bool),     // when false, render() is a no-op (host is hiding this stage)
-       dispose()             // free all GPU resources + remove listeners
+       dispose(),            // free all GPU resources + remove listeners
+       getViewportRects()    // -> {layout:"row"|"col", L:{x,y,w,h}, R:{x,y,w,h}} -- each
+                             // viewport's rect in the SAME CSS-pixel, top-left-origin frame
+                             // the host's own overlay canvas uses (see resize()'s own
+                             // comment); lets the host draw a 2D-canvas inset (e.g. the
+                             // Analemma) positioned against either viewport
      }
 
    PHYSICS — CLOSED-FORM, CIRCULAR ORBIT, MEAN SUN (a deliberate teaching
@@ -1278,6 +1283,25 @@ export function createOriginStage(deps) {
     renderer.render(sceneR, camR);
   }
 
+  /* Exposes each viewport's rect in the SAME coordinate frame the host page's
+     own CSS-pixel canvases use (top-left origin, y growing downward) -- the
+     host's overlay canvas is sized from the exact same (cssW,cssH) this
+     module's own resize() was last called with (see altaz_radec.html's
+     doGLResize()/finishSplitterResize()), so a rect returned here can be used
+     directly to position a 2D-canvas overlay (e.g. the Analemma inset) over
+     either viewport with no further conversion. rectL/rectR are stored in
+     WebGL's own bottom-left-origin convention (see resize() above); L is
+     always the "primary" viewport and always starts at canvas y=0 in BOTH
+     the "row" (left half, full height) and "col" (top half) layouts, so its
+     converted top is always 0 -- flip is still applied generally below so
+     this stays correct if that ever changes. */
+  function toCssRect(r) {
+    return { x: r.x, y: canvasH - (r.y + r.h), w: r.w, h: r.h };
+  }
+  function getViewportRects() {
+    return { layout: layout, L: toCssRect(rectL), R: toCssRect(rectR) };
+  }
+
   function resetView() {
     camState.L.theta = CAM_L_DEFAULT.theta; camState.L.phi = CAM_L_DEFAULT.phi;
     camState.L.radius = computeDefaultRadius(camL.aspect, camL.fov, CONTENT_RADIUS_L, CAM_L_DEFAULT.radius);
@@ -1365,6 +1389,6 @@ export function createOriginStage(deps) {
   return {
     setDate: setDate, getState: getState, setOptions: setOptions, resize: resize, render: render,
     attachPointer: attachPointer, detachPointer: detachPointer, resetView: resetView,
-    setVisible: setVisible, dispose: dispose
+    setVisible: setVisible, dispose: dispose, getViewportRects: getViewportRects
   };
 }
