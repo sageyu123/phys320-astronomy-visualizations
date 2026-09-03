@@ -515,7 +515,7 @@
           <label class="field-label" for="decRange">Declination <span class="math" data-latex="\delta">&delta;</span></label>
           <div class="field-row">
             <div class="decl-slider-wrap">
-              <input type="range" id="decRange" min="-90" max="90" step="0.1" value="38.78" list="declLimitTicks">
+              <input type="range" id="decRange" min="-90" max="90" step="0.1" value="38.78">
               <div class="decl-ticks" id="declTicks" aria-hidden="true"></div>
               <datalist id="declLimitTicks"></datalist>
             </div>
@@ -532,7 +532,7 @@
           <label class="field-label" for="doyRange">Day of year</label>
           <div class="field-row">
             <div class="doy-slider-wrap">
-              <input type="range" id="doyRange" min="0" max="365" step="0.5" value="79" list="doyCardinalTicks">
+              <input type="range" id="doyRange" min="0" max="365" step="0.5" value="79">
               <div class="doy-ticks" id="doyTicks" aria-hidden="true"></div>
               <datalist id="doyCardinalTicks"></datalist>
             </div>
@@ -1972,8 +1972,12 @@ function rebuildDiurnalCircle(){
     const poleSign = state.phi >= 0 ? 1 : -1;
     [ { delta: poleSign*lim.up, tangentH: 180, text: "circumpolar above" },
       { delta: -poleSign*lim.up, tangentH: 0, text: "never rises below" } ].forEach(function(def){
+      // when the star sits exactly on this limit its own circle IS the ring:
+      // draw one line, not two
+      if(Math.abs(state.dec - def.delta) < 0.05) return;
       const ringPts = [];
-      for(let i=0;i<=n;i++) ringPts.push(toThreeVec3(eqToVec((i/n)*360, def.delta, state.phi)));
+      // same 1.008 lift as the star's path so the two coincide when delta matches
+      for(let i=0;i<=n;i++) ringPts.push(toThreeVec3(eqToVec((i/n)*360, def.delta, state.phi)).multiplyScalar(1.008));
       const ringLine = makeFatLineRaw(COLORI.text, 0.35, 1.25, true, ringPts.length);
       ringLine.material.dashSize = 0.05;
       ringLine.material.gapSize = 0.035;
