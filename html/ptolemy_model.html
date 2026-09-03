@@ -355,7 +355,7 @@
             <span>t = <b id="readoutT" class="tabular">0</b> d</span>
             <span id="lambdaReadout">&lambda; = <b id="readoutLambda" class="tabular">0.0</b>&deg;</span>
             <span id="ddtReadout" style="display:none">d&lambda;/dt = <b class="tabular">0.00</b> &deg;/d</span>
-            <span id="sunReadouts" style="display:none"><span class="math">&delta;&#9737;</span> = <b id="readoutSunDecl" class="tabular">+0.0</b>&deg; &nbsp; noon El (40.7&deg; N) = <b id="readoutNoonEl" class="tabular">49.3</b>&deg;</span>
+            <span id="sunReadouts" style="display:none"><span class="math">&delta;&#9737;</span> = <b id="readoutSunDecl" class="tabular">+0.0</b>&deg; &nbsp; noon El (<b id="readoutLat" class="tabular">40.7&deg; N</b>) = <b id="readoutNoonEl" class="tabular">49.3</b>&deg; &nbsp; EoT = <b id="readoutEoT" class="tabular">+0.0</b> min</span>
             <span id="compareReadouts" style="display:none">&lambda;<sub>geo</sub> = <b id="readoutLambdaGeo" class="tabular">0.0</b>&deg; &nbsp; &lambda;<sub>helio</sub> = <b id="readoutLambdaHelio" class="tabular">0.0</b>&deg; &nbsp; &Delta;&lambda; = <b id="readoutDeltaLambda" class="tabular">0.00</b>&deg;</span>
             <span id="motionBadge" class="pill pill-direct">DIRECT</span>
           </div>
@@ -373,9 +373,11 @@
             <span><i class="swatch" style="background:var(--cyan)"></i>&lambda; heliocentric</span>
           </div>
           <div class="panel-readouts" id="sunYearCaption" style="display:none">equatorial chart &middot; the Sun's yearly path is the ecliptic</div>
+          <div class="panel-readouts" id="analemmaCaption" style="display:none">same clock time every day &middot; figure-8 = declination (up/down) &times; equation of time (left/right)</div>
           <div class="segmented" id="stripModeToggle" role="tablist" aria-label="Strip panel mode">
             <button type="button" data-mode="plot" class="active" role="tab" aria-selected="true">&lambda;&ndash;t plot</button>
             <button type="button" data-mode="atlas" role="tab" aria-selected="false">Sky atlas</button>
+            <button type="button" data-mode="analemma" role="tab" aria-selected="false">Analemma</button>
           </div>
         </div>
         <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
@@ -533,6 +535,23 @@ function eclipticToEquatorial(lambdaDeg){
   return { alpha: alphaDeg / 15, delta: delta };
 }
 
+// Mean longitude L(t): the eccentric tab's uniform angle-about-C, theta = omega*t, expressed
+// in the same zero direction (vernal equinox, lambda=0) as the true longitude lambda(t) --
+// independent of e and lambda_A (only the APPARENT/true longitude depends on those). Pulled out
+// as its own function since the strip/analemma code needs it from a bare sample time t, without
+// recomputing the whole eccentric model.
+function meanLongitudeDeg(t){ return norm360((TAU / PERIOD_SUN) * t * DEG); }
+
+// Equation of time, in degrees: EoT = L - alpha(lambda), wrapped to (-180,180]. This is the
+// classical two-term equation of time in one line -- (L-lambda) is the eccentric's own
+// "equation of center" contribution, (lambda-alpha) is the obliquity's "reduction to the
+// equator" contribution; EoT is their sum. Multiply by 4 (minutes per degree of RA/mean time)
+// for EoT in minutes.
+function equationOfTimeDeg(lambdaDeg, meanLonDeg){
+  const alphaDeg = eclipticToEquatorial(lambdaDeg).alpha * 15;
+  return wrapDiff(meanLonDeg - alphaDeg);
+}
+
 function fmtSigned(v, decimals){
   const s = v.toFixed(decimals);
   return (v >= 0 && s.charAt(0) !== "-") ? "+" + s : s;
@@ -591,11 +610,19 @@ function deriveComparePreset(planet){
   };
 }
 
+// Eccentric (Sun) model. Earth sits off-center from C by e (world-circle radius R=1), along
+// the direction OPPOSITE the apogee longitude lambda_A -- so the circle point AT longitude
+// lambda_A (theta=lambda_A) is the farthest point from Earth, i.e. apogee, and lambda_A+180 is
+// perigee. theta = omega*t is the body's uniform angle about C -- by definition (see
+// meanLongitudeDeg above) this IS the mean longitude L(t); it does not depend on lambda_A,
+// only Earth's position does. The apparent longitude lambda (returned below) is the TRUE
+// longitude: uniform theta viewed from the off-center Earth is exactly what makes it uneven.
 function modelEccentric(t, p){
   const e = p.e;
+  const lamA = p.lambdaA * RAD;
   const w = TAU / PERIOD_SUN;
   const theta = w * t;
-  const earth = { x:-e, y:0 };
+  const earth = { x:-e*Math.cos(lamA), y:-e*Math.sin(lamA) };
   const C = { x:0, y:0 };
   const planet = { x:Math.cos(theta), y:Math.sin(theta) };
   const markers = [];
@@ -603,6 +630,8 @@ function modelEccentric(t, p){
     const a = k * 30 * RAD;
     markers.push({ x:Math.cos(a), y:Math.sin(a) });
   }
+  const apogeeDeg = norm360(p.lambdaA);
+  const perigeeDeg = norm360(p.lambdaA + 180);
   return {
     earth: earth, C: C, Q: null, D: null,
     planet: planet, planetLabel: "Sun",
@@ -611,9 +640,13 @@ function modelEccentric(t, p){
     markers: markers,
     equantHand: null, equantPhi: null,
     lambda: apparentLongitude(earth, planet),
+    L: norm360(theta * DEG), // mean longitude -- see meanLongitudeDeg()
     orbitY: 0, // i=0 for this tab anyway -- flat Sun track
     worldExtent: 1 + e,
-    fastSlowLabels: { fast:{x:-1,y:0}, slow:{x:1,y:0} }
+    fastSlowLabels: {
+      fast: { x:Math.cos(perigeeDeg*RAD), y:Math.sin(perigeeDeg*RAD) },
+      slow: { x:Math.cos(apogeeDeg*RAD), y:Math.sin(apogeeDeg*RAD) }
+    }
   };
 }
 
@@ -757,14 +790,18 @@ const TAB_CONFIG = {
     windowDays: 4 * PERIOD_SUN,
     inclinationDeg: 0, // the Sun defines the ecliptic -- its atlas track is a straight line
     computeModel: modelEccentric,
-    params: [ { key:"e", label:'Eccentricity <span class="math">e</span>', min:0, max:0.40, step:0.01, def:0.20 } ],
+    params: [
+      { key:"e", label:'Eccentricity <span class="math">e</span>', min:0, max:0.40, step:0.001, def:0.20 },
+      { key:"lambdaA", label:'Apogee longitude <span class="math">&lambda;<sub>A</sub></span>', min:0, max:360, step:1, def:102 }
+    ],
     displayDefaults: { trace:false, markers:true, sight:true, labels:true },
     aboutTitle: "The Eccentric — an off-center circle",
     aboutHTML:
       '<p>The Sun drifts through the zodiac at an uneven rate: Hipparchus knew the seasons have unequal lengths (spring &asymp; 94.5 days, autumn &asymp; 88.5). Yet Greek astronomy demanded perfectly uniform circular motion.</p>' +
       '<p>The eccentric keeps the motion uniform on the circle &mdash; but displaces Earth from the circle\'s center by a distance <span class="math">e</span>. Seen from Earth, the Sun then appears fastest at perigee and slowest at apogee, with no actual change of speed.</p>' +
       '<p>Hipparchus (&sim;150 BCE) fit the Sun with <span class="math">e</span> &asymp; 1/24 of the radius; the slider here is exaggerated so the effect is easy to see.</p>' +
-      '<p>In an equatorial chart the Sun\'s yearly path is the ecliptic, a sine wave 23.4&deg; high: north in summer, south in winter &mdash; the seasons, and the reason the noon Sun stands 47&deg; higher in June than in December. The uneven spacing of the dots along the wave is the eccentric at work: the Sun really does cross the summer half of the sky more slowly than the winter half &mdash; a few days\' difference in the lengths of the seasons that Hipparchus measured and this device reproduces.</p>'
+      '<p>In an equatorial chart the Sun\'s yearly path is the ecliptic, a sine wave 23.4&deg; high: north in summer, south in winter &mdash; the seasons, and the reason the noon Sun stands 47&deg; higher in June than in December. The uneven spacing of the dots along the wave is the eccentric at work: the Sun really does cross the summer half of the sky more slowly than the winter half &mdash; a few days\' difference in the lengths of the seasons that Hipparchus measured and this device reproduces.</p>' +
+      '<p>Photograph the Sun at the same clock time every few days and it traces a figure 8 &mdash; the analemma. Up and down is the declination (the obliquity); left and right is the equation of time, the Sun running ahead of or behind the clock. Half of that comes from this very device: the eccentric makes the true Sun move non-uniformly along the ecliptic while clocks keep mean time. Set <span class="math">e</span> to the real 0.017 for the real analemma &mdash; with the exaggerated default the loop grows accordingly &mdash; and move the clock time to see the 8 tilt, as in a 9 a.m. or 3 p.m. photograph.</p>'
   },
   epicycle: {
     label: "Epicycle",
@@ -855,7 +892,7 @@ const state = {
   speed: 25,            // days per second
   params: {},
   display: {},
-  stripMode: "plot",    // "plot" | "atlas" -- persists across tab switches
+  stripMode: "plot",    // "plot" | "atlas" | "analemma" (eccentric tab only) -- persists across tab switches
   selectedPlanet: null, // planet key, or "custom", for tabs with a Planet selector; else null
   windowDays: 1800,     // dynamic: from the selected planet's preset, or the tab's static default
   inclinationDeg: 0,    // dynamic: ditto
@@ -867,10 +904,14 @@ const state = {
   dLambdaDt: 0,         // computed from consecutive STRIP grid samples (uniform spacing)
   currentModel: null,   // computeModel(tab, t, params) at the exact continuous t -- what gets drawn
   stripDirty: true,
+  // eccentric tab's analemma controls -- display-only (drive the strip's Az/El projection),
+  // never reset on tab switch or model-param changes; changing either only marks stripDirty.
+  clockTime: 12.00,     // local mean clock time, hours, at which the analemma is "photographed"
+  latPhi: LAT_NEWARK,   // observer latitude, degrees N -- also feeds the noon-El header readout
   mainW: 0, mainH: 0, stripW: 0, stripH: 0,
   _lastT: null, _lastDirect: null, _lastLambdaStr: null, _lastDdtStr: null,
   _lastGeoStr: null, _lastHelioStr: null, _lastDeltaStr: null,
-  _lastSunDeclStr: null, _lastNoonElStr: null,
+  _lastSunDeclStr: null, _lastNoonElStr: null, _lastLatStr: null, _lastEoTStr: null,
   // splitter-drag flag (Task A) -- this page's own resize path is cheap (2D
   // canvas only), so nothing gates on it besides the splitter's own rAF
   // coalescing, but it's kept for parity/testability with the sky page
@@ -998,7 +1039,8 @@ function cacheEls(){
    "paramsFields","displayCard","aboutCard","aboutTitle","aboutBody",
    "mainPanelTitle","readoutT","readoutLambda","ddtReadout","motionBadge",
    "lambdaReadout","compareReadouts","readoutLambdaGeo","readoutLambdaHelio","readoutDeltaLambda",
-   "sunReadouts","readoutSunDecl","readoutNoonEl","sunYearCaption",
+   "sunReadouts","readoutSunDecl","readoutNoonEl","readoutLat","readoutEoT",
+   "sunYearCaption","analemmaCaption",
    "toggleMarkers","toggleVectors","stripLegend","stripModeToggle",
    "mainCanvas","stripCanvas"].forEach(function(id){ els[id] = document.getElementById(id); });
 }
@@ -1078,11 +1120,114 @@ function buildParamsCard(){
       field.appendChild(note);
       els.eccNote = note;
     }
+
+    // eccentric tab: real/Hipparchus eccentricity presets, right under the e slider
+    if(state.tab === "eccentric" && p.key === "e"){
+      const presetField = document.createElement("div");
+      presetField.className = "field";
+      presetField.style.marginTop = "-4px";
+      const presetRow = document.createElement("div");
+      presetRow.style.display = "flex";
+      presetRow.style.gap = "6px";
+      [
+        { text:"real e = 0.017", value:0.017 },
+        { text:"Hipparchus e = 0.042", value:0.042 }
+      ].forEach(function(preset){
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn";
+        b.style.flex = "1 1 0";
+        b.style.fontSize = "11px";
+        b.style.padding = "0 6px";
+        b.textContent = preset.text;
+        b.addEventListener("click", function(){
+          range.value = preset.value;
+          num.value = fmtNum(preset.value, p.step);
+          commit(preset.value);
+        });
+        presetRow.appendChild(b);
+      });
+      presetField.appendChild(presetRow);
+      container.appendChild(presetField);
+    }
   });
 
   if(cfg.planets){
     applyPlanetPreset(cfg.defaultPlanet || "mars", { skipClear:true });
   }
+
+  if(state.tab === "eccentric"){
+    buildEccentricExtraControls(container);
+  }
+}
+
+// Eccentric tab only: Clock time + Latitude controls for the Analemma chart. These are
+// display-only -- they never touch state.params (no model-geometry reset, no markCustom),
+// changing either only marks the strip dirty and re-renders it.
+function buildEccentricExtraControls(container){
+  buildCustomSliderField(container, {
+    label: "Clock time", value: state.clockTime, min:0, max:24, step:0.25, unit:"h",
+    onChange: function(v){ state.clockTime = v; state.stripDirty = true; render(); }
+  });
+  buildCustomSliderField(container, {
+    label: 'Latitude <span class="math">&phi;</span>', value: state.latPhi, min:-90, max:90, step:0.1, unit:"",
+    onChange: function(v){ state.latPhi = v; state.stripDirty = true; render(); }
+  });
+}
+
+// Generic slider+number field, for controls that live outside state.params (their commit
+// path is caller-supplied via opts.onChange, instead of the model-param commit() used by
+// the per-tab cfg.params loop above).
+function buildCustomSliderField(container, opts){
+  const field = document.createElement("div");
+  field.className = "field";
+
+  const label = document.createElement("label");
+  label.className = "field-label";
+  label.innerHTML = opts.label;
+
+  const row = document.createElement("div");
+  row.className = "field-row";
+
+  const range = document.createElement("input");
+  range.type = "range"; range.min = opts.min; range.max = opts.max; range.step = opts.step;
+  range.value = opts.value;
+
+  const num = document.createElement("input");
+  num.type = "number"; num.className = "num-input";
+  num.min = opts.min; num.max = opts.max; num.step = opts.step;
+  num.value = fmtNum(opts.value, opts.step);
+
+  function commit(v){ opts.onChange(v); }
+
+  range.addEventListener("input", function(){
+    const v = parseFloat(range.value);
+    num.value = fmtNum(v, opts.step);
+    commit(v);
+  });
+  num.addEventListener("input", function(){
+    const v = parseFloat(num.value);
+    if(!isNaN(v)){ range.value = clamp(v, opts.min, opts.max); commit(v); }
+  });
+  num.addEventListener("blur", function(){
+    let v = parseFloat(num.value);
+    if(isNaN(v)) v = opts.value;
+    v = clamp(v, opts.min, opts.max);
+    num.value = fmtNum(v, opts.step);
+    range.value = v;
+    commit(v);
+  });
+
+  row.appendChild(range); row.appendChild(num);
+  if(opts.unit){
+    const unit = document.createElement("span");
+    unit.className = "unit";
+    unit.textContent = opts.unit;
+    row.appendChild(unit);
+  }
+  field.appendChild(label); field.appendChild(row);
+  container.appendChild(field);
+  return { range:range, num:num };
 }
 
 function buildPlanetSelect(container, cfg){
@@ -1202,7 +1347,10 @@ function updateEccentricAtlasUI(){
   if(els.sunReadouts) els.sunReadouts.style.display = isEcc ? "" : "none";
   const atlasBtn = els.stripModeToggle.querySelector('[data-mode="atlas"]');
   if(atlasBtn) atlasBtn.textContent = isEcc ? "Sun's year" : "Sky atlas";
+  const analemmaBtn = els.stripModeToggle.querySelector('[data-mode="analemma"]');
+  if(analemmaBtn) analemmaBtn.style.display = isEcc ? "" : "none";
   if(els.sunYearCaption) els.sunYearCaption.style.display = (isEcc && state.stripMode === "atlas") ? "" : "none";
+  if(els.analemmaCaption) els.analemmaCaption.style.display = (isEcc && state.stripMode === "analemma") ? "" : "none";
 }
 
 function buildAboutCard(){
@@ -1358,10 +1506,19 @@ function switchTab(tabId){
   els.compareReadouts.style.display = isCompare ? "" : "none";
   els.ddtReadout.style.display = isEquant ? "" : "none"; // structural: was previously never un-hidden anywhere
   if(tabId === "eccentric"){
-    // the Sun's stage opens on its "Sun's year" chart (the lambda-t plot is one click away)
-    state.stripMode = "atlas";
+    // the Sun's stage opens on its Analemma chart (Sun's year / lambda-t plot are one click away)
+    state.stripMode = "analemma";
     els.stripModeToggle.querySelectorAll("button").forEach(function(b){
-      const active = b.dataset.mode === "atlas";
+      const active = b.dataset.mode === "analemma";
+      b.classList.toggle("active", active);
+      b.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    state.stripDirty = true;
+  } else if(state.stripMode === "analemma"){
+    // other tabs have no Analemma button -- fall back to the lambda-t plot
+    state.stripMode = "plot";
+    els.stripModeToggle.querySelectorAll("button").forEach(function(b){
+      const active = b.dataset.mode === "plot";
       b.classList.toggle("active", active);
       b.setAttribute("aria-selected", active ? "true" : "false");
     });
@@ -2442,6 +2599,194 @@ function drawSunYearMode(ctx, w, h){
   }
 }
 
+/* ---- Analemma: eccentric tab only. For a FIXED clock time and latitude, the figure-8 the
+   true Sun traces in Az/El over one year. Declination (obliquity) drives the up/down
+   excursion; the equation of time -- L(t) - alpha(lambda(t)), which vanishes identically only
+   if lambda were uniform -- drives the hour-angle shift and hence the left/right excursion.
+   This is the eccentric's own non-uniform lambda(t) made visible as an observable trace. ---- */
+const ANALEMMA_CARDINALS = [
+  { lambda:0,   label:"Mar 20 · equinox" },
+  { lambda:90,  label:"Jun 21 · solstice" },
+  { lambda:180, label:"Sep 22 · equinox" },
+  { lambda:270, label:"Dec 21 · solstice" }
+];
+const ANALEMMA_CREAM = "#e9debd";
+
+// hour angle h (deg, positive west/afternoon) at clock time T (hours) for a Sun at true
+// longitude lambda whose mean longitude (at the SAME instant) is meanLonDeg.
+function sunHourAngleDeg(lambdaDeg, meanLonDeg, clockHours){
+  return 15*(clockHours - 12) + equationOfTimeDeg(lambdaDeg, meanLonDeg);
+}
+
+// Standard hour-angle -> Alt/Az (Duffett-Smith form); azimuth measured from North through East.
+function altAzFromHourAngle(hDeg, deltaDeg, phiDeg){
+  const H = hDeg*RAD, dec = deltaDeg*RAD, phi = phiDeg*RAD;
+  const sinEl = Math.sin(dec)*Math.sin(phi) + Math.cos(dec)*Math.cos(phi)*Math.cos(H);
+  const el = Math.asin(clamp(sinEl, -1, 1));
+  const cosEl = Math.cos(el);
+  let az = 0;
+  if(Math.abs(cosEl) > 1e-9){
+    const cosAz = clamp((Math.sin(dec) - Math.sin(phi)*sinEl) / (Math.cos(phi)*cosEl), -1, 1);
+    const acosDeg = Math.acos(cosAz) * DEG;
+    az = (Math.sin(H) < 0) ? acosDeg : (360 - acosDeg);
+  }
+  return { az: az, el: el*DEG };
+}
+
+// One analemma sample: true longitude lambda + the mean longitude AT THE SAME INSTANT ->
+// Az/El at the fixed clock time / latitude currently dialed in.
+function analemmaAzEl(lambdaDeg, meanLonDeg){
+  const eq = eclipticToEquatorial(lambdaDeg);
+  const h = sunHourAngleDeg(lambdaDeg, meanLonDeg, state.clockTime);
+  return altAzFromHourAngle(h, eq.delta, state.latPhi);
+}
+
+function padAxisRange(lo, hi, minSpan){
+  let span = hi - lo;
+  if(span < minSpan){
+    const c = (lo + hi) / 2;
+    lo = c - minSpan/2; hi = c + minSpan/2; span = minSpan;
+  }
+  const pad = span * 0.08;
+  return { lo: lo - pad, hi: hi + pad };
+}
+function niceAxisStep(span){ return span <= 40 ? 5 : 10; }
+
+function drawAnalemmaMode(ctx, w, h){
+  const padL = 38, padR = 10, padT = 16, padB = 26;
+  const plotL = padL, plotR = w-padR, plotT = padT, plotB = h-padB;
+  const plotW = Math.max(1, plotR-plotL), plotH = Math.max(1, plotB-plotT);
+
+  // most recent 365.25 days -- one loop of the trail, not several overlapping ones
+  const tMin = state.t - PERIOD_SUN;
+  const all = state.stripHistory;
+  const pts = [];
+  for(let i=0;i<all.length;i++){
+    if(all[i].t < tMin) continue;
+    const s = all[i];
+    const altaz = analemmaAzEl(s.lambda, meanLongitudeDeg(s.t));
+    pts.push({ t:s.t, lambda:s.lambda, az:altaz.az, el:altaz.el });
+  }
+
+  const cm = state.currentModel;
+  const cur = cm ? analemmaAzEl(cm.lambda, cm.L) : null;
+
+  // auto-range from the trail AND the current point, so the live dot is always in-frame
+  let azLo=Infinity, azHi=-Infinity, elLo=Infinity, elHi=-Infinity;
+  pts.forEach(function(p){
+    if(p.az<azLo) azLo=p.az; if(p.az>azHi) azHi=p.az;
+    if(p.el<elLo) elLo=p.el; if(p.el>elHi) elHi=p.el;
+  });
+  if(cur){
+    if(cur.az<azLo) azLo=cur.az; if(cur.az>azHi) azHi=cur.az;
+    if(cur.el<elLo) elLo=cur.el; if(cur.el>elHi) elHi=cur.el;
+  }
+  if(azLo > azHi){ azLo = 170; azHi = 190; elLo = 30; elHi = 50; } // no data at all yet (shouldn't happen post-seed)
+
+  const azR = padAxisRange(azLo, azHi, 20);
+  const elR = padAxisRange(elLo, elHi, 20);
+  function xOf(az){ return plotL + ((az - azR.lo) / (azR.hi - azR.lo || 1)) * plotW; }
+  function yOf(el){ return plotB - ((el - elR.lo) / (elR.hi - elR.lo || 1)) * plotH; }
+
+  // gridlines + tick labels
+  const azStep = niceAxisStep(azR.hi - azR.lo);
+  const elStep = niceAxisStep(elR.hi - elR.lo);
+  ctx.font = "9px Inter, sans-serif";
+  ctx.lineWidth = 1;
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for(let v=Math.ceil(azR.lo/azStep)*azStep; v<=azR.hi; v+=azStep){
+    const x = xOf(v);
+    ctx.strokeStyle = hexAlpha(COLORS.border, 0.35);
+    ctx.beginPath(); ctx.moveTo(x,plotT); ctx.lineTo(x,plotB); ctx.stroke();
+    ctx.fillStyle = COLORS.muted;
+    ctx.fillText(Math.round(v)+"°", x, plotB+3);
+  }
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for(let v=Math.ceil(elR.lo/elStep)*elStep; v<=elR.hi; v+=elStep){
+    const y = yOf(v);
+    ctx.strokeStyle = hexAlpha(COLORS.border, 0.35);
+    ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
+    ctx.fillStyle = COLORS.muted;
+    ctx.fillText(Math.round(v)+"°", plotL-4, y);
+  }
+
+  // axis labels
+  ctx.font = "9px Inter, sans-serif";
+  ctx.fillStyle = hexAlpha(COLORS.muted, 0.8);
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.fillText("azimuth (°)", (plotL+plotR)/2, h-3);
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("elevation (°)", 3, 2);
+
+  // horizon (El=0), muted, only when in range
+  if(elR.lo <= 0 && elR.hi >= 0){
+    const y0 = yOf(0);
+    ctx.strokeStyle = hexAlpha(COLORS.muted, 0.5);
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(plotL,y0); ctx.lineTo(plotR,y0); ctx.stroke();
+    ctx.font = "9px Inter, sans-serif";
+    ctx.fillStyle = hexAlpha(COLORS.muted, 0.8);
+    ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.fillText("horizon", plotL+3, y0-2);
+  }
+
+  // thin cream trail + dots every dotDt (absolute-time anchored, alpha fading with age)
+  const n = pts.length;
+  const dotDt = 3 * (state.windowDays / 900);
+  if(n > 1){
+    ctx.strokeStyle = hexAlpha(ANALEMMA_CREAM, 0.75);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const x = xOf(pts[i].az), y = yOf(pts[i].el);
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+
+    for(let i=1;i<n;i++){
+      const p0=pts[i-1], p1=pts[i];
+      if(Math.floor(p1.t/dotDt) !== Math.floor(p0.t/dotDt)){
+        const age = (state.t - p1.t) / PERIOD_SUN; // 0 = fresh, ~1 = a year old
+        const alpha = clamp(1 - age, 0.15, 0.95);
+        ctx.fillStyle = hexAlpha(ANALEMMA_CREAM, alpha);
+        ctx.beginPath(); ctx.arc(xOf(p1.az), yOf(p1.el), 1.6, 0, TAU); ctx.fill();
+      }
+    }
+  }
+
+  // four cardinal dates -- ringed markers, nearest sample by ecliptic longitude
+  if(n){
+    ANALEMMA_CARDINALS.forEach(function(cp){
+      let best = null, bestDiff = Infinity;
+      for(let i=0;i<n;i++){
+        const diff = Math.abs(wrapDiff(pts[i].lambda - cp.lambda));
+        if(diff < bestDiff){ bestDiff = diff; best = pts[i]; }
+      }
+      if(!best) return;
+      const x = xOf(best.az), y = yOf(best.el);
+      ctx.strokeStyle = hexAlpha(COLORS.muted, 0.85);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(x,y,4,0,TAU); ctx.stroke();
+      ctx.font = "10px Inter, sans-serif";
+      ctx.fillStyle = COLORS.muted;
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText(cp.label, x, y-6);
+    });
+  }
+
+  // current Sun -- glow + 3px amber dot
+  if(cur){
+    const x = xOf(cur.az), y = yOf(cur.el);
+    drawGlow(ctx, glowSprite, x, y, 18);
+    ctx.fillStyle = COLORS.amber;
+    ctx.beginPath(); ctx.arc(x,y,3,0,TAU); ctx.fill();
+  }
+
+  ctx.strokeStyle = COLORS.border;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(plotL+0.5, plotT+0.5, plotW-1, plotH-1);
+}
+
 function drawStrip(){
   const canvas = els.stripCanvas;
   const ctx = canvas.getContext("2d");
@@ -2449,7 +2794,9 @@ function drawStrip(){
   const h = state.stripH || canvas.clientHeight;
   ctx.clearRect(0,0,w,h);
   if(w<=0 || h<=0) return;
-  if(state.stripMode === "atlas"){
+  if(state.stripMode === "analemma" && state.tab === "eccentric"){
+    drawAnalemmaMode(ctx, w, h);
+  } else if(state.stripMode === "atlas"){
     if(state.tab === "eccentric") drawSunYearMode(ctx, w, h);
     else drawAtlasMode(ctx, w, h);
   } else drawPlotMode(ctx, w, h);
@@ -2590,9 +2937,17 @@ function updateReadouts(){
       const eq = eclipticToEquatorial(m.lambda);
       const declStr = fmtSigned(eq.delta, 1);
       if(state._lastSunDeclStr !== declStr){ els.readoutSunDecl.textContent = declStr; state._lastSunDeclStr = declStr; }
-      const noonEl = 90 - Math.abs(LAT_NEWARK - eq.delta);
+
+      const latStr = Math.abs(state.latPhi).toFixed(1) + "° " + (state.latPhi >= 0 ? "N" : "S");
+      if(state._lastLatStr !== latStr){ els.readoutLat.textContent = latStr; state._lastLatStr = latStr; }
+
+      const noonEl = 90 - Math.abs(state.latPhi - eq.delta);
       const noonElStr = noonEl.toFixed(1);
       if(state._lastNoonElStr !== noonElStr){ els.readoutNoonEl.textContent = noonElStr; state._lastNoonElStr = noonElStr; }
+
+      const eotMin = 4 * equationOfTimeDeg(m.lambda, m.L);
+      const eotStr = fmtSigned(eotMin, 1);
+      if(state._lastEoTStr !== eotStr){ els.readoutEoT.textContent = eotStr; state._lastEoTStr = eotStr; }
     }
   }
 }
