@@ -389,8 +389,9 @@
             sector = <b id="vArSector" class="tabular">0.000</b>
           </div>
           <div class="panel-readouts" id="rdHarmonic" style="display:none">
-            custom <span class="math">a</span> = <b id="vHarA" class="tabular">1.30</b> AU &nbsp;
-            <span class="math">P</span> = <b id="vHarPd" class="tabular">365</b> d = <b id="vHarPy" class="tabular">1.000</b> yr &nbsp;
+            custom <span class="math">a</span> = <b id="vHarA" class="tabular">1.50</b> AU &nbsp;
+            <span class="math">e</span> = <b id="vHarE" class="tabular">0.50</b> &nbsp;
+            <span class="math">P</span> = <b id="vHarPd" class="tabular">671.1</b> d = <b id="vHarPy" class="tabular">1.837</b> yr &nbsp;
             <span class="math">P</span>&sup2;/<span class="math">a</span>&sup3; = <b id="vHarCheck" class="tabular">1.000</b>
           </div>
           <div class="panel-readouts" id="rdEquant" style="display:none">
@@ -667,6 +668,7 @@ const PRESETS = [
   { key:"venus",   name:"Venus",         a:0.723, e:0.007 },
   { key:"earth",   name:"Earth",         a:1.000, e:0.017 },
   { key:"mars",    name:"Mars",          a:1.524, e:0.093 },
+  { key:"marsx",   name:"Mars, e exaggerated (0.30)", a:1.524, e:0.30 },
   { key:"jupiter", name:"Jupiter",       a:5.203, e:0.048 },
   { key:"saturn",  name:"Saturn",        a:9.537, e:0.054 },
   { key:"halley",  name:"Halley's comet",a:17.8,  e:0.967 }
@@ -691,6 +693,10 @@ const state = {
   t: 0,
   playing: false,
   speed: 20,
+  custom: { a:1.5, e:0.5 }, // the ONE shared "Custom" planet -- bound to the Custom preset's a/e
+                             // sliders on the Ellipses/Equal-areas/Ptolemy's-shadow tabs AND to
+                             // the "Custom planet a/e" sliders on the Harmonic tab; persists across
+                             // tab switches and playback (never reset by defaultParamsFor()).
   p: {},              // current tab's params (shape varies by tab)
   display: {},        // current tab's display toggles
   stripMode: "",       // current tab's active strip-mode key
@@ -708,8 +714,9 @@ const TAB_LABEL = { ellipse:"Ellipses", areas:"Equal areas", harmonic:"Harmonic 
 const TAB_TINT  = { ellipse:"cyan", areas:"amber", harmonic:"green", equant:"magenta" };
 const TAB_SPEED = { ellipse:20, areas:20, harmonic:30, equant:20 };
 // Whether the current tab's strip chart depends on the playback clock at all -- the harmonic
-// tab's log-log/linear charts are a function only of (customA, view), never of t, so the
-// animation loop must not mark them dirty every frame (that redraw was the main jitter source).
+// tab's log-log/linear charts are a function only of (state.custom.a, view), never of t (the
+// custom planet's period depends on a alone, not e), so the animation loop must not mark them
+// dirty every frame (that redraw was the main jitter source).
 const TAB_STRIP_USES_TIME = { ellipse:true, areas:true, harmonic:false, equant:true };
 
 const STRIP_MODES = {
@@ -763,7 +770,7 @@ const TOGGLE_TIPS = {
   },
   harmonic: {
     labels: 'Names for each planet.',
-    customPlanet: 'An adjustable extra circular orbit, in cyan, obeying the same <span class="math" data-latex="P = a^{3/2}">P = a<sup>3/2</sup></span> relation.'
+    customPlanet: 'The same custom planet as the Custom preset on the other stages — an ellipse with the <span class="math" data-latex="a">a</span> and <span class="math" data-latex="e">e</span> you set; its period depends on <span class="math" data-latex="a">a</span> alone.'
   },
   equant: {
     labels: 'Names for the Sun, the empty focus / equant Q, and both planets.'
@@ -790,7 +797,8 @@ const ABOUT = {
     html:
       '<p>Kepler\'s third law (1619): the square of the orbital period is proportional to the cube of the semi-major axis, <span class="math" data-latex="P">P</span>&sup2; &prop; <span class="math" data-latex="a">a</span>&sup3; — for the Sun\'s planets, <span class="math" data-latex="P">P</span> in years equals <span class="math" data-latex="a">a</span><sup>3/2</sup> in astronomical units.</p>' +
       '<p>Outer planets are not only farther but slower: Saturn at 9.5 AU takes 29.5 years. On a log&ndash;log plot every planet, comet and asteroid falls on one line of slope 3/2.</p>' +
-      '<p>Newton later showed that the constant of proportionality measures the mass of the central body — the same law weighs the Sun, Jupiter from its moons, and distant binary stars.</p>'
+      '<p>Newton later showed that the constant of proportionality measures the mass of the central body — the same law weighs the Sun, Jupiter from its moons, and distant binary stars.</p>' +
+      '<p>Change the custom planet\'s eccentricity and nothing happens to its period: for a given <span class="math" data-latex="a">a</span>, a needle-thin ellipse and a circle take exactly the same time.</p>'
   },
   equant: {
     title: "Ptolemy's Shadow — the equant vs the ellipse",
@@ -812,7 +820,7 @@ function cacheEls(){
    "mainPanelTitle","mainPanelCaption","rdEllipse","rdAreas","rdHarmonic","rdEquant",
    "vEllT","vEllR1","vEllR2","vEllSum","vEllV",
    "vArT","vArR","vArVperp","vArRvperp","vArDadt","vArSector",
-   "vHarA","vHarPd","vHarPy","vHarCheck",
+   "vHarA","vHarE","vHarPd","vHarPy","vHarCheck",
    "vEqLead","vEqDlam","vEqDlamMax","vEqE",
    "stripModeToggle","stripPanelTitle","stripLegend","mainCanvas","stripCanvas"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
@@ -959,11 +967,22 @@ function applyPreset(key){
 }
 
 // Shared a/e preset+slider block used by the Ellipses, Equal areas and Ptolemy's shadow tabs.
+// The "Custom" preset is not a per-tab value -- it IS state.custom, the one shared custom planet
+// that also drives the Harmonic tab's "Custom planet a/e" sliders. Selecting "Custom" here (or
+// moving a slider, which switches the select to Custom) always reads/writes state.custom so the
+// same planet is shown everywhere.
 function buildOrbitControls(container, opts){
   paramWidgets.select = buildPresetSelect(container, {
     value: state.p.preset,
     onChange: function(key){
-      if(key === "custom"){ state.p.preset = "custom"; updateMainPanelTitle(); return; }
+      if(key === "custom"){
+        state.p.preset = "custom";
+        state.p.a = state.custom.a; state.p.e = state.custom.e;
+        syncOrbitSliders();
+        updateMainPanelTitle();
+        onParamsChanged();
+        return;
+      }
       applyPreset(key);
     }
   });
@@ -971,17 +990,17 @@ function buildOrbitControls(container, opts){
     paramWidgets.aW = buildSliderField(container, {
       label: 'Semi-major axis <span class="math" data-latex="a">a</span>', value: state.p.a,
       min:0.2, max:20, step:0.01, unit:"AU",
-      onChange: function(v){ state.p.a = v; markCustom(); onParamsChanged(); }
+      onChange: function(v){ state.p.a = v; state.custom.a = v; markCustom(); onParamsChanged(); }
     });
   }
   paramWidgets.eW = buildSliderField(container, {
     label: 'Eccentricity <span class="math" data-latex="e">e</span>', value: state.p.e,
     min:0, max:0.95, step:0.001,
-    onChange: function(v){ state.p.e = v; markCustom(); onParamsChanged(); }
+    onChange: function(v){ state.p.e = v; state.custom.e = v; markCustom(); onParamsChanged(); }
   });
   if(opts.quickPresets){
     buildQuickPresetRow(container, opts.quickPresets, function(v){
-      state.p.e = v; markCustom();
+      state.p.e = v; state.custom.e = v; markCustom();
       if(paramWidgets.eW){ paramWidgets.eW.range.value = v; paramWidgets.eW.num.value = fmtNum(v, paramWidgets.eW.range.step); }
       onParamsChanged();
     });
@@ -1027,10 +1046,17 @@ function buildHarmonicParams(c){
   field.appendChild(label); field.appendChild(seg);
   c.appendChild(field);
 
+  // Bound to the shared state.custom -- the same planet as the Custom preset on the other
+  // stages. Editing either slider here changes the Custom preset everywhere, and vice versa.
   paramWidgets.customAW = buildSliderField(c, {
-    label: 'Custom planet <span class="math" data-latex="a">a</span>', value: state.p.customA,
+    label: 'Custom planet <span class="math" data-latex="a">a</span>', value: state.custom.a,
     min:0.2, max:20, step:0.01, unit:"AU",
-    onChange: function(v){ state.p.customA = v; clearTrail("custom"); updateFormulasCard(); render(); }
+    onChange: function(v){ state.custom.a = v; clearTrail("custom"); updateFormulasCard(); state.stripDirty = true; render(); }
+  });
+  paramWidgets.customEW = buildSliderField(c, {
+    label: 'Custom planet <span class="math" data-latex="e">e</span>', value: state.custom.e,
+    min:0, max:0.95, step:0.001,
+    onChange: function(v){ state.custom.e = v; clearTrail("custom"); updateFormulasCard(); state.stripDirty = true; render(); }
   });
 
   const note = document.createElement("div");
@@ -1056,10 +1082,7 @@ function buildEquantParams(c){
     b.addEventListener("click", onClick);
     row.appendChild(b);
   }
-  mkQuickBtn("Exaggerated (e = 0.30)", function(){
-    state.p.preset = "custom"; state.p.e = 0.30;
-    syncOrbitSliders(); updateMainPanelTitle(); onParamsChanged();
-  });
+  mkQuickBtn("Exaggerated (e = 0.30)", function(){ applyPreset("marsx"); });
   mkQuickBtn("Mars (e = 0.093)", function(){ applyPreset("mars"); });
   field.appendChild(row);
   c.appendChild(field);
@@ -1337,7 +1360,7 @@ function updateAreasFormulas(){
 // time), so these are the same every frame while the slider is untouched.
 function updateHarmonicFormulas(){
   if(!fEls || !fEls.fA) return;
-  const a = state.p.customA, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
+  const a = state.custom.a, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
   const aStr = a.toFixed(2), PyStr = Py.toFixed(3), PdStr = Pd.toFixed(1);
   const P2Str = (Py*Py).toFixed(3);
   const a3Str = Math.pow(a,3).toFixed(3);
@@ -1464,17 +1487,18 @@ function wireTabs(){
   });
 }
 
+// Ellipses, Equal-areas and Ptolemy's-shadow all open on the "Custom" preset, which is the ONE
+// shared custom planet (state.custom) -- so its a/e are read live here, not hard-coded, letting a
+// change made on any of these tabs (or on the Harmonic tab's own custom-planet sliders) show up
+// the next time any of them is (re)entered. state.custom itself defaults to a=1.5, e=0.5.
 function defaultParamsFor(tab){
   if(tab === "ellipse" || tab === "areas"){
-    const base = { preset:"custom", a:1.5, e:0.5 };
+    const base = { preset:"custom", a:state.custom.a, e:state.custom.e };
     if(tab === "areas"){ base.k = 12; base.n = 4; }
     return base;
   }
-  if(tab === "harmonic") return { view:"all", customA:1.3 };
-  if(tab === "equant"){
-    const mars = presetByKey("mars");
-    return { preset:"custom", a:mars.a, e:0.30 }; // "Exaggerated (e = 0.30)" default -- see buildEquantParams
-  }
+  if(tab === "harmonic") return { view:"all" };
+  if(tab === "equant") return { preset:"marsx", a:1.524, e:0.30 }; // the comparison stays readable; Mars and Custom are one click away
   return {};
 }
 
@@ -2169,7 +2193,7 @@ function drawHarmonicMain(ctx,w,h){
   if(customStyle.show){
     ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.6*customStyle.alpha);
     ctx.lineWidth = 1.5*customStyle.mul;
-    drawEllipsePath(ctx, toScreen, state.p.customA, 0);
+    drawEllipsePath(ctx, toScreen, state.custom.a, state.custom.e);
   }
 
   // Sun
@@ -2200,7 +2224,7 @@ function drawHarmonicMain(ctx,w,h){
   });
 
   if(customStyle.show){
-    const o = computeOrbit(state.p.customA, 0, state.t);
+    const o = computeOrbit(state.custom.a, state.custom.e, state.t);
     pushTrail("custom", o.x, o.y, o.nu);
     drawTrail(ctx, toScreen, "custom", o.nu, COLORS.cyan);
     const s = toScreen({x:o.x,y:o.y});
@@ -2209,7 +2233,7 @@ function drawHarmonicMain(ctx,w,h){
     ctx.beginPath(); ctx.arc(s.x,s.y,5.5,0,TAU); ctx.fill();
 
     if(labelsOn()){
-      if(view === "inner" || state.p.customA >= threshold){
+      if(view === "inner" || state.custom.a >= threshold){
         moving.push({ key:"custom", name:"custom", color:COLORS.cyan, sx:s.x, sy:s.y });
       }
       if(view === "all") legendItems.push({ name:"custom", color:COLORS.cyan });
@@ -2663,7 +2687,7 @@ function drawHarmonicStrip(ctx,w,h){
       }
     });
 
-    const ca = state.p.customA, cla=Math.log10(ca), clp=1.5*cla;
+    const ca = state.custom.a, cla=Math.log10(ca), clp=1.5*cla;
     const cs = { x:xOf(cla), y:yOf(clp) };
     drawGlow(ctx, glowSpriteCyan, cs.x, cs.y, 16);
     ctx.fillStyle = COLORS.cyan;
@@ -2697,7 +2721,7 @@ function drawHarmonicStrip(ctx,w,h){
       ctx.beginPath(); ctx.arc(s.x,s.y,faded?3:4,0,TAU); ctx.fill();
       labelPts.push({ name:b.name, color:color, x:s.x, y:s.y });
     });
-    const ca = state.p.customA;
+    const ca = state.custom.a;
     const cs = { x:xOf(ca), y:yOf(Math.pow(ca,1.5)) };
     ctx.fillStyle = COLORS.cyan;
     ctx.beginPath(); ctx.arc(cs.x,cs.y,4.5,0,TAU); ctx.fill();
@@ -2799,9 +2823,10 @@ function updateReadouts(){
     setText(els.vArDadt, "dadt", o.dAdt.toFixed(6));
     setText(els.vArSector, "sector", (state._lastSectorArea||0).toFixed(3));
   } else if(state.tab === "harmonic"){
-    const a = p.customA, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
-    const check = (Py*Py)/(a*a*a);
+    const a = state.custom.a, e = state.custom.e, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
+    const check = (Py*Py)/(a*a*a); // = 1 always -- P = a^1.5 regardless of e
     setText(els.vHarA, "ha", a.toFixed(2));
+    setText(els.vHarE, "he", e.toFixed(2));
     setText(els.vHarPd, "hpd", Pd.toFixed(1));
     setText(els.vHarPy, "hpy", Py.toFixed(3));
     setText(els.vHarCheck, "hchk", check.toFixed(3));
