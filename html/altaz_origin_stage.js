@@ -118,6 +118,7 @@ const DEG = 180 / Math.PI;
 const RAD = Math.PI / 180;
 const CIRCLE_N = 96;   // sample count for static great/small circles
 const ARC_N = 64;      // sample count for the dynamic teaching arcs
+const HOUR_CIRCLE_N = 128; // sample count for the Sun's dynamic hour-circle (dashed, full great circle)
 
 const EPS_DEG = 23.44;
 const EPS = EPS_DEG * RAD;
@@ -628,6 +629,14 @@ export function createOriginStage(deps) {
     ncpLabel = registerLabel(makeTextSprite("NCP", COLOR_HEX.magenta, { pixelHeight: 12 }), labelsL);
     labelsOnlyGroupL.add(ncpLabel);
 
+    // "Sun" label just above the (fixed, origin-centered) Sun sphere -- static,
+    // "labels"-gated only.
+    {
+      const l = registerLabel(makeTextSprite("Sun", COLOR_HEX.amber, { pixelHeight: 12, upright: true }), labelsL);
+      setLabelPos(l, 0, 0.11, 0);
+      labelsOnlyGroupL.add(l);
+    }
+
     // dynamic: Earth->Sun thin amber line
     earthSunLineObj = thinSeg({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, COLOR_INT.amber, 0.7, sceneL);
     earthSunLineObj.material.linewidth = 1.5; // ignored by most browsers but harmless; documents intent
@@ -651,6 +660,9 @@ export function createOriginStage(deps) {
   let sunMarkerGroup;
   let raArcObj, raCone, decArcObj, decCone, lamArcObj, lamCone;
   let raLabel, decLabel, lamLabel;
+  let sunLabelR;                       // "Sun ☉" label, follows the Sun each date -- "labels" gated only
+  let hourCircleObj, hourCircleLabel;  // Sun's hour circle (dashed, NCP-Sun-SCP) + its label -- "sunArcs" gated
+  let footDot, footLabel;              // hour-circle/equator foot point (alpha-arc end / delta-arc start) -- "sunArcs" gated
   // Display-option groups (right scene) -- same gating convention as the left
   // scene's groups above.
   let eqGridGroupR;                          // "Equatorial grid"
@@ -679,6 +691,15 @@ export function createOriginStage(deps) {
     // labels that are always-on geometry but whose TEXT is gated by "Labels"
     // alone (no other toggle applies to them)
     labelsOnlyGroupR = new THREE.Group(); sceneR.add(labelsOnlyGroupR);
+
+    // "Earth" label beside the tiny central Earth -- static (the geocentric
+    // Earth never moves), offset to the side and clear of its rotation axis
+    // (which points mostly +Y/-Z, toward N_HAT3) so the label doesn't cross it.
+    {
+      const l = registerLabel(makeTextSprite("Earth", COLOR_HEX.muted, { pixelHeight: 12, upright: true }), labelsR);
+      setLabelPos(l, 0.10, -0.05, 0.04);
+      labelsOnlyGroupR.add(l);
+    }
 
     // celestial equator (amber) + ecliptic (coral) -- reference rings: kept
     // THIN and DIM (1.5px, opacity 0.55/0.6) so the 4px/opacity-1.0 Sun arcs
@@ -742,6 +763,12 @@ export function createOriginStage(deps) {
     sceneR.add(sunMarkerGroup);
     track({ dispose: function () { sGeo.dispose(); sMat.dispose(); } });
 
+    // "Sun ☉" label -- position recomputed every setDate() (see below) so it
+    // follows the Sun; "labels"-gated only (the Sun marker itself is always
+    // shown, so its label lives in labelsOnlyGroupR alongside Earth/NCP/SCP).
+    sunLabelR = registerLabel(makeTextSprite("Sun ☉", COLOR_HEX.amber, { pixelHeight: 14, upright: true }), labelsR);
+    labelsOnlyGroupR.add(sunLabelR);
+
     // dynamic arcs: RA (amber, along equator), Dec (amber, along the Sun's
     // hour circle), lambda (coral, along ecliptic) -- the didactic "Sun
     // arcs" layer: near-opaque (opacity 1.0) and thick (4px) so they always
@@ -758,9 +785,45 @@ export function createOriginStage(deps) {
     lamArcObj = makeFatLine(COLOR_INT.coral, 1.0, 4, ARC_N + 1, fatMatsR); sunArcGeomGroup.add(lamArcObj.line);
     lamCone = makeCone(COLOR_INT.coral, sunArcGeomGroup);
 
+    // the Sun's hour circle: the full great circle through NCP, the Sun and
+    // SCP -- same equatorPoint3(alphaDeg,t) parametrization the delta-arc
+    // above sweeps only a SUB-arc of. Thin, dim and dashed so it reads as a
+    // reference/context circle underneath the opaque alpha/delta arcs, the
+    // same "thin dim reference vs. thick opaque didactic overlay" convention
+    // the equator/ecliptic rings use relative to those same arcs. Every point
+    // depends on alphaDeg, which moves with the date, so the whole buffer is
+    // rewritten (and computeLineDistances() rerun, for the dash pattern) in
+    // setDate() below -- capacity fixed at HOUR_CIRCLE_N.
+    hourCircleObj = makeFatLine(COLOR_INT.amber, 0.45, 1.25, HOUR_CIRCLE_N, fatMatsR, { dashed: true, dashSize: 0.04, gapSize: 0.03 });
+    sunArcGeomGroup.add(hourCircleObj.line);
+
+    // foot point: where that hour circle crosses the celestial equator at the
+    // Sun's RA -- the end of the alpha-arc / start of the delta-arc. Small
+    // dedicated geometry since its radius (0.014) doesn't match the shared
+    // dotGeo (0.018) used for the static equinox/solstice/NCP/SCP dots above;
+    // dynamic (position updated every setDate as alphaDeg changes), so it
+    // can't reuse makeDot()'s one-shot "place once" helper.
+    {
+      const footDotGeo = new THREE.SphereGeometry(0.014, 10, 8);
+      const footDotMat = new THREE.MeshBasicMaterial({ color: COLOR_INT.amber });
+      footDot = new THREE.Mesh(footDotGeo, footDotMat);
+      sunArcGeomGroup.add(footDot);
+      track({ dispose: function () { footDotGeo.dispose(); footDotMat.dispose(); } });
+    }
+
     raLabel = registerLabel(makeTextSprite("α☉", COLOR_HEX.amber, { pixelHeight: 16, math: true }), labelsR); sunArcLabelGroup.add(raLabel);
     decLabel = registerLabel(makeTextSprite("δ☉", COLOR_HEX.amber, { pixelHeight: 16, math: true }), labelsR); sunArcLabelGroup.add(decLabel);
     lamLabel = registerLabel(makeTextSprite("λ☉", COLOR_HEX.coral, { pixelHeight: 16, math: true }), labelsR); sunArcLabelGroup.add(lamLabel);
+    hourCircleLabel = registerLabel(makeTextSprite("hour circle of ☉", COLOR_HEX.amber, { pixelHeight: 11, upright: true }), labelsR);
+    hourCircleLabel.material.opacity = 0.8;
+    sunArcLabelGroup.add(hourCircleLabel);
+    // "(α☉, 0°)" set in the page's math sprite style (the whole string
+    // italicized) rather than mixing per-character italic/upright runs --
+    // makeTextSprite renders one font style per sprite, so a mixed-style
+    // string would need building the label out of several sprites for no
+    // real legibility gain at 13px.
+    footLabel = registerLabel(makeTextSprite("(α☉, 0°)", COLOR_HEX.amber, { pixelHeight: 13, math: true }), labelsR);
+    sunArcLabelGroup.add(footLabel);
 
     const hud = registerLabel(makeTextSprite("CELESTIAL SPHERE · FROM EARTH", COLOR_HEX.muted, { pixelHeight: 10 }), labelsR);
     camR.add(hud);
@@ -917,6 +980,55 @@ export function createOriginStage(deps) {
     setLabelPos(decLabel, decMid.x * 1.1, decMid.y * 1.1, decMid.z * 1.1);
     const lamMid = eclipticPoint3(lambdaDeg * 0.55);
     setLabelPos(lamLabel, lamMid.x * 1.1, lamMid.y * 1.1 - 0.04, lamMid.z * 1.1);
+    // Near the March equinox all three Sun angles are ~0: the arcs have no
+    // length, so their labels and arrowheads would pile up on the equinox
+    // marker. Hide them until each arc is long enough to read.
+    raLabel.visible  = Math.abs(alphaDeg)  > 3;   raCone.visible  = raLabel.visible;
+    lamLabel.visible = Math.abs(lambdaDeg) > 3;   lamCone.visible = lamLabel.visible;
+    decLabel.visible = Math.abs(decDeg)    > 1.5; if (!decLabel.visible) decCone.visible = false;
+
+    // "Sun ☉" label: pushed outward from the Sun's own position along the
+    // meridian-tangent direction, signed away from the equator (the same
+    // sense the delta-arc sweeps toward), so it clears the ra/dec/lambda
+    // arc-mid labels above, which all hug the equator/ecliptic plane.
+    {
+      const sunPt = equatorPoint3(alphaDeg, decDeg); // == sunDir, on the unit sphere
+      const mtSun = meridianTangent3(alphaDeg, decDeg);
+      const sgnSun = decDeg < 0 ? -1 : 1;
+      setLabelPos(sunLabelR,
+        sunPt.x * 1.16 + mtSun.x * sgnSun * 0.18,
+        sunPt.y * 1.16 + mtSun.y * sgnSun * 0.18,
+        sunPt.z * 1.16 + mtSun.z * sgnSun * 0.18);
+    }
+
+    // Sun's hour circle (full great circle through NCP/Sun/SCP at RA=alphaDeg)
+    // + its "away from the Sun" label -- both rebuilt every date since
+    // alphaDeg (hence the whole circle) rotates with it.
+    for (let i = 0; i < HOUR_CIRCLE_N; i++) writePoint(hourCircleObj.positions, i, equatorPoint3(alphaDeg, (i / (HOUR_CIRCLE_N - 1)) * 360));
+    setFatLinePoints(hourCircleObj, HOUR_CIRCLE_N);
+    hourCircleObj.line.computeLineDistances();
+    {
+      // t=90 is NCP on this parametrization (see equatorPoint3's own comment);
+      // +25 deg walks along the circle AWAY from the Sun, which always sits at
+      // t=decDeg (within +/-23.44 deg of t=0, i.e. always on the OTHER side of
+      // NCP from t=90+25), so this offset is correct regardless of the date.
+      const hcp = equatorPoint3(alphaDeg, 90 + 25);
+      setLabelPos(hourCircleLabel, hcp.x * 1.08, hcp.y * 1.08, hcp.z * 1.08);
+    }
+
+    // foot point: where the hour circle crosses the equator at the Sun's RA --
+    // the end of the alpha-arc / start of the delta-arc. Label pushed to
+    // whichever side (north/south, via N_HAT3) the delta-arc is NOT sweeping
+    // toward, so it never sits under that arc.
+    {
+      const footPt = equatorPoint3(alphaDeg, 0);
+      footDot.position.set(footPt.x, footPt.y, footPt.z);
+      const sgnFoot = decDeg >= 0 ? -1 : 1; // opposite side from the delta-arc's sweep
+      setLabelPos(footLabel,
+        footPt.x * 1.06 + N_HAT3.x * sgnFoot * 0.24,
+        footPt.y * 1.06 + N_HAT3.y * sgnFoot * 0.24,
+        footPt.z * 1.06 + N_HAT3.z * sgnFoot * 0.24);
+    }
 
     updateZodiacHighlight(lambdaDeg);
   }
