@@ -1845,17 +1845,6 @@ function rebuildDiurnalCircle(){
       dot.material.userData.baseOpacity = 0.95;
       diurnalGroup.add(dot);
 
-      // short radial tick crossing the horizon ring at the rise/set point
-      // (the previous marker was a bare r=0.013 sphere with no tick line at
-      // all -- this tick's half-length is that same 0.013 enlarged x1.5)
-      const tickHalf = 0.013*1.5;
-      const tickGeo = new THREE.BufferGeometry().setFromPoints([
-        p.clone().multiplyScalar(1 - tickHalf), p.clone().multiplyScalar(1 + tickHalf)
-      ]);
-      const tickMat = new THREE.LineBasicMaterial({ color:COLORI.text, transparent:true, opacity:0.6, depthWrite:false });
-      const tick = new THREE.Line(tickGeo, tickMat);
-      tick.material.userData.baseOpacity = 0.7;
-      diurnalGroup.add(tick);
 
       const label = makeTextSprite(cross.text, COLORS.text, { pixelHeight:12 });
       label.position.copy(p.clone().multiplyScalar(1.13)); // just outside the horizon ring
