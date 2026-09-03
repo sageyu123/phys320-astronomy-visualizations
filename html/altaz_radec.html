@@ -1755,12 +1755,13 @@ function rebuildDiurnalCircle(){
   diurnalDisk = null; diurnalCircleLabel = null; diurnalRiseLabel = null; diurnalSetLabel = null;
 
   const n = CIRCLE_N;
-  const worldPts = [], zSign = [];
+  const worldPts = [], zSign = [], zVals = [];
   for(let i=0;i<=n;i++){
     const Hd = (i/n)*360;
     const v = eqToVec(Hd, state.dec, state.phi);
     worldPts.push(toThreeVec3(v));
     zSign.push(v.z >= 0);
+    zVals.push(v.z);
   }
   // walk the closed loop once, splitting into contiguous above/below runs
   // (a circle cut by a plane crosses at most twice, so at most one run of
@@ -1772,9 +1773,17 @@ function rebuildDiurnalCircle(){
     if(zSign[idx] === curSign){
       curPts.push(worldPts[idx]);
     } else {
+      // split exactly at the horizon: interpolate the z = 0 crossing between
+      // the two bracketing samples (then re-project onto the sphere) so the
+      // solid run ends, and the dashed run starts, at the true rise/set point
+      // instead of one sample step past it (which read as an overshoot).
+      const z0 = zVals[i-1], z1 = zVals[idx];
+      const tCross = (z1 === z0) ? 0.5 : z0 / (z0 - z1);
+      const cross = worldPts[i-1].clone().lerp(worldPts[idx], tCross).normalize();
+      curPts.push(cross);
       runs.push({ above:curSign, pts:curPts });
       curSign = zSign[idx];
-      curPts = [worldPts[i-1], worldPts[idx]]; // include the crossing edge
+      curPts = [cross, worldPts[idx]];
     }
   }
   runs.push({ above:curSign, pts:curPts });
@@ -1795,8 +1804,8 @@ function rebuildDiurnalCircle(){
     if(run.above){
       const pathPts = run.pts.map(function(p){ return p.clone().multiplyScalar(1.008); });
       const path = makeFatLineStrip(pathPts, COLORI.text, 0.75, 2);
-      path.material.userData.baseOpacity = 0.95;
-      path.material.userData.baseLinewidth = 3;
+      path.material.userData.baseOpacity = 0.75;
+      path.material.userData.baseLinewidth = 1;
       diurnalGroup.add(path.line);
     } else {
       const below = makeFatLineRaw(COLORI.text, 0.3, 2, true, run.pts.length);
@@ -1804,7 +1813,7 @@ function rebuildDiurnalCircle(){
       below.material.gapSize = 0.03;
       setLinePoints(below, run.pts); // fills the geometry + calls computeLineDistances() (dashed+fat)
       below.material.userData.baseOpacity = 0.35;
-      below.material.userData.baseLinewidth = 3;
+      below.material.userData.baseLinewidth = 1;
       diurnalGroup.add(below.line);
     }
   });
