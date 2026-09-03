@@ -138,12 +138,24 @@
   .panel-title{ font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .panel-readouts{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); white-space:nowrap; flex:0 0 auto; }
   .panel-readouts b{ color:var(--text); font-weight:600; }
+  .panel-header-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; margin-left:auto; }
+  .icon-btn{ min-width:28px; padding:0 8px; font-size:13px; line-height:1; }
   .panel-caption{
     flex:0 0 auto; font-size:11px; line-height:1.35; color:var(--muted);
     padding:5px 10px; background:var(--panel-deep); border-bottom:1px solid var(--border);
   }
   .panel-body{ flex:1 1 auto; min-height:0; min-width:0; position:relative; }
   .panel-body canvas{ display:block; width:100%; height:100%; }
+  #mainCanvas{ touch-action:none; cursor:grab; }
+  #mainCanvas:active{ cursor:grabbing; }
+  /* fixed, non-scaling caption in the main panel's bottom-right corner -- shown only while the
+     main-canvas pan/zoom view (state.view) is not at its default 1x/0,0 */
+  .zoom-badge{
+    position:absolute; right:8px; bottom:8px; z-index:3;
+    font-size:10px; color:var(--muted); background:color-mix(in srgb, var(--panel-deep) 85%, transparent);
+    border:1px solid var(--border); border-radius:4px; padding:2px 6px;
+    pointer-events:none; font-variant-numeric:tabular-nums;
+  }
 
   .swatch{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
 
@@ -402,9 +414,15 @@
             max|&Delta;&lambda;| = <b id="vEqDlamMax" class="tabular">0.00</b>&prime; &nbsp;
             <span class="math">e</span> = <b id="vEqE" class="tabular">0.093</b>
           </div>
+          <div class="panel-header-right">
+            <button type="button" class="btn icon-btn" id="btnResetView" title="Reset zoom/pan">&#8962;</button>
+          </div>
         </div>
         <div class="panel-caption" id="mainPanelCaption" hidden></div>
-        <div class="panel-body"><canvas id="mainCanvas"></canvas></div>
+        <div class="panel-body">
+          <canvas id="mainCanvas"></canvas>
+          <div class="zoom-badge" id="zoomBadge" hidden>&times;1.0</div>
+        </div>
       </div>
 
       <div class="splitter h-splitter" id="hSplitter" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="Resize strip panel height"></div>
@@ -716,6 +734,10 @@ const state = {
   t: 0,
   playing: false,
   speed: 20,
+  view: { zoom:1, panX:0, panY:0 }, // shared pan/zoom view transform for the main canvas (CSS
+                             // px, layered on top of each stage's own base world->screen
+                             // scale/center); reset on tab switch and by the harmonic stage's
+                             // view-scale buttons -- see viewToScreen()/viewScale()/resetView().
   custom: { a:1.5, e:0.5 }, // the ONE shared "Custom" planet -- bound to the Custom preset's a/e
                              // sliders on the Ellipses/Equal-areas/Ptolemy's-shadow tabs AND to
                              // the "Custom planet a/e" sliders on the Harmonic tab; persists across
@@ -845,7 +867,8 @@ const els = {};
 function cacheEls(){
   ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum",
    "paramsFields","displayFields","formulasBody","aboutTitle","aboutBody",
-   "mainPanelTitle","mainPanelCaption","rdEllipse","rdAreas","rdHarmonic","rdEquant",
+   "mainPanelTitle","mainPanelCaption","btnResetView","zoomBadge",
+   "rdEllipse","rdAreas","rdHarmonic","rdEquant",
    "vEllT","vEllR1","vEllR2","vEllSum","vEllV",
    "vArT","vArR","vArVperp","vArRvperp","vArDadt","vArSector",
    "vHarShown","vHarShownName","vHarExtra","vHarA","vHarE","vHarPd","vHarPy","vHarCheck",
@@ -1071,6 +1094,7 @@ function buildHarmonicParams(c){
       state.p.view = pair[0];
       syncHarmonicViewButtons();
       resetHarmonicLabels();
+      resetView(); // the view-scale buttons set the BASE radius -- any zoom/pan on top of it resets too
       state.stripDirty = true; render();
     });
     seg.appendChild(b);
@@ -1612,6 +1636,7 @@ function switchTab(tabId){
   state._last = {};
   clearAllTrails();
   resetHarmonicLabels();
+  resetView();
 
   els.tabBar.querySelectorAll("button").forEach(function(b){
     const active = b.dataset.tab === tabId;
@@ -1843,6 +1868,56 @@ function drawArrow(ctx, from, to, colorHex, alpha, widthMul){
 }
 
 /* =========================================================================
+   12b. MAIN-CANVAS VIEW TRANSFORM (pan/zoom, all four stages)
+   Every stage's drawing code computes its own BASE world->screen function
+   (unzoomed, e.g. orbitTransform()'s toScreen, or the harmonic stage's own
+   toScreen closure) exactly as before. viewToScreen() wraps that base
+   function with the shared state.view (zoom about the canvas centre (cx,cy)
+   in CSS px, then a CSS-px pan) so every point any stage draws -- orbits,
+   planets, sectors/arcs sampled as toScreen'd points, trails, moving labels
+   and their leader lines -- follows the same transform with a one-line
+   change at the top of each drawXMain(). World-space RADII drawn directly
+   via ctx.arc (the "circle of radius a" on the Ellipses tab, the Ptolemy
+   circle on Ptolemy's-shadow) aren't points, so they go through viewScale()
+   instead to get the zoomed px-per-AU factor. The fixed legend box and the
+   panel header/caption DOM chrome never call either helper, so they never
+   scale or pan.
+   ========================================================================= */
+const VIEW_ZOOM_MIN = 0.2, VIEW_ZOOM_MAX = 40;
+function resetView(){ state.view.zoom = 1; state.view.panX = 0; state.view.panY = 0; }
+function viewToScreen(baseToScreen, cx, cy){
+  return function(pt){
+    const s = baseToScreen(pt);
+    const v = state.view;
+    return { x: cx + v.panX + (s.x-cx)*v.zoom, y: cy + v.panY + (s.y-cy)*v.zoom };
+  };
+}
+function viewScale(baseScale){ return baseScale * state.view.zoom; }
+// Zoom by `factor` about the CSS-px point (mx,my) -- the world point currently under the
+// cursor/pointer stays at the same screen position after the zoom change (pan is adjusted to
+// compensate). (mx,my) and the view's own pan are both in the same CSS-px space as state.mainW/H.
+// The canvas centre is read with the SAME state.mainW||clientWidth fallback drawMain() uses (not
+// raw state.mainW), so a wheel notch that lands before the main canvas's first ResizeObserver
+// callback still anchors on the actual on-screen centre instead of 0,0.
+function zoomViewAt(mx, my, factor){
+  const v = state.view;
+  const newZoom = clamp(v.zoom*factor, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX);
+  const actual = newZoom / v.zoom;
+  const cx = (state.mainW || els.mainCanvas.clientWidth)/2, cy = (state.mainH || els.mainCanvas.clientHeight)/2;
+  v.panX = mx - cx - (mx - cx - v.panX)*actual;
+  v.panY = my - cy - (my - cy - v.panY)*actual;
+  v.zoom = newZoom;
+}
+function updateZoomBadge(){
+  const el = els.zoomBadge;
+  if(!el) return;
+  const z = state.view.zoom;
+  if(Math.abs(z-1) < 0.001){ el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = "×" + z.toFixed(1);
+}
+
+/* =========================================================================
    13. MAIN-CANVAS DRAWING (one function per tab)
    ========================================================================= */
 function drawMain(){
@@ -1870,7 +1945,7 @@ function drawEllipseMain(ctx,w,h){
   const g = ellipseGeometry(p.a, p.e);
   const o = computeOrbit(p.a, p.e, state.t);
   const T = orbitTransform(w,h,g);
-  const toScreen = T.toScreen, cx = T.cx, cy = T.cy, scale = T.scale;
+  const toScreen = viewToScreen(T.toScreen, T.cx, T.cy), cx = T.cx, cy = T.cy, scale = viewScale(T.scale);
 
   // reference circle of radius a, centred on the ellipse centre
   const circleStyle = layerStyle("circleA");
@@ -2031,7 +2106,7 @@ function drawAreasMain(ctx,w,h){
   const g = ellipseGeometry(p.a, p.e);
   const o = computeOrbit(p.a, p.e, state.t);
   const T = orbitTransform(w,h,g);
-  const toScreen = T.toScreen, cx=T.cx, cy=T.cy;
+  const toScreen = viewToScreen(T.toScreen, T.cx, T.cy), cx=T.cx, cy=T.cy;
 
   ctx.strokeStyle = COLORS["border-strong"];
   ctx.lineWidth = 1.5;
@@ -2172,14 +2247,48 @@ function drawTrail(ctx, toScreen, key, curNu, colorHex){
    (sorted by angle, pushed outward + alternated tangentially until clear) and then smoothed 35%
    of the way toward its target each frame so labels glide instead of jumping. */
 const HARMONIC_LABEL_SMOOTH = 0.35;
+// A pure "35% of the way to the target" lerp was tuned for the old fixed (unzoomed) views, where
+// a labeled body's own on-screen speed was naturally bounded; now that the same body can be
+// viewed at up to 40x zoom, the SAME orbital motion covers proportionally more screen px per
+// frame, so 35% of a much bigger gap is itself a big, un-smooth jump. Capping the smoothed
+// position's own per-frame step at this many px keeps the glide visually smooth at any zoom/speed
+// (a label that can't keep up simply trails its planet a little, via the existing leader line,
+// rather than jumping) while leaving the 35% lerp feel intact for the common case where the raw
+// target movement is already under the cap.
+const HARMONIC_LABEL_MAX_STEP_PX = 5;
 const HARMONIC_LABEL_HYSTERESIS = 3; // px -- an overlap must exceed this to trigger a push
 const harmonicLabelPos = {}; // key -> smoothed {x,y} screen position, persisted across frames
-function resetHarmonicLabels(){ Object.keys(harmonicLabelPos).forEach(function(k){ delete harmonicLabelPos[k]; }); }
+// key -> whether the body's on-screen orbit currently qualifies as "big enough" for a moving
+// label (see updateHarmonicSizeGate()); a plain hysteresis band (turn on >=64px, off <=56px)
+// so a body sitting right at the boundary doesn't flicker between the canvas and the legend.
+const harmonicSizeOn = {};
+const HARMONIC_SIZE_ON_PX = 64, HARMONIC_SIZE_OFF_PX = 56;
+function resetHarmonicLabels(){
+  Object.keys(harmonicLabelPos).forEach(function(k){ delete harmonicLabelPos[k]; });
+  Object.keys(harmonicSizeOn).forEach(function(k){ delete harmonicSizeOn[k]; });
+}
+// Evaluated every frame (cheap: one comparison) for every harmonic body. aPx is that body's
+// on-screen semi-major axis (a * the current, zoomed px-per-AU scale) -- see drawHarmonicMain().
+// Drops the body's smoothed label position the moment it fails the gate (not just when
+// layoutHarmonicLabels() rejects it for a collision/off-canvas) -- otherwise a body that later
+// re-qualifies would lerp in from a stale, possibly far-away old position instead of starting
+// fresh at its current target.
+function updateHarmonicSizeGate(key, aPx){
+  const was = !!harmonicSizeOn[key];
+  const now = was ? (aPx >= HARMONIC_SIZE_OFF_PX) : (aPx >= HARMONIC_SIZE_ON_PX);
+  harmonicSizeOn[key] = now;
+  if(!now) delete harmonicLabelPos[key];
+  return now;
+}
 
-// items: [{key,name,color,sx,sy}] (sx,sy = planet's screen position). Lays out + draws a
-// collision-free, temporally-smoothed label for each, with a thin leader line when a label has
-// been pushed more than 22px from its planet.
-function layoutHarmonicLabels(ctx, items, cx, cy){
+// items: [{key,name,color,sx,sy}] (sx,sy = planet's screen position). Lays out a collision-free,
+// temporally-smoothed label for each, with a thin leader line when a label has been pushed more
+// than 22px from its planet -- BUT only actually draws (and marks it.onCanvas=true for) an item
+// whose final box, after the collision pass, neither still overlaps another label's box nor
+// spills outside the canvas (w,h); a rejected item is left for the caller to fall back to the
+// legend (it.onCanvas stays false, and any smoothed position from an earlier frame is dropped so
+// it starts fresh, rather than jumping, if it re-qualifies later).
+function layoutHarmonicLabels(ctx, items, cx, cy, w, h){
   const size = 10;
   ctx.font = size + "px Inter, sans-serif";
   items.forEach(function(it){ it.angle = Math.atan2(it.sy-cy, it.sx-cx); });
@@ -2187,6 +2296,11 @@ function layoutHarmonicLabels(ctx, items, cx, cy){
 
   const placed = [];
   const sideSigns = [1,-1,1,-1];
+  function overlaps(box, ob){
+    const ox = Math.min(box.r,ob.r) - Math.max(box.l,ob.l);
+    const oy = Math.min(box.b,ob.b) - Math.max(box.t,ob.t);
+    return ox > HARMONIC_LABEL_HYSTERESIS && oy > HARMONIC_LABEL_HYSTERESIS;
+  }
   items.forEach(function(it){
     const dir = outwardDir(it.sx, it.sy, cx, cy);
     const tx = -dir.dy, ty = dir.dx; // tangential unit vector
@@ -2200,39 +2314,52 @@ function layoutHarmonicLabels(ctx, items, cx, cy){
       const t = dir.dy > 0.15 ? pos.y : (dir.dy < -0.15 ? pos.y-boxH : pos.y-boxH/2);
       return { l:l, r:l+boxW, t:t, b:t+boxH };
     }
+    // Two bodies near the SAME angle from the Sun (e.g. Saturn and a Halley near perihelion both
+    // sitting close to the +x axis) need a tangential push bigger than a shared box HEIGHT to
+    // actually clear each other -- a small fixed 8px nudge (the pre-dynamic-labels version of
+    // this function only ever had <=2 candidates fighting over the "All planets" scale, where
+    // that was enough) isn't, especially once a long name's box is involved. TANGENTIAL_STEP is
+    // sized off boxH (constant across labels -- the font size is fixed, only boxW varies) so a
+    // single perpendicular try clears a same-height neighbour; growing it further on later tries
+    // (and still walking radial outward too) handles busier ties.
+    const TANGENTIAL_STEP = boxH + 6;
     let radial = 14, tangential = 0;
     let pos = posAt(radial, tangential);
     let box = boxAt(pos);
     let tries = 0;
-    while(tries < 4){
-      let collides = false;
-      for(let i=0;i<placed.length;i++){
-        const ob = placed[i];
-        const ox = Math.min(box.r,ob.r) - Math.max(box.l,ob.l);
-        const oy = Math.min(box.b,ob.b) - Math.max(box.t,ob.t);
-        if(ox > HARMONIC_LABEL_HYSTERESIS && oy > HARMONIC_LABEL_HYSTERESIS){ collides = true; break; }
-      }
-      if(!collides) break;
+    let collides = placed.some(function(ob){ return overlaps(box, ob); });
+    while(collides && tries < 6){
       radial += boxH;
-      tangential = sideSigns[tries]*8;
+      tangential = sideSigns[tries % sideSigns.length] * TANGENTIAL_STEP * (Math.floor(tries/sideSigns.length)+1);
       pos = posAt(radial, tangential);
       box = boxAt(pos);
       tries++;
+      collides = placed.some(function(ob){ return overlaps(box, ob); });
     }
     placed.push(box);
     it.dir = dir;
     it.targetX = pos.x; it.targetY = pos.y;
+    const offCanvas = box.l < 0 || box.r > w || box.t < 0 || box.b > h;
+    it.rejected = collides || offCanvas;
   });
 
   items.forEach(function(it){
+    if(it.rejected){ it.onCanvas = false; delete harmonicLabelPos[it.key]; return; }
+    it.onCanvas = true;
     const prev = harmonicLabelPos[it.key];
-    const sx2 = prev ? prev.x + (it.targetX-prev.x)*HARMONIC_LABEL_SMOOTH : it.targetX;
-    const sy2 = prev ? prev.y + (it.targetY-prev.y)*HARMONIC_LABEL_SMOOTH : it.targetY;
+    let sx2 = it.targetX, sy2 = it.targetY;
+    if(prev){
+      let dx = (it.targetX-prev.x)*HARMONIC_LABEL_SMOOTH, dy = (it.targetY-prev.y)*HARMONIC_LABEL_SMOOTH;
+      const stepLen = Math.hypot(dx,dy);
+      if(stepLen > HARMONIC_LABEL_MAX_STEP_PX){ const k = HARMONIC_LABEL_MAX_STEP_PX/stepLen; dx *= k; dy *= k; }
+      sx2 = prev.x + dx; sy2 = prev.y + dy;
+    }
     harmonicLabelPos[it.key] = { x:sx2, y:sy2 };
     it.drawX = sx2; it.drawY = sy2;
   });
 
   items.forEach(function(it){
+    if(!it.onCanvas) return;
     const dist = Math.hypot(it.drawX-it.sx, it.drawY-it.sy);
     if(dist > 22){
       ctx.save();
@@ -2249,8 +2376,13 @@ function layoutHarmonicLabels(ctx, items, cx, cy){
   });
 }
 
-// Fixed top-left legend (colored dot + name), shown at the "All planets" scale in place of the
-// moving labels this view suppresses.
+// Fixed top-left legend (colored dot + name) -- stable membership (every harmonic body, plus the
+// selected extra body when it's shown), drawn OUTSIDE the pan/zoom view transform so it never
+// moves or scales. Each entry's dot is FILLED when that body currently also has a moving,
+// on-canvas label (it.filled, set by the caller from layoutHarmonicLabels()'s it.onCanvas) and
+// HOLLOW when it's legend-only for this frame -- so students can see at a glance which bodies
+// the size/collision rule (see updateHarmonicSizeGate()/layoutHarmonicLabels()) is currently
+// retiring to the legend.
 function drawHarmonicLegend(ctx, items){
   const pad = 8, lineH = 14, dotR = 3, fontSize = 10;
   ctx.font = fontSize + "px Inter, sans-serif";
@@ -2268,8 +2400,9 @@ function drawHarmonicLegend(ctx, items){
   ctx.fill(); ctx.stroke();
   items.forEach(function(it,i){
     const cy2 = y0+pad+i*lineH+lineH/2;
-    ctx.fillStyle = it.color;
-    ctx.beginPath(); ctx.arc(x0+pad+dotR, cy2, dotR, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(x0+pad+dotR, cy2, dotR, 0, TAU);
+    if(it.filled){ ctx.fillStyle = it.color; ctx.fill(); }
+    else { ctx.strokeStyle = it.color; ctx.lineWidth = 1.25; ctx.stroke(); }
     ctx.fillStyle = COLORS.text;
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText(it.name, x0+pad+dotR*2+6, cy2);
@@ -2286,9 +2419,11 @@ function drawHarmonicMain(ctx,w,h){
   if(view === "inner") extent = 1.7;
   else if(view === "fit") extent = Math.max(1.7, 1.06 * selAE.a * (1 + selAE.e)); // never smaller than "Inner planets"
   else extent = 10.5;
-  const scale = (Math.min(w,h)/2 - 26) / extent;
+  const baseScale = (Math.min(w,h)/2 - 26) / extent;
+  const scale = viewScale(baseScale); // effective (zoomed) px-per-AU -- used below for the
+                                       // dynamic-label screen-size test (aPx = a*scale)
   const cx = w/2, cy = h/2;
-  function toScreen(pt){ return { x:cx+pt.x*scale, y:cy-pt.y*scale }; }
+  const toScreen = viewToScreen(function(pt){ return { x:cx+pt.x*baseScale, y:cy-pt.y*baseScale }; }, cx, cy);
 
   HARMONIC_PLANETS.forEach(function(pl){
     const color = COLORS[pl.color];
@@ -2311,9 +2446,9 @@ function drawHarmonicMain(ctx,w,h){
   ctx.beginPath(); ctx.arc(cx,cy,6,0,TAU); ctx.fill();
   drawLabel(ctx, cx, cy, "Sun", {dx:0,dy:-1}, {color:COLORS.amber, size:11, offset:9});
 
-  const threshold = 0.12 * extent;
-  const moving = [];      // planets that get a moving, collision-avoided label this frame
-  const legendItems = []; // planets listed in the fixed legend ("All planets" scale only)
+  const moving = [];      // bodies that get a moving, collision-avoided label this frame
+  const legendItems = []; // EVERY drawn body -- stable membership, dot filled/hollow per-frame
+                           // (see drawHarmonicLegend's doc comment)
 
   HARMONIC_PLANETS.forEach(function(pl){
     const o = computeOrbit(pl.a, pl.e, state.t);
@@ -2324,11 +2459,12 @@ function drawHarmonicMain(ctx,w,h){
     ctx.fillStyle = color;
     ctx.beginPath(); ctx.arc(s.x,s.y,5,0,TAU); ctx.fill();
 
-    if(!labelsOn()) return;
-    if(view === "inner" || view === "fit" || pl.key === "jupiter" || pl.key === "saturn"){
-      moving.push({ key:pl.key, name:pl.name, color:color, sx:s.x, sy:s.y });
-    }
-    if(view === "all") legendItems.push({ name:pl.name, color:color });
+    // Dynamic-by-screen-size labeling (evaluated every frame, cheap): the hysteresis gate must
+    // keep running even while labels are off/highlighted-out, so it doesn't "forget" state and
+    // cause a jump the next time labels are re-enabled.
+    const sizeOk = updateHarmonicSizeGate(pl.key, pl.a * scale);
+    if(labelsOn() && sizeOk) moving.push({ key:pl.key, name:pl.name, color:color, sx:s.x, sy:s.y });
+    legendItems.push({ key:pl.key, name:pl.name, color:color });
   });
 
   if(showExtra){
@@ -2340,21 +2476,22 @@ function drawHarmonicMain(ctx,w,h){
     ctx.fillStyle = COLORS.cyan;
     ctx.beginPath(); ctx.arc(s.x,s.y,5.5,0,TAU); ctx.fill();
 
-    if(labelsOn()){
-      const name = (selKey === "custom") ? "custom" : "Halley's comet";
-      if(view === "inner" || view === "fit" || selAE.a >= threshold){
-        moving.push({ key:"custom", name:name, color:COLORS.cyan, sx:s.x, sy:s.y });
-      }
-      if(view === "all") legendItems.push({ name:name, color:COLORS.cyan });
-    }
+    const name = (selKey === "custom") ? "custom" : "Halley's comet";
+    const sizeOk = updateHarmonicSizeGate("custom", selAE.a * scale);
+    if(labelsOn() && sizeOk) moving.push({ key:"custom", name:name, color:COLORS.cyan, sx:s.x, sy:s.y });
+    legendItems.push({ key:"custom", name:name, color:COLORS.cyan });
   } else {
     clearTrail("custom");
     delete harmonicLabelPos.custom;
+    delete harmonicSizeOn.custom;
   }
 
   if(labelsOn()){
-    if(moving.length) layoutHarmonicLabels(ctx, moving, cx, cy);
-    if(view === "all" && legendItems.length) drawHarmonicLegend(ctx, legendItems);
+    if(moving.length) layoutHarmonicLabels(ctx, moving, cx, cy, w, h);
+    const onCanvas = {};
+    moving.forEach(function(it){ if(it.onCanvas) onCanvas[it.key] = true; });
+    legendItems.forEach(function(it){ it.filled = !!onCanvas[it.key]; });
+    if(legendItems.length) drawHarmonicLegend(ctx, legendItems);
   }
 }
 
@@ -2364,7 +2501,7 @@ function drawEquantMain(ctx,w,h){
   const o = computeOrbit(p.a, p.e, state.t);
   const eq = equantPosition(p.a, p.e, o.M);
   const T = orbitTransform(w,h,g);
-  const toScreen = T.toScreen, cx=T.cx, cy=T.cy, scale=T.scale;
+  const toScreen = viewToScreen(T.toScreen, T.cx, T.cy), cx=T.cx, cy=T.cy, scale=viewScale(T.scale);
 
   // Ptolemy circle of radius a, centred on C
   const cC = toScreen(g.C);
@@ -2975,6 +3112,7 @@ function render(){
   updateReadouts();
   { const nowMs = performance.now(); if(!state.playing || nowMs - (state._lastFormulaMs || 0) > 100){ state._lastFormulaMs = nowMs; updateFormulasCard(); } } // live formulas at <= 10 Hz during playback
   drawMain();
+  updateZoomBadge();
   if(state.stripDirty){
     drawStrip();
     state.stripDirty = false;
@@ -3000,6 +3138,49 @@ function setupCanvasResize(canvas, onSize){
 }
 
 /* =========================================================================
+   16b. MAIN-CANVAS PAN/ZOOM INPUT (wheel zoom about the cursor, pointer-drag
+        pan, double-click/⌂ reset -- see state.view and the viewToScreen()/
+        viewScale() helpers in section 12b that every stage's drawing code
+        runs through).
+   ========================================================================= */
+function wireMainCanvasView(){
+  const canvas = els.mainCanvas;
+
+  canvas.addEventListener("wheel", function(ev){
+    ev.preventDefault(); // don't let the page scroll while zooming the diagram
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    zoomViewAt(mx, my, ev.deltaY < 0 ? 1.1 : 1/1.1);
+    render();
+  }, { passive:false });
+
+  let drag = null; // {id, x0, y0, panX0, panY0} while a button-0 pointer drag is panning
+  canvas.addEventListener("pointerdown", function(ev){
+    if(ev.button !== 0) return;
+    drag = { id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, panX0: state.view.panX, panY0: state.view.panY };
+    try{ canvas.setPointerCapture(ev.pointerId); }catch(e){}
+  });
+  canvas.addEventListener("pointermove", function(ev){
+    if(!drag || ev.pointerId !== drag.id) return;
+    state.view.panX = drag.panX0 + (ev.clientX - drag.x0);
+    state.view.panY = drag.panY0 + (ev.clientY - drag.y0);
+    render();
+  });
+  function endDrag(ev){
+    if(drag && (!ev || ev.pointerId === drag.id)){
+      try{ canvas.releasePointerCapture(drag.id); }catch(e){}
+      drag = null;
+    }
+  }
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("lostpointercapture", endDrag);
+
+  canvas.addEventListener("dblclick", function(){ resetView(); render(); });
+  els.btnResetView.addEventListener("click", function(){ resetView(); render(); });
+}
+
+/* =========================================================================
    17. BOOTSTRAP
    ========================================================================= */
 function init(){
@@ -3014,6 +3195,7 @@ function init(){
   wireDisplayToggles();
   wirePlayback();
   wireSplitters();
+  wireMainCanvasView();
 
   setupCanvasResize(els.mainCanvas, function(w,h){ state.mainW=w; state.mainH=h; });
   setupCanvasResize(els.stripCanvas, function(w,h){ state.stripW=w; state.stripH=h; state.stripDirty=true; });
