@@ -680,7 +680,7 @@
         <div class="panel-header">
           <div class="panel-title" id="stripPanelTitle">RA/Dec map</div>
           <div class="panel-readouts" id="stripLegend">
-            <span id="legendRadec"><i class="swatch" style="background:var(--cyan)"></i>horizon &nbsp; <i class="swatch" style="background:var(--amber)"></i>diurnal path</span>
+            <span id="legendRadec"><i class="swatch" style="background:var(--cyan)"></i>horizon (now) &nbsp; <i class="swatch" style="background:var(--amber)"></i>star's diurnal path &nbsp; <i class="swatch" style="background:var(--muted)"></i>Z = zenith</span>
             <span id="legendOrigin" style="display:none"><i class="swatch" style="background:var(--coral)"></i>ecliptic &nbsp; <i class="swatch" style="background:var(--amber)"></i>Sun</span>
           </div>
         </div>
@@ -3005,7 +3005,9 @@ function drawAllskyInset(ctx, panelW, panelH){
 }
 
 function drawRadecMap(ctx, w, h){
-  const padL=34, padR=10, padT=10, padB=20;
+  // padL/padB widened (from 34/20) to make room for the axis tick labels +
+  // titles added below (see PROBLEM/FIX brief: the map used to be unlabelled).
+  const padL=48, padR=10, padT=10, padB=24;
   const plotL=padL, plotR=w-padR, plotT=padT, plotB=h-padB;
   const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
   function xOf(alphaH){ return plotL + (24-alphaH)/24*plotW; } // alpha increases to the LEFT
@@ -3025,6 +3027,16 @@ function drawRadecMap(ctx, w, h){
     ctx.strokeStyle = hexAlpha(COLORS.border,0.35);
     ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
   }
+  // celestial equator (delta=0) emphasized -- the reference the whole
+  // equatorial (alpha,delta) grid hangs on, so it gets its own weight
+  // instead of blending into the generic 30deg gridlines above. Its text
+  // label is drawn LATER (after the star), not here, so it can be skipped
+  // if the star's own name label would otherwise land on top of it (see
+  // there) -- the amber line itself is unaffected either way.
+  const yEq = yOf(0);
+  ctx.strokeStyle = hexAlpha(COLORS.amber, 0.45); ctx.lineWidth = 1.25;
+  ctx.beginPath(); ctx.moveTo(plotL,yEq); ctx.lineTo(plotR,yEq); ctx.stroke();
+  ctx.lineWidth = 1;
 
   const phi = state.phi, lst = state.lst;
 
@@ -3107,12 +3119,129 @@ function drawRadecMap(ctx, w, h){
   const yStar = yOf(state.dec);
   ctx.beginPath(); ctx.moveTo(plotL,yStar); ctx.lineTo(plotR,yStar); ctx.stroke();
   ctx.restore();
+  let starNameBox = null;
   {
     const sx = xOf(wrap24(state.ra)), sy = yOf(state.dec);
     drawGlow(ctx, glowSprite, sx, sy, 18);
     ctx.fillStyle = COLORS.amber;
     ctx.beginPath(); ctx.arc(sx,sy,3.5,0,TAU); ctx.fill();
+
+    // name label -- offset so it clears both the dot's own diurnal line
+    // (which passes exactly through sy) and the "Z" zenith marker; flips
+    // above/below and left/right of the dot whenever the default placement
+    // would run past the plot box (e.g. a near-pole star like Polaris, whose
+    // dot sits right against plotT at the panel's smallest (120px) height,
+    // where "label above the dot" would otherwise clip off the top of the
+    // canvas instead of just the plot box)
+    const zx = xOf(wrap24(lst)), zy = yOf(clamp(phi,-90,90));
+    const nearZenith = Math.hypot(sx-zx, sy-zy) < 18;
+    ctx.font = "11px Inter, sans-serif"; ctx.fillStyle = COLORS.amber;
+    const starName = currentStarName();
+    const nameW = ctx.measureText(starName).width;
+    const flipDown = (sy-13) < plotT;
+    const flipLeft = nearZenith || (sx+6+nameW) > plotR;
+    ctx.textBaseline = flipDown ? "top" : "bottom";
+    ctx.textAlign = flipLeft ? "right" : "left";
+    const nameX = sx + (flipLeft ? -6 : 6);
+    ctx.fillText(starName, nameX, sy + (flipDown ? 6 : -6));
+    // remembered for the celestial-equator label's own collision check below
+    starNameBox = {
+      l: flipLeft ? nameX-nameW : nameX, r: flipLeft ? nameX : nameX+nameW,
+      t: flipDown ? sy+6 : sy-6-13, b: flipDown ? sy+6+13 : sy-6
+    };
   }
+
+  // celestial equator text label -- drawn here (after the star) rather than
+  // alongside the line above so it can be dropped if the star's own name
+  // landed on the same few pixels (both are short, unrelated labels that
+  // happen to default to the plot's right edge; at the 120px strip-height
+  // clamp with a near-pole star like the Latitude tab's default Polaris,
+  // both can otherwise land right on top of each other -- the star name
+  // wins since it is what ties the chart back to the sphere).
+  {
+    ctx.font = "9px Inter, sans-serif";
+    const eqText = "celestial equator", eqW = ctx.measureText(eqText).width;
+    const eqBox = { l: plotR-3-eqW, r: plotR-3, t: yEq-2-9, b: yEq-2 };
+    const overlaps = starNameBox &&
+      Math.min(eqBox.r,starNameBox.r) - Math.max(eqBox.l,starNameBox.l) > 0 &&
+      Math.min(eqBox.b,starNameBox.b) - Math.max(eqBox.t,starNameBox.t) > 0;
+    if(!overlaps){
+      ctx.fillStyle = hexAlpha(COLORS.amber, 0.8);
+      ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+      ctx.fillText(eqText, plotR-3, yEq-2);
+    }
+  }
+
+  // axis tick labels: RA every 2h along the bottom (0h..22h -- the 24h tick
+  // is skipped since it is the same sky direction as 0h, drawn at the
+  // opposite plot edge), Dec every 30deg along the left. Alignment/baseline
+  // is chosen per-label from its gridline position so the outermost ticks
+  // (0h at the right edge; +90/-90 deg at the top/bottom edges) sit fully
+  // inside the canvas instead of overflowing past the plot box.
+  ctx.font = "9px Inter, sans-serif"; ctx.fillStyle = COLORS.muted;
+  for(let k=0;k<12;k++){
+    const alphaH = k*2;
+    const x = xOf(alphaH);
+    let align = "center";
+    if(x > plotR-10) align = "right"; else if(x < plotL+10) align = "left";
+    ctx.textAlign = align; ctx.textBaseline = "top";
+    ctx.fillText(alphaH+"h", x, plotB+3);
+  }
+  // Dec ticks are placed by PRIORITY (equator, then poles, then the +-30/60
+  // steps) rather than a fixed top-to-bottom pass: at the strip panel's
+  // smallest height (120px, the h-splitter's own clamp) plotH shrinks to
+  // ~50px, so all 7 labels 30deg apart no longer have room to avoid
+  // overlapping their neighbours (only the box-edge collisions the
+  // align/baseline switch above handles). Each candidate is skipped if it
+  // would land within one label's height of an ALREADY-placed one, so the
+  // most important references (0deg/celestial equator, then the poles)
+  // always win the limited space and the +-30/+-60 steps drop out gracefully
+  // as the panel shrinks instead of overlapping into an unreadable smear.
+  const DEC_LABEL_MIN_GAP = 11;
+  const decYsPlaced = [];
+  [0,90,-90,30,-30,60,-60].forEach(function(d){
+    const y = yOf(d);
+    if(decYsPlaced.some(function(py){ return Math.abs(py-y) < DEC_LABEL_MIN_GAP; })) return;
+    decYsPlaced.push(y);
+    let baseline = "middle";
+    if(y < plotT+6) baseline = "top"; else if(y > plotB-6) baseline = "bottom";
+    ctx.textAlign = "right"; ctx.textBaseline = baseline;
+    const label = (d===0) ? "0°" : (d>0?"+":"") + d + "°";
+    ctx.fillText(label, plotL-4, y);
+  });
+
+  // axis titles: RA sits bottom-right INSIDE the plot (room is tight along
+  // the bottom edge itself, which is already carrying tick labels); Dec is
+  // rotated along the left edge, matching drawAnalemmaInset()'s rotated
+  // axis-title convention elsewhere on this page. Each is measured first and
+  // skipped entirely (rather than drawn truncated/overlapping) if the plot
+  // is too small to hold it -- same "shrinking panel drops the least
+  // essential labels first" idea as the Dec-tick priority list above.
+  ctx.font = "9.5px Inter, sans-serif"; ctx.fillStyle = COLORS.muted;
+  const raTitle = "right ascension α (h)";
+  if(ctx.measureText(raTitle).width + 12 <= plotW){
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.fillText(raTitle, plotR-4, plotB-4);
+  }
+  const decTitle = "declination δ (deg)";
+  if(ctx.measureText(decTitle).width + 10 <= plotH){
+    ctx.save();
+    ctx.translate(9, (plotT+plotB)/2);
+    ctx.rotate(-Math.PI/2);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(decTitle, 0, 0);
+    ctx.restore();
+  }
+
+  // caption -- clipped to the plot box so it is always "inside the canvas"
+  // regardless of strip width, and stacked just above the SCP label so the
+  // two never collide at the panel's smallest (120px) height
+  ctx.save();
+  ctx.beginPath(); ctx.rect(plotL,plotT,plotW,plotH); ctx.clip();
+  ctx.font = "8.5px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.75);
+  ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  ctx.fillText("the sky's own grid, flattened - the cyan curve is your horizon right now; it sweeps as sidereal time advances", plotL+3, plotB-12);
+  ctx.restore();
 
   ctx.strokeStyle = COLORS.border; ctx.lineWidth=1;
   ctx.strokeRect(plotL+0.5,plotT+0.5,plotW-1,plotH-1);
@@ -3205,7 +3334,9 @@ function originCalendarReadout(day, dateLabel){
    equinox/solstice reference points, and the zodiac ring's 12 sign glyphs.
    ========================================================================= */
 function drawOriginMap(ctx, w, h){
-  const padL=34, padR=10, padT=10, padB=20;
+  // padL/padB widened (from 34/20), same as drawRadecMap, for the axis tick
+  // labels + titles added below.
+  const padL=48, padR=10, padT=10, padB=24;
   const plotL=padL, plotR=w-padR, plotT=padT, plotB=h-padB;
   const plotW=Math.max(1,plotR-plotL), plotH=Math.max(1,plotB-plotT);
   function xOf(alphaH){ return plotL + (24-alphaH)/24*plotW; } // alpha increases to the LEFT, matching drawRadecMap
@@ -3276,6 +3407,52 @@ function drawOriginMap(ctx, w, h){
     drawGlow(ctx, glowSprite, sx, sy, 20);
     ctx.fillStyle = COLORS.amber;
     ctx.beginPath(); ctx.arc(sx,sy,3.5,0,TAU); ctx.fill();
+  }
+
+  // axis tick labels + titles -- same convention/wording as drawRadecMap
+  // (see that function for why the 24h RA tick is skipped and why the
+  // outermost ticks switch alignment/baseline instead of centering)
+  ctx.font = "9px Inter, sans-serif"; ctx.fillStyle = COLORS.muted;
+  for(let k=0;k<12;k++){
+    const alphaH = k*2;
+    const x = xOf(alphaH);
+    let align = "center";
+    if(x > plotR-10) align = "right"; else if(x < plotL+10) align = "left";
+    ctx.textAlign = align; ctx.textBaseline = "top";
+    ctx.fillText(alphaH+"h", x, plotB+3);
+  }
+  // priority-ordered + collision-skipped, same as drawRadecMap (see there for
+  // why: at plotH~50px (the 120px strip-height clamp) all 7 labels no longer
+  // have room to avoid overlapping their neighbours)
+  const DEC_LABEL_MIN_GAP = 11;
+  const decYsPlaced = [];
+  [0,90,-90,30,-30,60,-60].forEach(function(d){
+    const y = yOf(d);
+    if(decYsPlaced.some(function(py){ return Math.abs(py-y) < DEC_LABEL_MIN_GAP; })) return;
+    decYsPlaced.push(y);
+    let baseline = "middle";
+    if(y < plotT+6) baseline = "top"; else if(y > plotB-6) baseline = "bottom";
+    ctx.textAlign = "right"; ctx.textBaseline = baseline;
+    const label = (d===0) ? "0°" : (d>0?"+":"") + d + "°";
+    ctx.fillText(label, plotL-4, y);
+  });
+
+  // axis titles -- measured first and skipped (not drawn truncated) if the
+  // plot is too small to hold them, same as drawRadecMap
+  ctx.font = "9.5px Inter, sans-serif"; ctx.fillStyle = COLORS.muted;
+  const raTitle = "right ascension α (h)";
+  if(ctx.measureText(raTitle).width + 12 <= plotW){
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.fillText(raTitle, plotR-4, plotB-4);
+  }
+  const decTitle = "declination δ (deg)";
+  if(ctx.measureText(decTitle).width + 10 <= plotH){
+    ctx.save();
+    ctx.translate(9, (plotT+plotB)/2);
+    ctx.rotate(-Math.PI/2);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(decTitle, 0, 0);
+    ctx.restore();
   }
 
   ctx.strokeStyle = COLORS.border; ctx.lineWidth=1;
