@@ -6,6 +6,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PORT="${1:-8321}"
+# server check: refuse to capture an error page
+if ! curl -s -o /dev/null "http://localhost:${PORT}/index.html"; then echo "make_thumbs: no server on port ${PORT} (start one: python3 -m http.server ${PORT})" >&2; exit 1; fi
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 PROFILE="$(mktemp -d)"
 trap 'rm -rf "$PROFILE"; pkill -9 -f "$PROFILE" >/dev/null 2>&1 || true' EXIT
@@ -32,6 +34,7 @@ shot() {
 
 shot "html/ptolemy_model.html?tab=compare&embed=1" "ptolemy_model"
 shot "html/altaz_radec.html?tab=grids&embed=1"     "altaz_radec"
+shot "html/kepler_laws.html?tab=areas&embed=1"     "kepler_laws"
 
 # If a WebGL panel renders black, retry that page's `shot` call with:
 #   --use-angle=swiftshader --enable-unsafe-swiftshader --use-gl=angle
