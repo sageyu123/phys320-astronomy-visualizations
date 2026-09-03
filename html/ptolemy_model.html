@@ -1352,6 +1352,16 @@ function switchTab(tabId){
   els.lambdaReadout.style.display = isCompare ? "none" : "";
   els.compareReadouts.style.display = isCompare ? "" : "none";
   els.ddtReadout.style.display = isEquant ? "" : "none"; // structural: was previously never un-hidden anywhere
+  if(tabId === "eccentric"){
+    // the Sun's stage opens on its "Sun's year" chart (the lambda-t plot is one click away)
+    state.stripMode = "atlas";
+    els.stripModeToggle.querySelectorAll("button").forEach(function(b){
+      const active = b.dataset.mode === "atlas";
+      b.classList.toggle("active", active);
+      b.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    state.stripDirty = true;
+  }
   updateEccentricAtlasUI();
 
   // force every readout to repaint at least once on the new tab
