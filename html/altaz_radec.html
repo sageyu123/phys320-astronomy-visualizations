@@ -64,6 +64,10 @@
   .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
   .brand-sub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
+  .home-btn{ display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; margin-right:10px; min-height:28px; padding:0 11px; border-radius:999px;
+    color:var(--muted); background:var(--panel-raised); border:1px solid var(--border); font-size:12px; text-decoration:none; white-space:nowrap; }
+  .home-btn:hover{ color:var(--text); background:var(--control-hover); border-color:var(--border-hover); }
+  body.embed .home-btn{ display:none; }
   .tabbar{ flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:thin; }
   .tabbar::-webkit-scrollbar{ height:4px; }
   .tabbar::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
@@ -399,6 +403,7 @@
         <div class="brand-sub">PHYS 320 · Az-El &#8646; RA/Dec</div>
       </div>
     </div>
+    <a class="home-btn" href="../index.html" title="Back to the visualizations index">&#8962; Home</a>
     <div class="tabbar">
       <div class="segmented" id="tabBar" role="tablist" aria-label="Teaching stage">
         <button type="button" data-tab="origin" class="active" role="tab" aria-selected="true">Origin &#9800;</button>
@@ -1804,8 +1809,8 @@ function rebuildDiurnalCircle(){
     if(run.above){
       const pathPts = run.pts.map(function(p){ return p.clone().multiplyScalar(1.008); });
       const path = makeFatLineStrip(pathPts, COLORI.text, 0.75, 2);
-      path.material.userData.baseOpacity = 0.75;
-      path.material.userData.baseLinewidth = 1;
+      path.material.userData.baseOpacity = 0.7;
+      path.material.userData.baseLinewidth = 1.5;
       diurnalGroup.add(path.line);
     } else {
       const below = makeFatLineRaw(COLORI.text, 0.3, 2, true, run.pts.length);
@@ -1813,7 +1818,7 @@ function rebuildDiurnalCircle(){
       below.material.gapSize = 0.03;
       setLinePoints(below, run.pts); // fills the geometry + calls computeLineDistances() (dashed+fat)
       below.material.userData.baseOpacity = 0.35;
-      below.material.userData.baseLinewidth = 1;
+      below.material.userData.baseLinewidth = 1.5;
       diurnalGroup.add(below.line);
     }
   });

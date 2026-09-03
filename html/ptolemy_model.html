@@ -63,6 +63,10 @@
   .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
   .brand-sub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
+  .home-btn{ display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; margin-right:10px; min-height:28px; padding:0 11px; border-radius:999px;
+    color:var(--muted); background:var(--panel-raised); border:1px solid var(--border); font-size:12px; text-decoration:none; white-space:nowrap; }
+  .home-btn:hover{ color:var(--text); background:var(--control-hover); border-color:var(--border-hover); }
+  body.embed .home-btn{ display:none; }
   .tabbar{ flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:thin; }
   .tabbar::-webkit-scrollbar{ height:4px; }
   .tabbar::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
@@ -286,6 +290,7 @@
         <div class="brand-sub">PHYS 320 · Geocentric Astronomy</div>
       </div>
     </div>
+    <a class="home-btn" href="../index.html" title="Back to the visualizations index">&#8962; Home</a>
     <div class="tabbar">
       <div class="segmented" id="tabBar" role="tablist" aria-label="Model device">
         <button type="button" data-tab="eccentric" class="active" role="tab" aria-selected="true">Eccentric</button>
