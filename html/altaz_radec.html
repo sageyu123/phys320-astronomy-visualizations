@@ -264,6 +264,12 @@
   .doy-ticks{ position:absolute; left:0; right:0; top:100%; height:5px; margin-top:1px; pointer-events:none; }
   .doy-tick{ position:absolute; top:0; width:2px; height:5px; background:var(--border-strong); border-radius:1px; transform:translateX(-1px); }
 
+  /* ---------- Declination slider: circumpolar/never-rises limit ticks (Star card) ---------- */
+  .decl-slider-wrap{ position:relative; flex:1 1 auto; min-width:0; }
+  .decl-slider-wrap input[type=range]{ width:100%; display:block; }
+  .decl-ticks{ position:absolute; left:0; right:0; top:100%; height:5px; margin-top:1px; pointer-events:none; }
+  .decl-tick{ position:absolute; top:0; width:2px; height:5px; background:var(--border-strong); border-radius:1px; transform:translateX(-1px); }
+
   select{
     width:100%; min-height:28px; background:var(--panel-raised);
     border:1px solid var(--border); border-radius:4px; color:var(--text);
@@ -508,10 +514,15 @@
         <div class="field">
           <label class="field-label" for="decRange">Declination <span class="math" data-latex="\delta">&delta;</span></label>
           <div class="field-row">
-            <input type="range" id="decRange" min="-90" max="90" step="0.1" value="38.78">
+            <div class="decl-slider-wrap">
+              <input type="range" id="decRange" min="-90" max="90" step="0.1" value="38.78" list="declLimitTicks">
+              <div class="decl-ticks" id="declTicks" aria-hidden="true"></div>
+              <datalist id="declLimitTicks"></datalist>
+            </div>
             <input type="number" id="decNum" class="num-input" min="-90" max="90" step="0.1" value="38.78">
             <span class="unit">&deg;</span>
           </div>
+          <div class="unit" id="declLimitReadout" style="margin-top:6px"></div>
         </div>
       </div>
 
@@ -914,6 +925,20 @@ function riseSetInfo(phi_deg, delta_deg){
   return { circumpolar:false, neverRises:false, H0deg: Math.acos(val)*DEG };
 }
 
+/* Circumpolar/never-rises declination landmarks at a given latitude -- the
+   two small circles (delta = +-(90-|phi|)) tangent to the horizon at the
+   north/south points. `up` is always the positive-side limit, `down` the
+   negative-side one; WHICH of the two is the "circumpolar" limit (vs. the
+   "never rises" limit) flips with the sign of phi (see poleSign at each call
+   site) -- this pair itself stays a fixed function of |phi| alone. Shared by
+   the Declination slider's drag-snap/tick marks/readout (wireStar() and
+   refreshDeclLimitUI() below) and the Diurnal-circle layer's two dashed
+   limit rings (rebuildDiurnalCircle()). */
+function declLimits(phi_deg){
+  const lim = 90 - Math.abs(phi_deg);
+  return { up: lim, down: -lim };
+}
+
 function parallacticAngleDeg(H_deg, phi_deg, delta_deg){
   const H=H_deg*RAD, phi=phi_deg*RAD, delta=delta_deg*RAD;
   return Math.atan2(Math.sin(H), Math.tan(phi)*Math.cos(delta) - Math.sin(delta)*Math.cos(H))*DEG;
@@ -1041,7 +1066,8 @@ const TAB_CONFIG = {
     badge: "diurnal", poleReadout:false, locationHighlight:false, hlstReadout:false, formulasExpanded:false,
     aboutTitle: "The sky turns about the pole",
     aboutHTML:
-      '<p>Earth\'s rotation turns the whole equatorial grid about the polar axis once per sidereal day (23&nbsp;h&nbsp;56&nbsp;m). A star\'s <span class="math" data-latex="\\alpha">&alpha;</span> and <span class="math" data-latex="\\delta">&delta;</span> never change; it simply rides its circle of constant declination — its diurnal circle — while its azimuth and elevation sweep continuously. The hour angle h = LST &minus; <span class="math" data-latex="\\alpha">&alpha;</span> measures how far the star has turned past the meridian; it culminates (highest, at elevation 90&deg; &minus; |<span class="math" data-latex="\\varphi">&phi;</span> &minus; <span class="math" data-latex="\\delta">&delta;</span>|) when h = 0. Stars with <span class="math" data-latex="\\delta">&delta;</span> &gt; 90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span> never dip below the horizon: they are circumpolar. Stars with <span class="math" data-latex="\\delta">&delta;</span> &lt; &minus;(90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span>) never rise at all.</p>'
+      '<p>Earth\'s rotation turns the whole equatorial grid about the polar axis once per sidereal day (23&nbsp;h&nbsp;56&nbsp;m). A star\'s <span class="math" data-latex="\\alpha">&alpha;</span> and <span class="math" data-latex="\\delta">&delta;</span> never change; it simply rides its circle of constant declination — its diurnal circle — while its azimuth and elevation sweep continuously. The hour angle h = LST &minus; <span class="math" data-latex="\\alpha">&alpha;</span> measures how far the star has turned past the meridian; it culminates (highest, at elevation 90&deg; &minus; |<span class="math" data-latex="\\varphi">&phi;</span> &minus; <span class="math" data-latex="\\delta">&delta;</span>|) when h = 0. Stars with <span class="math" data-latex="\\delta">&delta;</span> &gt; 90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span> never dip below the horizon: they are circumpolar. Stars with <span class="math" data-latex="\\delta">&delta;</span> &lt; &minus;(90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span>) never rise at all.</p>' +
+      '<p>The dividing lines are the two diurnal circles that just touch the horizon: at declination 90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span> on the pole\'s side and <span class="math" data-latex="\\varphi">&phi;</span> &minus; 90&deg; on the other. Drag the declination slider — it snaps to them — to watch a star turn circumpolar or vanish for good.</p>'
   },
   hlst: {
     label: "h · α · LST",
@@ -1930,6 +1956,38 @@ function rebuildDiurnalCircle(){
     disk.renderOrder = -1; // draw below the path/glow lines (renderOrder 0), matching the coordinate-sector fans' own convention
     diurnalGroup.add(disk);
     diurnalDisk = disk; // applyHighlight() gives this its own (non-generic) hover opacity
+  }
+
+  // The two limiting diurnal circles -- delta = +-(90-|phi|) (declLimits()) --
+  // tangent to the horizon at the north/south points: a star riding the
+  // pole-side one just grazes the horizon at LOWER culmination (H=180) and is
+  // circumpolar for any |delta| beyond it; a star riding the opposite one
+  // just grazes it at UPPER culmination/transit (H=0) and never rises beyond
+  // it. Thin dashed cream fat lines, part of this same diurnalGroup/"diurnal"
+  // toggle (no extra visibility wiring needed -- see applyDisplayVisibility())
+  // and rebuilt with phi exactly like the star's own circle above, since this
+  // whole function already reruns on every phi/star change.
+  {
+    const lim = declLimits(state.phi);
+    const poleSign = state.phi >= 0 ? 1 : -1;
+    [ { delta: poleSign*lim.up, tangentH: 180, text: "circumpolar above" },
+      { delta: -poleSign*lim.up, tangentH: 0, text: "never rises below" } ].forEach(function(def){
+      const ringPts = [];
+      for(let i=0;i<=n;i++) ringPts.push(toThreeVec3(eqToVec((i/n)*360, def.delta, state.phi)));
+      const ringLine = makeFatLineRaw(COLORI.text, 0.35, 1.25, true, ringPts.length);
+      ringLine.material.dashSize = 0.05;
+      ringLine.material.gapSize = 0.035;
+      ringLine.material.userData.baseOpacity = 0.35;
+      ringLine.material.userData.baseLinewidth = 1.25;
+      setLinePoints(ringLine, ringPts); // fills the geometry + calls computeLineDistances() (dashed+fat)
+      diurnalGroup.add(ringLine.line);
+
+      const tangentP = toThreeVec3(eqToVec(def.tangentH, def.delta, state.phi));
+      const label = makeTextSprite(def.text, COLORS.text, { pixelHeight:11 });
+      label.material.opacity = 0.8;
+      label.position.copy(tangentP.clone().multiplyScalar(1.12)); // just outside the horizon ring, same convention as the rise/set labels below
+      diurnalGroup.add(label);
+    });
   }
 
   // rise/set markers: a cream dot + a short radial tick crossing the
@@ -3420,7 +3478,7 @@ const els = {};
 function cacheEls(){
   ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum","speedUnit",
    "observerCard","locationField","locationSelect","phiRange","phiNum","lstRange","lstNum",
-   "starCard","starSelect","raRange","raNum","decRange","decNum",
+   "starCard","starSelect","raRange","raNum","decRange","decNum","declTicks","declLimitReadout",
    "dateCard","doyRange","doyNum","doyCalendarReadout","doyTicks","cardinalControl",
    "originClockRange","originClockNum","originPhiRange","originPhiNum",
    "originTimeline","btnTimelinePlay","timelineRange","timelineBubble","timelineTicks",
@@ -3455,7 +3513,12 @@ function wireSliderNumber(rangeEl, numEl, opts){
     opts.onCommit(v);
   }
   rangeEl.addEventListener("input", function(){
-    const v = parseFloat(rangeEl.value);
+    let v = parseFloat(rangeEl.value);
+    // opts.snap (only the Declination slider passes one -- see wireStar())
+    // pulls the RANGE input to a nearby landmark value while dragging; the
+    // number input below has no such snap, matching the Origin timeline's
+    // own asymmetric doyRange/doyNum convention (snapOriginDay()).
+    if(opts.snap){ v = opts.snap(v); rangeEl.value = v; }
     numEl.value = fmtNum(v, getStep());
     commit(v);
   });
@@ -3488,6 +3551,7 @@ function fullUpdate(){
 function onObserverOrStarChanged(){
   if(state.webglOK) updateStarInGroup();
   fullUpdate();
+  refreshDeclLimitUI(); // Declination slider's limit ticks/readout track both phi and dec -- see wireStar()
 }
 
 /* Origin tab's own "fullUpdate()": pushes state.day into the stage, refreshes
@@ -3839,6 +3903,58 @@ function wireObserver(){
   });
 }
 
+/* Declination slider drag-snap: within +-1.5 deg of either circumpolar/
+   never-rises limit (declLimits(state.phi)) the RANGE input snaps to it
+   (wireSliderNumber()'s opts.snap, wired in wireStar() below); the number
+   input never snaps, free movement while typing. */
+function snapDeclLimit(v){
+  const lim = declLimits(state.phi);
+  if(Math.abs(v - lim.up) <= 1.5) return lim.up;
+  if(Math.abs(v - lim.down) <= 1.5) return lim.down;
+  return v;
+}
+
+/* Rebuilds the Declination slider's two limit tick marks (repositioned
+   whenever phi changes, same CSS tick-row + <datalist> pattern as the Date
+   card's buildDoyTicks()) and updates the small readout under it: shown only
+   when delta sits EXACTLY on one of the two limits (a drag-snap, a preset
+   star pick that happens to land there, etc.), naming which one via the same
+   fixed textbook formula regardless of hemisphere -- otherwise empty. Called
+   from onObserverOrStarChanged(), which every phi/ra/dec/star entry point
+   (Location, Latitude, Star select, RA, Dec) already funnels through, plus
+   once at startup/tab-switch via switchTab()'s own call to it. */
+function refreshDeclLimitUI(){
+  if(!els.declTicks) return;
+  const lim = declLimits(state.phi);
+  els.declTicks.innerHTML = "";
+  const dl = document.getElementById("declLimitTicks");
+  if(dl) dl.innerHTML = "";
+  [lim.up, lim.down].forEach(function(v){
+    const pct = (v+90)/180*100;
+    const tick = document.createElement("span");
+    tick.className = "decl-tick";
+    tick.style.left = pct.toFixed(3) + "%";
+    els.declTicks.appendChild(tick);
+    if(dl){
+      const opt = document.createElement("option");
+      opt.value = v;
+      dl.appendChild(opt);
+    }
+  });
+
+  const poleSign = state.phi >= 0 ? 1 : -1;
+  const circumpolarLimit = poleSign >= 0 ? lim.up : lim.down;
+  const neverRisesLimit  = poleSign >= 0 ? lim.down : lim.up;
+  let html = "";
+  if(Math.abs(state.dec - circumpolarLimit) < 1e-6){
+    html = 'circumpolar limit &middot; <span class="math" data-latex="\\delta">&delta;</span> = 90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span>';
+  } else if(Math.abs(state.dec - neverRisesLimit) < 1e-6){
+    html = 'never-rises limit &middot; <span class="math" data-latex="\\delta">&delta;</span> = <span class="math" data-latex="\\varphi">&phi;</span> &minus; 90&deg;';
+  }
+  els.declLimitReadout.innerHTML = html;
+  if(html) renderMathSpans(els.declLimitReadout);
+}
+
 function wireStar(){
   els.starSelect.addEventListener("change", function(){
     const key = els.starSelect.value;
@@ -3855,6 +3971,7 @@ function wireStar(){
   });
   wireSliderNumber(els.decRange, els.decNum, {
     min:-90, max:90, step:0.1, fallback:function(){ return state.dec; },
+    snap: snapDeclLimit, // dragging the RANGE only -- see wireSliderNumber()'s opts.snap handling
     onCommit:function(v){ state.dec = v; state.starKey = "custom"; els.starSelect.value = "custom"; onObserverOrStarChanged(); }
   });
 }
@@ -3864,7 +3981,7 @@ const TOGGLE_TIPS = {
   hGrid: "Elevation circles and azimuth arcs fixed to your horizon — the observer's own grid. Cyan.",
   eGrid: "Declination circles and hour circles fixed to the stars, turning with sidereal time. Amber.",
   meridian: 'The great circle through the north point, zenith and south point — where every star culminates and where hour angle <span class="math">h</span> is zero.',
-  diurnal: "The star's daily path: a circle of constant declination around the celestial pole, parallel to the celestial equator — it rises and sets where the circle meets the horizon.",
+  diurnal: "The star's daily path: a circle of constant declination around the celestial pole, parallel to the celestial equator — it rises and sets where the circle meets the horizon. The two dashed rings are the limits: stars inside the polar one never set, stars inside the opposite one never rise.",
   arcs: 'The star\'s coordinates drawn as arcs: <span class="math">Az</span> and <span class="math">El</span> in cyan, <span class="math">&delta;</span> and <span class="math">&alpha;</span> in amber, hour angle <span class="math">h</span> in magenta.',
   sectorsControl: "Translucent sectors from the observer out to one pair of arcs — the planes in which that pair is measured. Show one pair at a time.",
   triangle: "The spherical triangle zenith–pole–star whose sides and angles convert between the two systems.",
