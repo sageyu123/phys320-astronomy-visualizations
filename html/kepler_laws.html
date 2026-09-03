@@ -389,10 +389,13 @@
             sector = <b id="vArSector" class="tabular">0.000</b>
           </div>
           <div class="panel-readouts" id="rdHarmonic" style="display:none">
-            custom <span class="math">a</span> = <b id="vHarA" class="tabular">1.50</b> AU &nbsp;
+            <span id="vHarShown" style="display:none">selected: <b id="vHarShownName" class="tabular">Mars</b> (already shown)</span>
+            <span id="vHarExtra">
+            selected <span class="math">a</span> = <b id="vHarA" class="tabular">1.50</b> AU &nbsp;
             <span class="math">e</span> = <b id="vHarE" class="tabular">0.50</b> &nbsp;
             <span class="math">P</span> = <b id="vHarPd" class="tabular">671.1</b> d = <b id="vHarPy" class="tabular">1.837</b> yr &nbsp;
             <span class="math">P</span>&sup2;/<span class="math">a</span>&sup3; = <b id="vHarCheck" class="tabular">1.000</b>
+            </span>
           </div>
           <div class="panel-readouts" id="rdEquant" style="display:none">
             Ptolemy runs <b id="vEqLead" class="tabular">AHEAD</b> by <b id="vEqDlam" class="tabular">0.00</b>&prime; &nbsp;
@@ -685,6 +688,26 @@ const HARMONIC_PLANETS = [
 ];
 const HALLEY = { key:"halley", name:"Halley's comet", a:17.8, e:0.967 };
 
+// True for a preset key that's already drawn as one of the six HARMONIC_PLANETS orbits on the
+// Harmonic tab -- "marsx" (Mars, e exaggerated) shares Mars' semi-major axis, so it counts too
+// (same point on the P-a line; drawing it as a second body would just duplicate Mars).
+function isDrawnHarmonicKey(key){
+  return key === "marsx" || HARMONIC_PLANETS.some(function(p){ return p.key === key; });
+}
+// Display name for an already-drawn key (see isDrawnHarmonicKey); null if `key` isn't one.
+function drawnHarmonicName(key){
+  if(key === "marsx") return "Mars";
+  const pl = HARMONIC_PLANETS.filter(function(p){ return p.key === key; })[0];
+  return pl ? pl.name : null;
+}
+// (a, e) of the currently shared-selected body (state.selected.preset): state.custom for
+// "custom", else the matching PRESETS entry (covers the six planets, marsx, and Halley).
+function selectedAE(){
+  if(state.selected.preset === "custom") return { a: state.custom.a, e: state.custom.e };
+  const pr = presetByKey(state.selected.preset);
+  return pr ? { a: pr.a, e: pr.e } : { a: state.custom.a, e: state.custom.e };
+}
+
 /* =========================================================================
    3. STATE
    ========================================================================= */
@@ -697,6 +720,11 @@ const state = {
                              // sliders on the Ellipses/Equal-areas/Ptolemy's-shadow tabs AND to
                              // the "Custom planet a/e" sliders on the Harmonic tab; persists across
                              // tab switches and playback (never reset by defaultParamsFor()).
+  selected: { preset:"custom" }, // the ONE shared "selected body" -- written by every tab's Preset
+                             // select (see applyPreset()/buildOrbitControls()/markCustom()); the
+                             // Harmonic tab's own Preset select reads/writes this too, and shows
+                             // whichever body it names as the "extra" orbit (unless it's already
+                             // one of the six drawn planets). Persists across tab switches.
   p: {},              // current tab's params (shape varies by tab)
   display: {},        // current tab's display toggles
   stripMode: "",       // current tab's active strip-mode key
@@ -770,7 +798,7 @@ const TOGGLE_TIPS = {
   },
   harmonic: {
     labels: 'Names for each planet.',
-    customPlanet: 'The same custom planet as the Custom preset on the other stages — an ellipse with the <span class="math" data-latex="a">a</span> and <span class="math" data-latex="e">e</span> you set; its period depends on <span class="math" data-latex="a">a</span> alone.'
+    selectedBody: 'The body chosen in the Preset menu — the same one shown on the other stages; planets already drawn here are not duplicated.'
   },
   equant: {
     labels: 'Names for the Sun, the empty focus / equant Q, and both planets.'
@@ -820,7 +848,7 @@ function cacheEls(){
    "mainPanelTitle","mainPanelCaption","rdEllipse","rdAreas","rdHarmonic","rdEquant",
    "vEllT","vEllR1","vEllR2","vEllSum","vEllV",
    "vArT","vArR","vArVperp","vArRvperp","vArDadt","vArSector",
-   "vHarA","vHarE","vHarPd","vHarPy","vHarCheck",
+   "vHarShown","vHarShownName","vHarExtra","vHarA","vHarE","vHarPd","vHarPy","vHarCheck",
    "vEqLead","vEqDlam","vEqDlamMax","vEqE",
    "stripModeToggle","stripPanelTitle","stripLegend","mainCanvas","stripCanvas"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
@@ -949,6 +977,7 @@ function syncOrbitSliders(){
 }
 
 function markCustom(){
+  state.selected.preset = "custom";
   if(state.p.preset !== "custom"){
     state.p.preset = "custom";
     if(paramWidgets.select) paramWidgets.select.value = "custom";
@@ -961,6 +990,7 @@ function applyPreset(key){
   if(!preset) return;
   state.p.preset = key;
   state.p.a = preset.a; state.p.e = preset.e;
+  state.selected.preset = key;
   syncOrbitSliders();
   updateMainPanelTitle();
   onParamsChanged();
@@ -978,6 +1008,7 @@ function buildOrbitControls(container, opts){
       if(key === "custom"){
         state.p.preset = "custom";
         state.p.a = state.custom.a; state.p.e = state.custom.e;
+        state.selected.preset = "custom";
         syncOrbitSliders();
         updateMainPanelTitle();
         onParamsChanged();
@@ -1030,14 +1061,15 @@ function buildHarmonicParams(c){
   const seg = document.createElement("div");
   seg.className = "segmented";
   seg.style.width = "100%";
-  [["inner","Inner planets"],["all","All planets"]].forEach(function(pair){
+  [["inner","Inner planets"],["all","All planets"],["fit","Fit selection"]].forEach(function(pair){
     const b = document.createElement("button");
     b.type = "button"; b.style.flex = "1 1 0";
     b.textContent = pair[1];
+    b.dataset.view = pair[0];
     b.classList.toggle("active", state.p.view === pair[0]);
     b.addEventListener("click", function(){
       state.p.view = pair[0];
-      seg.querySelectorAll("button").forEach(function(x){ x.classList.toggle("active", x===b); });
+      syncHarmonicViewButtons();
       resetHarmonicLabels();
       state.stripDirty = true; render();
     });
@@ -1045,25 +1077,94 @@ function buildHarmonicParams(c){
   });
   field.appendChild(label); field.appendChild(seg);
   c.appendChild(field);
+  paramWidgets.viewSeg = seg;
 
-  // Bound to the shared state.custom -- the same planet as the Custom preset on the other
-  // stages. Editing either slider here changes the Custom preset everywhere, and vice versa.
-  paramWidgets.customAW = buildSliderField(c, {
-    label: 'Custom planet <span class="math" data-latex="a">a</span>', value: state.custom.a,
-    min:0.2, max:20, step:0.01, unit:"AU",
-    onChange: function(v){ state.custom.a = v; clearTrail("custom"); updateFormulasCard(); state.stripDirty = true; render(); }
-  });
-  paramWidgets.customEW = buildSliderField(c, {
-    label: 'Custom planet <span class="math" data-latex="e">e</span>', value: state.custom.e,
-    min:0, max:0.95, step:0.001,
-    onChange: function(v){ state.custom.e = v; clearTrail("custom"); updateFormulasCard(); state.stripDirty = true; render(); }
-  });
+  // Preset select + a/e sliders bound to the shared state.selected -- the same body chosen on
+  // the Ellipses/Equal-areas/Ptolemy's-shadow tabs. Sliders are read-only previews of a fixed
+  // preset's a/e except when "Custom" is selected, where they edit the shared state.custom.
+  buildSelectedBodyControls(c);
 
   const note = document.createElement("div");
   note.className = "unit";
   note.style.marginTop = "-4px";
-  note.textContent = "At 30 d/s, Saturn's 29.5-year orbit takes about 6 minutes to complete.";
   c.appendChild(note);
+  paramWidgets.speedNote = note;
+  updateHarmonicSpeedHint();
+}
+
+// Same Preset <select> shape as buildOrbitControls, but targeting the shared selection
+// (state.selected.preset) rather than the current tab's own orbit -- picking one of the six
+// drawn planets (or "marsx", which shares Mars' a) shows its fixed a/e read-only and draws no
+// extra body (see drawHarmonicMain/drawHarmonicStrip); picking Halley's comet or Custom shows
+// live a/e (Custom's sliders are editable) and draws it as the extra cyan body.
+function buildSelectedBodyControls(container){
+  paramWidgets.selSelect = buildPresetSelect(container, {
+    value: state.selected.preset,
+    onChange: function(key){
+      state.selected.preset = key;
+      if(key === "halley"){ state.p.view = "fit"; syncHarmonicViewButtons(); }
+      syncSelectedBodySliders();
+      resetHarmonicLabels();
+      updateFormulasCard();
+      updateHarmonicSpeedHint();
+      state.stripDirty = true;
+      render();
+    }
+  });
+  paramWidgets.selAW = buildSliderField(container, {
+    label: 'Selected <span class="math" data-latex="a">a</span>', value: selectedAE().a,
+    min:0.2, max:20, step:0.01, unit:"AU",
+    onChange: function(v){
+      state.custom.a = v; clearTrail("custom"); updateFormulasCard(); updateHarmonicSpeedHint();
+      state.stripDirty = true; render();
+    }
+  });
+  paramWidgets.selEW = buildSliderField(container, {
+    label: 'Selected <span class="math" data-latex="e">e</span>', value: selectedAE().e,
+    min:0, max:0.95, step:0.001,
+    onChange: function(v){ state.custom.e = v; clearTrail("custom"); updateFormulasCard(); state.stripDirty = true; render(); }
+  });
+  syncSelectedBodySliders();
+}
+
+// Refreshes the a/e slider values + select from state.selected/state.custom, and enables them
+// only for "Custom" (a fixed preset's a/e are shown but not editable here).
+function syncSelectedBodySliders(){
+  if(paramWidgets.selSelect) paramWidgets.selSelect.value = state.selected.preset;
+  const isCustom = state.selected.preset === "custom";
+  const ae = selectedAE();
+  [ [paramWidgets.selAW, ae.a], [paramWidgets.selEW, ae.e] ].forEach(function(pair){
+    const w = pair[0], v = pair[1];
+    if(!w) return;
+    w.range.disabled = !isCustom; w.num.disabled = !isCustom;
+    w.range.value = v; w.num.value = fmtNum(v, w.range.step);
+  });
+}
+
+function syncHarmonicViewButtons(){
+  if(!paramWidgets.viewSeg) return;
+  paramWidgets.viewSeg.querySelectorAll("button").forEach(function(b){
+    b.classList.toggle("active", b.dataset.view === state.p.view);
+  });
+}
+
+// "At 30 d/s, Saturn's 29.5-year orbit takes about 6 minutes to complete." -- swapped for the
+// selected body's own period once it exceeds Saturn's (only Halley or a wide Custom orbit can).
+function harmonicSpeedHintText(){
+  const saturn = presetByKey("saturn");
+  const satPy = periodDays(saturn.a) / YEAR_DAYS;
+  const ae = selectedAE();
+  const selPy = periodDays(ae.a) / YEAR_DAYS;
+  if(selPy > satPy){
+    const name = state.selected.preset === "custom" ? "the custom planet" : (presetByKey(state.selected.preset) || {}).name;
+    const mins = Math.round(periodDays(ae.a) / 30 / 60);
+    return "At 30 d/s, " + (name || "the selected body") + "'s " + selPy.toFixed(1) + "-year orbit takes about " + mins + " minutes to complete.";
+  }
+  const mins = Math.round(periodDays(saturn.a) / 30 / 60);
+  return "At 30 d/s, Saturn's " + satPy.toFixed(1) + "-year orbit takes about " + mins + " minutes to complete.";
+}
+function updateHarmonicSpeedHint(){
+  if(paramWidgets.speedNote) paramWidgets.speedNote.textContent = harmonicSpeedHintText();
 }
 
 function buildEquantParams(c){
@@ -1094,7 +1195,7 @@ function buildEquantParams(c){
 const TAB_TOGGLES = {
   ellipse: [ {key:"labels", label:"Labels", def:true}, {key:"circleA", label:"Circle of radius a", def:false}, {key:"focal", label:"Focal lines", def:true} ],
   areas:   [ {key:"labels", label:"Labels", def:true}, {key:"velocity", label:"Velocity vector", def:true}, {key:"sectors", label:"Equal-time sectors", def:true}, {key:"whyEqual", label:"Why equal? (r·v⊥)", def:true} ],
-  harmonic:[ {key:"labels", label:"Labels", def:true}, {key:"customPlanet", label:"Custom planet", def:true} ],
+  harmonic:[ {key:"labels", label:"Labels", def:true}, {key:"selectedBody", label:"Selected body", def:true} ],
   equant:  [ {key:"labels", label:"Labels", def:true} ]
 };
 
@@ -1360,7 +1461,7 @@ function updateAreasFormulas(){
 // time), so these are the same every frame while the slider is untouched.
 function updateHarmonicFormulas(){
   if(!fEls || !fEls.fA) return;
-  const a = state.custom.a, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
+  const a = selectedAE().a, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
   const aStr = a.toFixed(2), PyStr = Py.toFixed(3), PdStr = Pd.toFixed(1);
   const P2Str = (Py*Py).toFixed(3);
   const a3Str = Math.pow(a,3).toFixed(3);
@@ -1497,7 +1598,7 @@ function defaultParamsFor(tab){
     if(tab === "areas"){ base.k = 12; base.n = 4; }
     return base;
   }
-  if(tab === "harmonic") return { view:"all" };
+  if(tab === "harmonic") return { view: state.selected.preset === "halley" ? "fit" : "all" };
   if(tab === "equant") return { preset:"marsx", a:1.524, e:0.30 }; // the comparison stays readable; Mars and Custom are one click away
   return {};
 }
@@ -2177,7 +2278,14 @@ function drawHarmonicLegend(ctx, items){
 }
 
 function drawHarmonicMain(ctx,w,h){
-  const extent = (state.p.view === "inner") ? 1.7 : 10.5;
+  const selKey = state.selected.preset;
+  const selIsExtra = !isDrawnHarmonicKey(selKey); // Halley or Custom -- everything else is already drawn below
+  const selAE = selectedAE();
+  const view = state.p.view;
+  let extent;
+  if(view === "inner") extent = 1.7;
+  else if(view === "fit") extent = Math.max(1.7, 1.06 * selAE.a * (1 + selAE.e)); // never smaller than "Inner planets"
+  else extent = 10.5;
   const scale = (Math.min(w,h)/2 - 26) / extent;
   const cx = w/2, cy = h/2;
   function toScreen(pt){ return { x:cx+pt.x*scale, y:cy-pt.y*scale }; }
@@ -2189,11 +2297,12 @@ function drawHarmonicMain(ctx,w,h){
     drawEllipsePath(ctx, toScreen, pl.a, pl.e);
   });
 
-  const customStyle = layerStyle("customPlanet");
-  if(customStyle.show){
-    ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.6*customStyle.alpha);
-    ctx.lineWidth = 1.5*customStyle.mul;
-    drawEllipsePath(ctx, toScreen, state.custom.a, state.custom.e);
+  const extraStyle = layerStyle("selectedBody");
+  const showExtra = selIsExtra && extraStyle.show;
+  if(showExtra){
+    ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.6*extraStyle.alpha);
+    ctx.lineWidth = 1.5*extraStyle.mul;
+    drawEllipsePath(ctx, toScreen, selAE.a, selAE.e);
   }
 
   // Sun
@@ -2202,7 +2311,6 @@ function drawHarmonicMain(ctx,w,h){
   ctx.beginPath(); ctx.arc(cx,cy,6,0,TAU); ctx.fill();
   drawLabel(ctx, cx, cy, "Sun", {dx:0,dy:-1}, {color:COLORS.amber, size:11, offset:9});
 
-  const view = state.p.view;
   const threshold = 0.12 * extent;
   const moving = [];      // planets that get a moving, collision-avoided label this frame
   const legendItems = []; // planets listed in the fixed legend ("All planets" scale only)
@@ -2217,14 +2325,14 @@ function drawHarmonicMain(ctx,w,h){
     ctx.beginPath(); ctx.arc(s.x,s.y,5,0,TAU); ctx.fill();
 
     if(!labelsOn()) return;
-    if(view === "inner" || pl.key === "jupiter" || pl.key === "saturn"){
+    if(view === "inner" || view === "fit" || pl.key === "jupiter" || pl.key === "saturn"){
       moving.push({ key:pl.key, name:pl.name, color:color, sx:s.x, sy:s.y });
     }
     if(view === "all") legendItems.push({ name:pl.name, color:color });
   });
 
-  if(customStyle.show){
-    const o = computeOrbit(state.custom.a, state.custom.e, state.t);
+  if(showExtra){
+    const o = computeOrbit(selAE.a, selAE.e, state.t);
     pushTrail("custom", o.x, o.y, o.nu);
     drawTrail(ctx, toScreen, "custom", o.nu, COLORS.cyan);
     const s = toScreen({x:o.x,y:o.y});
@@ -2233,10 +2341,11 @@ function drawHarmonicMain(ctx,w,h){
     ctx.beginPath(); ctx.arc(s.x,s.y,5.5,0,TAU); ctx.fill();
 
     if(labelsOn()){
-      if(view === "inner" || state.custom.a >= threshold){
-        moving.push({ key:"custom", name:"custom", color:COLORS.cyan, sx:s.x, sy:s.y });
+      const name = (selKey === "custom") ? "custom" : "Halley's comet";
+      if(view === "inner" || view === "fit" || selAE.a >= threshold){
+        moving.push({ key:"custom", name:name, color:COLORS.cyan, sx:s.x, sy:s.y });
       }
-      if(view === "all") legendItems.push({ name:"custom", color:COLORS.cyan });
+      if(view === "all") legendItems.push({ name:name, color:COLORS.cyan });
     }
   } else {
     clearTrail("custom");
@@ -2627,6 +2736,8 @@ function layoutLinearLabels(ctx, ax, points){
 function drawHarmonicStrip(ctx,w,h){
   const ax = stripAxes(w,h);
   const bodies = HARMONIC_PLANETS.concat([HALLEY]);
+  const selKey = state.selected.preset;
+  const selIsExtra = !isDrawnHarmonicKey(selKey); // Halley or Custom
 
   if(state.stripMode === "loglog"){
     const xMin=-0.8, xMax=1.4, yMin=-1.2, yMax=2.1;
@@ -2676,10 +2787,13 @@ function drawHarmonicStrip(ctx,w,h){
     bodies.forEach(function(b){
       const la = Math.log10(b.a), lp = 1.5*la;
       const s = { x:xOf(la), y:yOf(lp) };
-      const faded = (b.key === "halley");
-      const color = faded ? COLORS.muted : COLORS[b.color];
+      // the faded Halley dot becomes full (cyan, glowing, slightly larger) when it's the selection
+      const isSelectedHalley = selIsExtra && b.key === "halley" && selKey === "halley";
+      const faded = (b.key === "halley") && !isSelectedHalley;
+      const color = isSelectedHalley ? COLORS.cyan : (faded ? COLORS.muted : COLORS[b.color]);
+      if(isSelectedHalley) drawGlow(ctx, glowSpriteCyan, s.x, s.y, 16);
       ctx.fillStyle = faded ? hexAlpha(color,0.5) : color;
-      ctx.beginPath(); ctx.arc(s.x,s.y,faded?3:4,0,TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(s.x,s.y,faded?3:(isSelectedHalley?5:4),0,TAU); ctx.fill();
       if(labelsOn()){
         ctx.font="9px Inter, sans-serif"; ctx.fillStyle = faded?hexAlpha(COLORS.muted,0.6):color;
         ctx.textAlign="left"; ctx.textBaseline="bottom";
@@ -2687,11 +2801,13 @@ function drawHarmonicStrip(ctx,w,h){
       }
     });
 
-    const ca = state.custom.a, cla=Math.log10(ca), clp=1.5*cla;
-    const cs = { x:xOf(cla), y:yOf(clp) };
-    drawGlow(ctx, glowSpriteCyan, cs.x, cs.y, 16);
-    ctx.fillStyle = COLORS.cyan;
-    ctx.beginPath(); ctx.arc(cs.x,cs.y,4.5,0,TAU); ctx.fill();
+    if(selIsExtra && selKey === "custom"){
+      const ca = state.custom.a, cla=Math.log10(ca), clp=1.5*cla;
+      const cs = { x:xOf(cla), y:yOf(clp) };
+      drawGlow(ctx, glowSpriteCyan, cs.x, cs.y, 16);
+      ctx.fillStyle = COLORS.cyan;
+      ctx.beginPath(); ctx.arc(cs.x,cs.y,4.5,0,TAU); ctx.fill();
+    }
   } else { // "linear"
     const xMax=20, yMax=Math.pow(20,1.5);
     function xOf(a){ return ax.plotL + (a/xMax)*ax.plotW; }
@@ -2715,17 +2831,22 @@ function drawHarmonicStrip(ctx,w,h){
     const labelPts = [];
     bodies.forEach(function(b){
       const s = { x:xOf(b.a), y:yOf(Math.pow(b.a,1.5)) };
-      const faded = (b.key==="halley");
-      const color = faded?COLORS.muted:COLORS[b.color];
+      // the faded Halley dot becomes full (cyan, glowing, slightly larger) when it's the selection
+      const isSelectedHalley = selIsExtra && b.key === "halley" && selKey === "halley";
+      const faded = (b.key==="halley") && !isSelectedHalley;
+      const color = isSelectedHalley ? COLORS.cyan : (faded?COLORS.muted:COLORS[b.color]);
+      if(isSelectedHalley) drawGlow(ctx, glowSpriteCyan, s.x, s.y, 16);
       ctx.fillStyle = faded?hexAlpha(color,0.5):color;
-      ctx.beginPath(); ctx.arc(s.x,s.y,faded?3:4,0,TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(s.x,s.y,faded?3:(isSelectedHalley?5:4),0,TAU); ctx.fill();
       labelPts.push({ name:b.name, color:color, x:s.x, y:s.y });
     });
-    const ca = state.custom.a;
-    const cs = { x:xOf(ca), y:yOf(Math.pow(ca,1.5)) };
-    ctx.fillStyle = COLORS.cyan;
-    ctx.beginPath(); ctx.arc(cs.x,cs.y,4.5,0,TAU); ctx.fill();
-    labelPts.push({ name:"custom", color:COLORS.cyan, x:cs.x, y:cs.y });
+    if(selIsExtra && selKey === "custom"){
+      const ca = state.custom.a;
+      const cs = { x:xOf(ca), y:yOf(Math.pow(ca,1.5)) };
+      ctx.fillStyle = COLORS.cyan;
+      ctx.beginPath(); ctx.arc(cs.x,cs.y,4.5,0,TAU); ctx.fill();
+      labelPts.push({ name:"custom", color:COLORS.cyan, x:cs.x, y:cs.y });
+    }
     if(labelsOn()) layoutLinearLabels(ctx, ax, labelPts);
   }
   drawAxisFrame(ctx, ax);
@@ -2823,13 +2944,24 @@ function updateReadouts(){
     setText(els.vArDadt, "dadt", o.dAdt.toFixed(6));
     setText(els.vArSector, "sector", (state._lastSectorArea||0).toFixed(3));
   } else if(state.tab === "harmonic"){
-    const a = state.custom.a, e = state.custom.e, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
-    const check = (Py*Py)/(a*a*a); // = 1 always -- P = a^1.5 regardless of e
-    setText(els.vHarA, "ha", a.toFixed(2));
-    setText(els.vHarE, "he", e.toFixed(2));
-    setText(els.vHarPd, "hpd", Pd.toFixed(1));
-    setText(els.vHarPy, "hpy", Py.toFixed(3));
-    setText(els.vHarCheck, "hchk", check.toFixed(3));
+    const shownName = drawnHarmonicName(state.selected.preset);
+    const mode = shownName ? "shown" : "extra";
+    if(state._last.hmode !== mode){
+      els.vHarShown.style.display = shownName ? "" : "none";
+      els.vHarExtra.style.display = shownName ? "none" : "";
+      state._last.hmode = mode;
+    }
+    if(shownName){
+      setText(els.vHarShownName, "hshown", shownName);
+    } else {
+      const ae = selectedAE(), a = ae.a, e = ae.e, Pd = periodDays(a), Py = Pd/YEAR_DAYS;
+      const check = (Py*Py)/(a*a*a); // = 1 always -- P = a^1.5 regardless of e
+      setText(els.vHarA, "ha", a.toFixed(2));
+      setText(els.vHarE, "he", e.toFixed(2));
+      setText(els.vHarPd, "hpd", Pd.toFixed(1));
+      setText(els.vHarPy, "hpy", Py.toFixed(3));
+      setText(els.vHarCheck, "hchk", check.toFixed(3));
+    }
   } else if(state.tab === "equant"){
     const d = equantDeltaLambdaArcmin(p.a, p.e, state.t);
     setText(els.vEqLead, "lead", d >= 0 ? "AHEAD" : "BEHIND");
