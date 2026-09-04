@@ -2088,46 +2088,69 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   const thTrueRad = m.theta;              // OMEGA_MOON*dtShown, radians -- the real angle swept
   const thTrueDeg = thTrueRad*DEG;
 
-  // Displayed (exaggerated) angle: grows from 30deg (dt=1s) to 60deg (dt=3600s) on a log scale --
-  // widened from an earlier 14-36deg range because at 14-36deg the construction was too small to
-  // read: with R sized as a fixed fraction of the panel, the teaching content (angle, tangent,
-  // fall gap, four labels) was crushed into a sliver at the circle's edge. A larger swept angle
-  // gives more vertical room to work with once R is sized to actually fill the panel (below).
-  // Falls back to the true angle if it ever exceeds this (never happens for dt in the slider's
-  // 1-3600s range, but keeps the picture honest if the range is ever widened).
-  let thDispDeg = clamp(30 + 30*Math.log10(Math.max(dtShown,1))/Math.log10(3600), 30, 60);
-  if(thTrueDeg > thDispDeg) thDispDeg = thTrueDeg;
-  const thDispRad = thDispDeg*RAD;
-  const N = thDispDeg/Math.max(thTrueDeg, 1e-12); // exaggeration factor
+  // Exaggeration and layout are fixed from the TARGET time (state.p.dt), not the shown/animating
+  // time -- otherwise, during playback, dtShown sweeping 0..target either pins the drawn angle at
+  // its floor (small targets: max(dtShown,1) stays 1) or reopens the whole wedge and rescales the
+  // figure every frame (large targets). Fixing thDispTargetDeg/R/E/A from the target keeps the
+  // picture's scale and framing constant through the sweep; only the Moon's position along that
+  // fixed arc (thNow, below) advances as dtShown grows.
+  const dtTarget = Math.max(state.p.dt || 1, 1e-9);
+  const thTrueTargetDeg = moonMetrics(dtTarget).theta*DEG;
+  // Displayed (exaggerated) angle AT THE TARGET: grows from 30deg (target=1s) to 60deg
+  // (target=3600s) on a log scale. Falls back to the true angle at the target if it ever exceeds
+  // this (never happens for dt in the slider's 1-3600s range, but keeps the picture honest if the
+  // range is ever widened).
+  let thDispTargetDeg = clamp(30 + 30*Math.log10(Math.max(dtTarget,1))/Math.log10(3600), 30, 60);
+  if(thTrueTargetDeg > thDispTargetDeg) thDispTargetDeg = thTrueTargetDeg;
+  const thDispTargetRad = thDispTargetDeg*RAD;
+  // Exaggeration factor is fixed for the whole sweep (computed once, at the target) -- this is
+  // what the caption's "angle exaggerated x..." claims, and what makes it true throughout play.
+  const N = thDispTargetDeg/Math.max(thTrueTargetDeg, 1e-12);
 
   // Size R to FILL the panel with the construction, rather than to an arbitrary fraction of it.
   // The construction's own bounding box, in units of R, runs x from 0 (Earth centre) to 1 (the
-  // tangent line at A/T) and y from 0 (A) up to sin(thDisp) (C) -- plus a fixed 24px for the
-  // tangent's own extension above C, approximated below as +0.10 of R so a single R solves both
-  // the width and height constraints. padX reserves ~12% of the panel width as left/right label
-  // margin; TOP_BAND/BOTTOM_BAND/LABEL_ROOM reserve room for the title, the bottom caption, and
-  // headroom for the various text labels respectively.
+  // tangent line at A/T) and y from 0 (A) up to sin(thDispTarget) (C at the target) -- plus a
+  // fixed 24px for the tangent's own extension above C, approximated below as +0.10 of R so a
+  // single R solves both the width and height constraints. padX reserves ~12% of the panel width
+  // as left/right label margin; TOP_BAND/BOTTOM_BAND/LABEL_ROOM reserve room for the title, the
+  // bottom caption, and headroom for the various text labels respectively.
   const TOP_BAND = 24, BOTTOM_BAND = 20, LABEL_ROOM = 30;
   const padX = 0.12*ww;
   const availH = hh - TOP_BAND - BOTTOM_BAND - LABEL_ROOM;
-  const R = Math.max(30, Math.min( (ww-padX)/1.0, availH/(Math.sin(thDispRad)+0.10) ));
+  const R = Math.max(30, Math.min( (ww-padX)/1.0, availH/(Math.sin(thDispTargetRad)+0.10) ));
 
-  // Anchor Earth at the lower-left of the fitted box (A sits at the same height as E, C sits
-  // sin(thDisp)*R above it), then vertically centre that whole box -- E down to the tangent's
-  // 24px-higher top -- within the panel's available vertical band (between the title and the
-  // caption), so leftover slack splits evenly above and below rather than piling up on one side.
+  // Anchor Earth at the lower-left of the fitted box (A sits at the same height as E, C-at-target
+  // sits sin(thDispTarget)*R above it), then vertically centre that whole box -- E down to the
+  // tangent's 24px-higher top -- within the panel's available vertical band (between the title
+  // and the caption), so leftover slack splits evenly above and below rather than piling up on
+  // one side. This box is sized from the TARGET angle, so it does not move during playback.
   const availTop = y0+TOP_BAND, availBottom = y0+hh-BOTTOM_BAND;
-  const boxHeight = R*Math.sin(thDispRad) + 24;
+  const boxHeight = R*Math.sin(thDispTargetRad) + 24;
   const E = { x:x0+padX/2, y:(availTop+availBottom)/2 + boxHeight/2 };
   const A = { x:E.x+R, y:E.y };                                    // Moon at t=0
-  const C = { x:E.x+R*Math.cos(thDispRad), y:E.y-R*Math.sin(thDispRad) }; // Moon after dt (displayed)
+
+  // Instantaneous drawn angle: linear in dtShown/dtTarget. Since the TRUE angle is itself linear
+  // in elapsed time (theta = omega*t), this keeps thNow = N*trueAngle(dtShown) at every instant --
+  // i.e. the exaggeration factor stays exactly N throughout the sweep, not just at the endpoints --
+  // so the Moon visibly sweeps up the arc from A as dtShown advances, instead of the picture
+  // jumping straight to (or starting stuck at) the target's angle.
+  const thNowDeg = clamp(thDispTargetDeg*(dtShown/dtTarget), 0, thDispTargetDeg);
+  const thNowRad = thNowDeg*RAD;
+  // Guard the degenerate start: below ~1deg, C and T sit on top of A, so the fall dimension, its
+  // labels, the "Moon after dt" label and the angle wedge would all collapse onto the "Moon at
+  // t=0" marker. Reset (dtShown=0) must read as a clean "Moon at A, nothing fallen yet" picture.
+  const showMotion = thNowDeg >= 1;
+
+  const C = { x:E.x+R*Math.cos(thNowRad), y:E.y-R*Math.sin(thNowRad) }; // Moon's current position
   const T = { x:E.x+R, y:C.y };                                    // no-gravity point (same x as A)
 
   // 1. orbit arc only (not the full circle -- at this larger R a full circle runs far outside
-  // the panel): a muted, thin arc from -10deg to thDisp+10deg so it still reads as a piece of a
-  // much bigger orbit, with the actually-travelled part (0 to thDisp) drawn in cyan on top.
+  // the panel): a muted, thin arc from -10deg to thDispTarget+10deg so it still reads as a piece
+  // of a much bigger orbit. Its span is fixed from the TARGET angle (not thNow) so the arc -- and
+  // the whole figure's framing -- does not resize frame-by-frame during playback; only the
+  // actually-travelled part (0 to thNow, cyan, below) grows along it as dtShown advances.
   const NARC=48;
-  const arcLoDeg = -10, arcHiDeg = thDispDeg+10;
+  const arcLoDeg = -10, arcHiDeg = thDispTargetDeg+10;
   ctx.beginPath();
   for(let i=0;i<=NARC;i++){
     const phi = (arcLoDeg + (arcHiDeg-arcLoDeg)*i/NARC)*RAD;
@@ -2136,12 +2159,12 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   }
   ctx.strokeStyle = hexAlpha(COLORS.muted,0.35); ctx.lineWidth=1; ctx.stroke();
 
-  // 2. arc actually travelled, angle 0 -> thDisp. Built as an explicit polyline (rather than
-  // ctx.arc's own angle convention) so it unambiguously sweeps counter-clockwise -- i.e. UP the
-  // right-hand side of the circle, screen y being down.
+  // 2. arc actually travelled, angle 0 -> thNow (the instantaneous, not target, angle). Built as
+  // an explicit polyline (rather than ctx.arc's own angle convention) so it unambiguously sweeps
+  // counter-clockwise -- i.e. UP the right-hand side of the circle, screen y being down.
   ctx.beginPath();
   for(let i=0;i<=NARC;i++){
-    const phi = thDispRad*i/NARC;
+    const phi = thNowRad*i/NARC;
     const px = E.x+R*Math.cos(phi), py = E.y-R*Math.sin(phi);
     if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
   }
@@ -2166,21 +2189,26 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   // 5. radius E->C
   ctx.beginPath(); ctx.moveTo(E.x,E.y); ctx.lineTo(C.x,C.y); ctx.stroke();
 
-  // 6. angle arc at E, amber, labelled with the TRUE angle
-  const rArc = 0.26*R;
-  ctx.beginPath();
-  for(let i=0;i<=NARC;i++){
-    const phi = thDispRad*i/NARC;
-    const px = E.x+rArc*Math.cos(phi), py = E.y-rArc*Math.sin(phi);
-    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  // 6. angle arc at E, amber, labelled with the TRUE angle -- sweeps 0 to thNow (the
+  // instantaneous angle) so it grows with the Moon's actual travel, not the fixed target wedge.
+  // Skipped below ~1deg (showMotion guard): a near-zero wedge has nowhere honest to put its own
+  // label without it landing on top of "Moon at t = 0" or the r-label under the E-A line.
+  if(showMotion){
+    const rArc = 0.26*R;
+    ctx.beginPath();
+    for(let i=0;i<=NARC;i++){
+      const phi = thNowRad*i/NARC;
+      const px = E.x+rArc*Math.cos(phi), py = E.y-rArc*Math.sin(phi);
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.strokeStyle = hexAlpha(COLORS.amber,0.9); ctx.lineWidth=1.5; ctx.stroke();
+    const thetaLabel = "θ = ωΔt = "+fmtSciSuper(thTrueRad,3)+" rad";
+    const midPhi = thNowRad*0.5;
+    const labelR = rArc+16;
+    const thetaAnchorX = E.x+labelR*Math.cos(midPhi), thetaAnchorY = E.y-labelR*Math.sin(midPhi);
+    ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.amber; ctx.textAlign="left"; ctx.textBaseline="middle";
+    ctx.fillText(thetaLabel, clampLeftX(thetaLabel, thetaAnchorX), clampY(thetaAnchorY, 24));
   }
-  ctx.strokeStyle = hexAlpha(COLORS.amber,0.9); ctx.lineWidth=1.5; ctx.stroke();
-  const thetaLabel = "θ = ωΔt = "+fmtSciSuper(thTrueRad,3)+" rad";
-  const midPhi = thDispRad*0.5;
-  const labelR = rArc+16;
-  const thetaAnchorX = E.x+labelR*Math.cos(midPhi), thetaAnchorY = E.y-labelR*Math.sin(midPhi);
-  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.amber; ctx.textAlign="left"; ctx.textBaseline="middle";
-  ctx.fillText(thetaLabel, clampLeftX(thetaLabel, thetaAnchorX), clampY(thetaAnchorY, 24));
 
   // 7. tangent: dashed green vertical line at x = A.x, from A up to 24px above C's height.
   // The line's own 24px extension above C is barely enough room for the 2-line fall label
@@ -2197,23 +2225,31 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
 
   // 8. no-gravity point T -- hollow green circle, label to its RIGHT (below the T/C line,
   // so it can never collide with the fall label above the line at item 9, regardless of how
-  // small the T-C gap gets).
+  // small the T-C gap gets). The marker itself is always drawn -- at thNow=0 it sits exactly on
+  // A and is simply painted over by item 10's larger markers there, which reads fine -- but the
+  // label is skipped in that case (showMotion guard): it would otherwise print right through
+  // "Moon at t = 0" below A.
   ctx.beginPath(); ctx.arc(T.x,T.y,4,0,TAU); ctx.strokeStyle=COLORS.green; ctx.lineWidth=1.4; ctx.stroke();
-  const tLine1="where it would be", tLine2="with no gravity";
-  ctx.font="9px Inter"; ctx.fillStyle=COLORS.green; ctx.textAlign="left"; ctx.textBaseline="top";
-  ctx.fillText(tLine1, clampLeftX(tLine1, T.x+8), T.y+7);
-  ctx.fillText(tLine2, clampLeftX(tLine2, T.x+8), T.y+18);
+  if(showMotion){
+    const tLine1="where it would be", tLine2="with no gravity";
+    ctx.font="9px Inter"; ctx.fillStyle=COLORS.green; ctx.textAlign="left"; ctx.textBaseline="top";
+    ctx.fillText(tLine1, clampLeftX(tLine1, T.x+8), T.y+7);
+    ctx.fillText(tLine2, clampLeftX(tLine2, T.x+8), T.y+18);
+  }
 
   // 9. the fall: amber double-headed dimension arrow from T to C (same y), labelled above on
   // two lines with the formula and the exact current value -- stays ABOVE the T/C line, so it
-  // never collides with item 8 (now placed below the line) or item 10's "Moon after dt" (now
-  // placed to the left of C, item 10 below).
-  drawDimLineH(ctx, T.x, C.x, C.y, COLORS.amber, 0.9);
-  const dLine1 = "d = r(1 − cos θ)", dLine2 = fmtLenSI(m.d_moon_m);
-  const dimLabelX = (T.x+C.x)/2;
-  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.amber; ctx.textAlign="center"; ctx.textBaseline="bottom";
-  ctx.fillText(dLine1, clampCenterX(dLine1, dimLabelX), C.y-17);
-  ctx.fillText(dLine2, clampCenterX(dLine2, dimLabelX), C.y-6);
+  // never collides with item 8 (placed below the line) or item 10's "Moon after dt" (placed to
+  // the left of C). Skipped below ~1deg (showMotion guard): T and C coincide with A there, so the
+  // dimension line and its labels would collapse onto the "Moon at t = 0" marker.
+  if(showMotion){
+    drawDimLineH(ctx, T.x, C.x, C.y, COLORS.amber, 0.9);
+    const dLine1 = "d = r(1 − cos θ)", dLine2 = fmtLenSI(m.d_moon_m);
+    const dimLabelX = (T.x+C.x)/2;
+    ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.amber; ctx.textAlign="center"; ctx.textBaseline="bottom";
+    ctx.fillText(dLine1, clampCenterX(dLine1, dimLabelX), C.y-17);
+    ctx.fillText(dLine2, clampCenterX(dLine2, dimLabelX), C.y-6);
+  }
 
   // 10. Moon markers at t=0 (hollow) and after dt (filled). A now sits close to the panel's
   // right edge (R is sized to nearly fill the width), so the t=0 marker's label goes BELOW it
@@ -2228,9 +2264,14 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   ctx.fillText(aLabel, clampCenterX(aLabel, A.x), A.y+9);
 
   ctx.beginPath(); ctx.arc(C.x,C.y,5,0,TAU); ctx.fillStyle=COLORS.cyan; ctx.fill();
-  const cLabel = "Moon after Δt";
-  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.cyan; ctx.textAlign="right"; ctx.textBaseline="middle";
-  ctx.fillText(cLabel, clampRightAlignX(cLabel, C.x-10), C.y);
+  // Label skipped below ~1deg (showMotion guard): C sits on top of A there, so "Moon after dt"
+  // would print directly over "Moon at t = 0" -- the filled marker alone (over the hollow one)
+  // already reads correctly as "no time has passed yet".
+  if(showMotion){
+    const cLabel = "Moon after Δt";
+    ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.cyan; ctx.textAlign="right"; ctx.textBaseline="middle";
+    ctx.fillText(cLabel, clampRightAlignX(cLabel, C.x-10), C.y);
+  }
 
   // Bottom caption
   const caption = (N>1.05)
