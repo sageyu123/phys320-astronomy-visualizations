@@ -1,0 +1,2365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Newton's Cannon — PHYS 320</title>
+<style>
+  :root{
+    --background:#050607;
+    --rail:#171a1f;
+    --canvas:#0d1015;
+    --panel-deep:#151a20;
+    --panel:#202328;
+    --panel-raised:#292d32;
+    --border:#3b4046;
+    --border-strong:#4a5057;
+    --border-hover:#69717a;
+    --text:#e7e9eb;
+    --muted:#979ea6;
+    --cyan:#56c7d9;
+    --magenta:#ee65be;
+    --purple:#a99bff;
+    --amber:#ffcc66;
+    --green:#56dc72;
+    --coral:#ff7f66;
+    --on-accent:#0c181b;
+    --control-hover:#343a41;
+    --cyan-wash: rgb(86 199 217/10%);
+    --cyan-border: rgb(86 199 217/55%);
+    --black-shadow: rgb(0 0 0/25%);
+    --black-shadow-soft: rgb(0 0 0/13%);
+  }
+
+  *,*::before,*::after{ box-sizing:border-box; }
+  html,body{ height:100%; width:100%; overflow-x:hidden; }
+  body{
+    margin:0;
+    background:var(--background);
+    color:var(--text);
+    font-family:Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:13px;
+    line-height:1.4;
+    -webkit-font-smoothing:antialiased;
+  }
+  .math{ font-family:"STIX Two Math","Cambria Math","Times New Roman",serif; font-style:italic; }
+  .tabular{ font-variant-numeric:tabular-nums; }
+
+  button, input, select{ font-family:inherit; }
+
+  /* ---------- app shell ---------- */
+  #app{ height:100dvh; width:100%; display:grid; grid-template-rows:44px 1fr; overflow:hidden; }
+
+  .topbar{
+    grid-row:1; display:flex; align-items:center; justify-content:space-between;
+    gap:12px; height:44px; padding:0 12px;
+    background:var(--rail); border-bottom:1px solid var(--border);
+    min-width:0; overflow:hidden;
+  }
+  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; text-decoration:none; color:inherit; border-radius:4px; }
+  .brand:hover .brand-title{ color:var(--cyan); }
+  .brand:hover .brand-sub{ text-decoration:underline; }
+  .brand-icon{ flex:0 0 auto; filter:drop-shadow(0 0 5px rgb(86 199 217/28%)); }
+  .brand-text{ display:flex; flex-direction:column; line-height:1.15; min-width:0; }
+  .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
+  .brand-sub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .tabbar{ flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:thin; }
+  .tabbar::-webkit-scrollbar{ height:4px; }
+  .tabbar::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
+
+  .segmented{
+    display:inline-flex; align-items:stretch;
+    border:1px solid var(--border); border-radius:6px; overflow:hidden;
+    background:var(--panel-raised); white-space:nowrap;
+  }
+  .segmented button{
+    appearance:none; border:none; border-right:1px solid var(--border);
+    background:transparent; color:var(--text);
+    font-size:12px; min-height:28px; padding:0 12px; cursor:pointer; white-space:nowrap;
+    transition:background .12s ease, color .12s ease;
+  }
+  .segmented button:last-child{ border-right:none; }
+  .segmented button:hover{ background:var(--control-hover); }
+  .segmented button.active{ background:var(--cyan); color:var(--on-accent); font-weight:600; }
+  .segmented button:disabled{ opacity:.45; cursor:default; }
+
+  /* ---------- body / rail / workspace ---------- */
+  .body{
+    grid-row:2; display:grid;
+    grid-template-columns: var(--rail-w, 300px) 6px minmax(0,1fr);
+    min-height:0; min-width:0;
+  }
+
+  .rail{
+    background:var(--rail); border-right:1px solid var(--border);
+    overflow-y:auto; overflow-x:hidden;
+    display:flex; flex-direction:column; gap:8px; padding:10px; min-width:0;
+  }
+
+  .workspace{
+    min-width:0; min-height:0; padding:10px;
+    display:grid; grid-template-rows:minmax(0,1fr) 6px var(--strip-h, 190px); gap:0;
+    background:radial-gradient(circle at 50% 45%, var(--panel-deep) 0%, var(--canvas) 60%, var(--background) 100%);
+  }
+
+  /* ---------- movable splitters ---------- */
+  .splitter{ position:relative; background:transparent; z-index:2; touch-action:none; }
+  .splitter::after{
+    content:""; position:absolute; background:var(--cyan); opacity:0; border-radius:2px;
+    transition:opacity .12s ease;
+  }
+  .splitter:hover::after, .splitter.dragging::after, .splitter:focus-visible::after{ opacity:.4; }
+  .v-splitter{ cursor:col-resize; }
+  .v-splitter::after{ top:0; bottom:0; left:2px; width:2px; }
+  .h-splitter{ cursor:row-resize; margin:8px 0; }
+  .h-splitter::after{ left:0; right:0; top:2px; height:2px; }
+  body.resizing-col, body.resizing-col *{ cursor:col-resize !important; user-select:none !important; }
+  body.resizing-row, body.resizing-row *{ cursor:row-resize !important; user-select:none !important; }
+
+  .card{
+    border-radius:6px; border:1px solid var(--border); background:var(--panel);
+    box-shadow:0 5px 18px var(--black-shadow-soft); padding:10px; flex:0 0 auto; min-width:0;
+  }
+  .eyebrow{ font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 8px; }
+
+  /* ---------- canvas panels ---------- */
+  .panel{
+    border-radius:6px; border:1px solid var(--border); background:var(--canvas);
+    box-shadow:0 5px 18px var(--black-shadow-soft);
+    display:flex; flex-direction:column; overflow:hidden; min-height:0; min-width:0;
+  }
+  .panel-header{
+    height:34px; flex:0 0 34px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 10px; background:var(--panel-deep); border-bottom:1px solid var(--border);
+    gap:10px; overflow:hidden;
+  }
+  .panel-title{ font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .panel-readouts{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); white-space:nowrap; flex:0 0 auto; }
+  .panel-readouts b{ color:var(--text); font-weight:600; }
+  .panel-header-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; margin-left:auto; }
+  .icon-btn{ min-width:28px; padding:0 8px; font-size:13px; line-height:1; }
+  .panel-caption{
+    flex:0 0 auto; font-size:11px; line-height:1.35; color:var(--muted);
+    padding:5px 10px; background:var(--panel-deep); border-bottom:1px solid var(--border);
+  }
+  .panel-body{ flex:1 1 auto; min-height:0; min-width:0; position:relative; }
+  .panel-body canvas{ display:block; width:100%; height:100%; }
+  #mainCanvas{ touch-action:none; cursor:grab; }
+  #mainCanvas:active{ cursor:grabbing; }
+  .zoom-badge{
+    position:absolute; right:8px; bottom:8px; z-index:3;
+    font-size:10px; color:var(--muted); background:color-mix(in srgb, var(--panel-deep) 85%, transparent);
+    border:1px solid var(--border); border-radius:4px; padding:2px 6px;
+    pointer-events:none; font-variant-numeric:tabular-nums;
+  }
+
+  .swatch{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    min-height:28px; padding:0 10px; color:var(--text); background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; font-size:12px; cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .btn:hover{ background:var(--control-hover); border-color:var(--border-hover); }
+  .btn:disabled{ opacity:.45; cursor:default; }
+
+  /* ---------- transport (playback) ---------- */
+  .transport{ width:100%; margin-bottom:10px; }
+  .transport button{ flex:1 1 0; }
+
+  /* ---------- slider + number fields ---------- */
+  .field{ margin-bottom:10px; }
+  .field:last-child{ margin-bottom:0; }
+  .field-label{ display:block; font-size:11px; color:var(--muted); margin-bottom:5px; }
+  .field-label .math{ color:var(--text); font-size:12px; }
+  .field-row{ display:flex; align-items:center; gap:8px; min-width:0; }
+  input[type=range]{ flex:1 1 auto; min-width:0; accent-color:var(--cyan); height:22px; background:transparent; }
+  .num-input{
+    width:64px; flex:0 0 auto; min-height:28px; background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; color:var(--text);
+    padding:4px 7px; font:inherit; font-variant-numeric:tabular-nums; text-align:right;
+  }
+  .unit{ flex:0 0 auto; font-size:11px; color:var(--muted); }
+
+  select{
+    width:100%; min-height:28px; background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; color:var(--text);
+    padding:4px 7px; font:inherit;
+  }
+  input:disabled, select:disabled{ opacity:.45; cursor:default; }
+
+  /* ---------- toggles (display card) ---------- */
+  .toggle{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    width:100%; min-height:28px; padding:0 10px; margin-bottom:6px;
+    background:var(--panel-raised); border:1px solid var(--border); border-radius:4px;
+    color:var(--text); font-size:12px; cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .toggle:last-child{ margin-bottom:0; }
+  .toggle:hover{ background:var(--control-hover); border-color:var(--border-hover); }
+  .toggle .dot{ width:8px; height:8px; border-radius:50%; background:var(--border-strong); flex:0 0 auto; }
+  .toggle[aria-pressed="true"]{ background:var(--cyan); color:var(--on-accent); border-color:var(--cyan); font-weight:600; }
+  .toggle[aria-pressed="true"] .dot{ background:var(--on-accent); }
+
+  /* ---------- v0 slider landmark ticks (Cannon tab) ---------- */
+  .slider-ticks{ position:relative; height:13px; margin:2px 2px 0; }
+  .slider-ticks .tick{ position:absolute; top:2px; transform:translateX(-50%); font-size:9px; color:var(--muted); white-space:nowrap; }
+  .slider-ticks .tick::before{ content:""; position:absolute; left:50%; top:-5px; width:1px; height:4px; background:var(--border-strong); }
+  .slider-ticks .tick.tick-vc{ color:var(--cyan); }
+  .slider-ticks .tick.tick-vesc{ color:var(--coral); }
+
+  /* ---------- formulas card (def line + substituted line per formula) ---------- */
+  .formula-line{ margin-bottom:10px; }
+  .formula-line:last-child{ margin-bottom:0; }
+  .formula-def{ font-size:12.5px; margin-bottom:3px; }
+  .formula-sub{ font-size:11.5px; color:var(--muted); word-break:break-word; }
+  .formula-sub b{ color:var(--text); font-weight:600; }
+
+  /* ---------- KaTeX typesetting (vendored, offline -- vendor/katex/) ---------- */
+  .ktx{ display:none; }
+  .card .katex{ font-size:1.05em; color:inherit; }
+  .card .katex-display{ margin:6px 0; text-align:left; overflow-x:auto; overflow-y:hidden; }
+  .formula-note{ font-size:11.5px; color:var(--muted); }
+  .formula-def .formula-note{ margin-top:2px; display:block; }
+  .formula-sub .formula-note{ margin-left:4px; }
+
+  /* ---------- notice / stat cards ---------- */
+  .notice-list{ margin:0 0 8px 16px; padding:0; color:var(--text); }
+  .notice-list li{ margin-bottom:5px; }
+  .notice-list li:last-child{ margin-bottom:0; }
+  .lecture-link{ font-size:10.5px; color:var(--muted); margin-top:8px; padding-top:7px; border-top:1px solid var(--border); }
+  .stat-row{ display:flex; justify-content:space-between; gap:8px; font-size:11.5px; margin-bottom:5px; }
+  .stat-row:last-child{ margin-bottom:0; }
+  .stat-row .k{ color:var(--muted); }
+  .stat-row b{ color:var(--text); font-weight:600; }
+  .stat-note{ font-size:10.5px; color:var(--muted); margin:4px 0 8px; line-height:1.35; }
+  .stat-note:last-child{ margin-bottom:0; }
+  .tint-cyan{ background:color-mix(in srgb, var(--cyan) 7%, var(--panel)); border-color:color-mix(in srgb, var(--cyan) 30%, var(--border)); }
+  .tint-amber{ background:color-mix(in srgb, var(--amber) 7%, var(--panel)); border-color:color-mix(in srgb, var(--amber) 30%, var(--border)); }
+
+  :focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition:none !important; animation:none !important; }
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width:900px){
+    .body{ grid-template-columns:1fr; overflow-y:auto; }
+    .rail{
+      order:2; border-right:none; border-top:1px solid var(--border);
+      display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start;
+      overflow-y:visible;
+    }
+    .workspace{
+      order:1; grid-template-rows:clamp(320px, 55vw, 420px) 160px; gap:8px;
+      /* .body's rows are implicit/auto-sized; without an explicit min-height the browser can
+         shrink this grid-item-that-is-itself-a-grid below its own rows' natural sum, letting
+         the strip panel's canvas spill downward into the rail that follows it in the stack. */
+      min-height:calc(clamp(320px, 55vw, 420px) + 168px);
+    }
+    .splitter{ display:none; }
+  }
+  @media (max-width:560px){
+    .rail{ grid-template-columns:1fr; }
+  }
+  @media (max-width:480px){
+    .brand-sub{ display:none; }
+    .panel-title{ font-size:11px; }
+    .panel-readouts{ font-size:10px; gap:6px; }
+    .panel-header{ padding:0 8px; }
+  }
+
+  /* ---------- embed mode (?embed=1): diagram only, no chrome ---------- */
+  body.embed .topbar,
+  body.embed .rail,
+  body.embed .splitter,
+  body.embed #stripPanel,
+  body.embed .panel-header,
+  body.embed .panel-caption,
+  body.embed .drag-hint{ display:none; }
+  body.embed #app{ grid-template-rows:1fr; }
+  body.embed .body{ grid-template-columns:1fr; }
+  body.embed .workspace{ padding:0; grid-template-rows:1fr; }
+  body.embed #mainPanel{ width:100vw; height:100vh; border:none; border-radius:0; box-shadow:none; }
+</style>
+<link rel="stylesheet" href="../vendor/katex/katex.min.css">
+<script defer src="../vendor/katex/katex.min.js"></script>
+<script defer src="../vendor/katex/contrib/auto-render.min.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <a class="brand" href="../index.html" title="Back to the visualizations index">
+      <svg class="brand-icon" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M2 15 Q9 3 18 9" fill="none" stroke="#4a5057" stroke-width="1.4"/>
+        <circle cx="3.2" cy="13.4" r="1.6" fill="#ffcc66"/>
+        <circle cx="18" cy="9" r="1.4" fill="#56c7d9"/>
+      </svg>
+      <div class="brand-text">
+        <div class="brand-title">NEWTON'S CANNON</div>
+        <div class="brand-sub">&lsaquo; PHYS 320 Visualizations &middot; Orbits, Falling &amp; Escape</div>
+      </div>
+    </a>
+    <div class="tabbar">
+      <div class="segmented" id="tabBar" role="tablist" aria-label="Newton's cannon stage">
+        <button type="button" data-tab="cannon" class="active" role="tab" aria-selected="true">Cannon</button>
+        <button type="button" data-tab="moon" role="tab" aria-selected="false">Falling Moon</button>
+        <button type="button" data-tab="energy" role="tab" aria-selected="false">Orbital energy</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="rail">
+
+      <div class="card" id="playbackCard">
+        <div class="eyebrow">Playback</div>
+        <div class="segmented transport" id="transport">
+          <button type="button" id="btnStepBack" title="Step back">&lang; &minus;</button>
+          <button type="button" id="btnPlay" title="Play / pause">&#9658;</button>
+          <button type="button" id="btnStepFwd" title="Step forward">+ &rang;</button>
+          <button type="button" id="btnReset" title="Reset (t = 0)">&#8634;</button>
+        </div>
+        <div class="field" id="speedField">
+          <label class="field-label" for="speedRange">Speed</label>
+          <div class="field-row">
+            <input type="range" id="speedRange" min="1" max="2000" step="1" value="200">
+            <input type="number" id="speedNum" class="num-input" min="1" max="2000" step="1" value="200">
+            <span class="unit" id="speedUnit">s/s</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="paramsCard">
+        <div class="eyebrow">Parameters</div>
+        <div id="paramsFields"></div>
+      </div>
+
+      <div class="card" id="displayCard">
+        <div class="eyebrow">Display</div>
+        <div id="displayFields"></div>
+      </div>
+
+      <div class="card" id="extraCard1" hidden>
+        <div class="eyebrow" id="extra1Eyebrow"></div>
+        <div id="extra1Body"></div>
+      </div>
+
+      <div class="card" id="extraCard2" hidden>
+        <div class="eyebrow" id="extra2Eyebrow"></div>
+        <div id="extra2Body"></div>
+      </div>
+
+      <div class="card tint-cyan" id="formulasCard">
+        <div class="eyebrow">Formulas</div>
+        <div id="formulasBody"></div>
+      </div>
+
+      <div class="card tint-amber" id="noticeCard">
+        <div class="eyebrow">What to notice</div>
+        <ul class="notice-list" id="noticeBody"></ul>
+        <div class="lecture-link" id="lectureLink"></div>
+      </div>
+
+    </div>
+
+    <div class="splitter v-splitter" id="vSplitter" tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize sidebar width"></div>
+
+    <div class="workspace">
+      <div class="panel" id="mainPanel">
+        <div class="panel-header">
+          <div class="panel-title" id="mainPanelTitle">Cannon stage</div>
+          <div class="panel-readouts" id="rdCannon">
+            <span class="math">v</span><sub>0</sub> = <b id="vCanV0" class="tabular">0.00</b> km/s &nbsp;
+            <span class="math">v</span><sub>0</sub>/<span class="math">v</span><sub>c</sub> = <b id="vCanRatio" class="tabular">0.00</b> &nbsp;
+            <span class="math">e</span> = <b id="vCanE" class="tabular">0.000</b> &nbsp;
+            type = <b id="vCanType" class="tabular">circle</b> &nbsp;
+            <span class="math">P</span> = <b id="vCanPeriod" class="tabular">&mdash;</b>
+          </div>
+          <div class="panel-readouts" id="rdMoon" style="display:none">
+            &Delta;<span class="math">t</span> = <b id="vMoonDt" class="tabular">0.00</b> s
+          </div>
+          <div class="panel-readouts" id="rdEnergy" style="display:none">
+            <span id="vEnPresetWrap">preset = <b id="vEnPreset" class="tabular">Mercury</b> &nbsp;</span>
+            <span class="math">t</span> = <b id="vEnT" class="tabular">0</b> d &nbsp;
+            <span class="math">r</span> = <b id="vEnR" class="tabular">0.000</b> AU &nbsp;
+            <span class="math">v</span> = <b id="vEnV" class="tabular">0.00</b> km/s
+          </div>
+          <div class="panel-header-right">
+            <button type="button" class="btn icon-btn" id="btnResetView" title="Reset zoom/pan">&#8962;</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <canvas id="mainCanvas"></canvas>
+          <div class="zoom-badge" id="zoomBadge" hidden>&times;1.0</div>
+        </div>
+      </div>
+
+      <div class="splitter h-splitter" id="hSplitter" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="Resize strip panel height"></div>
+
+      <div class="panel" id="stripPanel">
+        <div class="panel-header">
+          <div class="panel-title" id="stripPanelTitle">Energy</div>
+          <div class="panel-readouts" id="stripLegend" style="display:none"></div>
+          <div class="segmented" id="stripModeToggle" role="tablist" aria-label="Strip panel mode"></div>
+        </div>
+        <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+/* Newton's Cannon -- PHYS 320. Built to match html/kepler_laws.html's shell/architecture. */
+
+/* =========================================================================
+   1. CONSTANTS
+   ========================================================================= */
+const TAU = Math.PI*2, DEG = 180/Math.PI, RAD = Math.PI/180;
+
+const R_E = 6371;          // km
+const GM_E = 398600;       // km^3/s^2
+const G_EARTH = 9.80e-3;   // km/s^2 (9.80 m/s^2)
+const R_MOON = 384400;     // km
+const OMEGA_MOON = 2.662e-6; // rad/s
+const GM_SUN = 1.327e11;   // km^3/s^2
+const AU_KM = 1.496e8;     // km
+
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+const COLORS = {};
+function loadColors(){
+  ["background","rail","canvas","panel-deep","panel","panel-raised","border",
+   "border-strong","border-hover","text","muted","cyan","magenta","purple",
+   "amber","green","on-accent","coral"].forEach(function(n){ COLORS[n] = cssVar("--"+n); });
+}
+function hexToRgb(hex){
+  hex = hex.replace("#","");
+  if(hex.length===3){ hex = hex.split("").map(function(c){ return c+c; }).join(""); }
+  const num = parseInt(hex,16);
+  return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+}
+function hexAlpha(hex, a){ const c = hexToRgb(hex); return "rgba("+c.r+","+c.g+","+c.b+","+a+")"; }
+function clamp(v,lo,hi){ return Math.min(hi, Math.max(lo, v)); }
+function decimalsFromStep(step){
+  const s = String(step);
+  const i = s.indexOf(".");
+  return i<0 ? 0 : (s.length - i - 1);
+}
+function fmtNum(v, step){ return Number(v).toFixed(decimalsFromStep(step)); }
+function fmtSci(n){
+  if(!isFinite(n)) return "&infin;";
+  if(n===0) return "0";
+  const e = Math.floor(Math.log10(Math.abs(n)));
+  const m = n/Math.pow(10,e);
+  if(e>=0 && e<3) return n.toFixed(Math.max(0,2-e));
+  return m.toFixed(2) + "&times;10<sup>" + e + "</sup>";
+}
+// 3-significant-figure length formatter (km/m/mm only, per spec examples -- no cm): picks the
+// SI unit whose value is >=1, rounds to exactly 3 sig figs, and space-groups the thousands so a
+// large km value reads as "63 500 km" rather than the unrounded "63504.00 km".
+function roundToSigFigs(v, sig){
+  if(v === 0) return 0;
+  const d = Math.ceil(Math.log10(Math.abs(v)));
+  const power = sig - d;
+  const factor = Math.pow(10, power);
+  return Math.round(v*factor)/factor;
+}
+function fmtGroupThousands(s){
+  const parts = s.split(".");
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return parts.join(".");
+}
+function fmtSig3(v){
+  const r = roundToSigFigs(v, 3);
+  const d = Math.floor(Math.log10(Math.abs(r)));
+  const decimals = Math.max(0, 2-d);
+  return fmtGroupThousands(r.toFixed(decimals));
+}
+function fmtLenSI(meters){
+  const a = Math.abs(meters);
+  if(a === 0) return "0 m";
+  if(a >= 1000) return fmtSig3(meters/1000) + " km";
+  if(a >= 1) return fmtSig3(meters) + " m";
+  return fmtSig3(meters*1000) + " mm";
+}
+
+/* KaTeX typesetting helpers (offline-safe: fall back to plain HTML if missing) */
+function katexReady(){ return !!(window.katex && typeof window.katex.render === "function"); }
+const _katexSig = new WeakMap();
+function katexInto(ktxEl, fallbackEl, latex, displayMode){
+  if(!ktxEl) return;
+  if(!katexReady()){
+    ktxEl.style.display = "none";
+    if(fallbackEl) fallbackEl.style.display = "";
+    return;
+  }
+  const sig = (displayMode ? "D:" : "I:") + latex;
+  if(_katexSig.get(ktxEl) !== sig){
+    try{
+      window.katex.render(latex, ktxEl, { throwOnError:false, displayMode: !!displayMode });
+      _katexSig.set(ktxEl, sig);
+    }catch(e){
+      ktxEl.style.display = "none";
+      if(fallbackEl) fallbackEl.style.display = "";
+      return;
+    }
+  }
+  ktxEl.style.display = "block";
+  if(fallbackEl) fallbackEl.style.display = "none";
+}
+
+/* =========================================================================
+   2. PHYSICS -- pure, stateless functions of (parameters, time)
+   ========================================================================= */
+
+// Kepler's equation E - e sin E = M, Newton's method (M reduced to (-pi,pi] first).
+function solveKepler(M, e){
+  let Mw = M % TAU;
+  if(Mw < -Math.PI) Mw += TAU; else if(Mw > Math.PI) Mw -= TAU;
+  let E = Mw + e*Math.sin(Mw);
+  for(let i=0;i<10;i++){
+    const f = E - e*Math.sin(E) - Mw;
+    const fp = 1 - e*Math.cos(E);
+    const d = f/fp;
+    E -= d;
+    if(Math.abs(d) < 1e-12) break;
+  }
+  return E;
+}
+function trueToEcc(theta, e){ // true anomaly -> eccentric anomaly (ellipse, 0<=e<1)
+  return 2*Math.atan2(Math.sqrt(Math.max(0,1-e))*Math.sin(theta/2), Math.sqrt(1+e)*Math.cos(theta/2));
+}
+// Barker's equation (parabola, e=1): closed-form cubic solve for theta(t).
+function thetaFromT_parabola(t, p){
+  const A = 2*t/Math.sqrt(p*p*p/GM_E);
+  const disc = Math.sqrt(9*A*A/4 + 1);
+  const D = Math.cbrt(3*A/2+disc) + Math.cbrt(3*A/2-disc);
+  return 2*Math.atan(D);
+}
+// Hyperbolic Kepler equation e*sinh(H)-H = M_h, Newton's method.
+function thetaFromT_hyperbola(t, p, e){
+  const a_h = p/(e*e-1);
+  const n_h = Math.sqrt(GM_E/(a_h*a_h*a_h));
+  const Mh = n_h*t;
+  let H = Mh===0 ? 0 : Math.sign(Mh)*Math.log(2*Math.abs(Mh)/e + 1.8);
+  for(let i=0;i<60;i++){
+    const f = e*Math.sinh(H) - H - Mh;
+    const fp = e*Math.cosh(H) - 1;
+    const dH = f/fp;
+    H -= dH;
+    if(Math.abs(dH) < 1e-13) break;
+  }
+  return 2*Math.atan(Math.sqrt((e+1)/(e-1))*Math.tanh(H/2));
+}
+// Radial free-fall (v0=0, zero angular momentum) via RK4 on (r,vr); stateless -- re-integrates
+// from t=0 every call. Adaptive step count keeps this fast while resolving impact to sub-second.
+function radialFallState(r0, tSec){
+  if(tSec <= 0) return { r:r0, vr:0, impacted:false };
+  const stepDt = clamp(tSec/800, 0.05, 2.0);
+  const N = Math.min(6000, Math.max(1, Math.ceil(tSec/stepDt)));
+  const dt = tSec/N;
+  let r = r0, vr = 0, impacted = false;
+  function accel(rr){ return -GM_E/(rr*rr); }
+  for(let i=0;i<N;i++){
+    if(r <= R_E){ impacted = true; break; }
+    const k1r=vr,             k1v=accel(r);
+    const k2r=vr+0.5*dt*k1v,  k2v=accel(r+0.5*dt*k1r);
+    const k3r=vr+0.5*dt*k2v,  k3v=accel(r+0.5*dt*k2r);
+    const k4r=vr+dt*k3v,      k4v=accel(r+dt*k3r);
+    const rNext = r + dt*(k1r+2*k2r+2*k3r+k4r)/6;
+    const vNext = vr + dt*(k1v+2*k2v+2*k3v+k4v)/6;
+    if(rNext <= R_E){ r = R_E; vr = vNext; impacted = true; break; }
+    r = rNext; vr = vNext;
+  }
+  return { r, vr, impacted };
+}
+
+// Derived orbital quantities for a cannon shot launched tangentially at r0=R_E+h with speed v0.
+function cannonDerived(h, v0){
+  const r0 = R_E + h;
+  const vc = Math.sqrt(GM_E/r0);
+  const vesc = Math.SQRT2*vc;
+  const isFall = v0 < 1e-6;
+  const e = isFall ? 1 : Math.abs(r0*v0*v0/GM_E - 1);
+  const p = isFall ? 0 : r0*r0*v0*v0/GM_E;
+  const Espec = v0*v0/2 - GM_E/r0;
+  const bound = !isFall && Espec < -1e-9;
+  const a = bound ? -GM_E/(2*Espec) : null;
+  const periapsisLaunch = !isFall && v0 >= vc;
+  const theta0 = isFall ? 0 : (periapsisLaunch ? 0 : Math.PI);
+  let type;
+  if(isFall) type = "fall";
+  else if(bound) type = (e < 0.0015) ? "circle" : "ellipse";
+  else if(Math.abs(v0-vesc) < 2e-4*vesc) type = "parabola";
+  else type = "hyperbola";
+  const periR = isFall ? 0 : p/(1+e);
+  const period = bound ? TAU*Math.sqrt(a*a*a/GM_E) : null;
+  let tImpact = null;
+  if(bound && !periapsisLaunch && periR < R_E*0.9999){
+    const c0 = clamp((p/R_E - 1)/e, -1, 1);
+    const alpha = Math.acos(c0);
+    const thetaImp = TAU - alpha;
+    const Eimp = trueToEcc(thetaImp, e);
+    let Mimp = Eimp - e*Math.sin(Eimp);
+    if(Mimp < Math.PI) Mimp += TAU;
+    const n = TAU/period;
+    tImpact = (Mimp - Math.PI)/n;
+  }
+  return { r0,vc,vesc,isFall,e,p,Espec,bound,a,periapsisLaunch,theta0,type,periR,period,tImpact };
+}
+
+// Position + velocity (in the orbit's own polar frame, theta measured from periapsis) at time
+// tSec after launch. Analytic for ellipse (Kepler)/parabola (Barker)/hyperbola (hyperbolic
+// Kepler, Newton); RK4 for the degenerate v0=0 radial fall (documented alternative per spec).
+function cannonPositionAtT(d, tSec){
+  if(d.isFall){
+    const rr = radialFallState(d.r0, Math.max(0,tSec));
+    return { r:rr.r, theta:0, vr:rr.vr, vt:0, v:Math.abs(rr.vr), impacted:rr.impacted };
+  }
+  if(d.bound){
+    let tau = tSec, impacted = false;
+    if(d.tImpact != null && tSec >= d.tImpact){ tau = d.tImpact; impacted = true; }
+    const n = TAU/d.period;
+    const M0 = d.periapsisLaunch ? 0 : Math.PI;
+    const E = solveKepler(M0 + n*tau, d.e);
+    const theta = solveThetaFromE(E, d.e);
+    const r = d.a*(1-d.e*Math.cos(E));
+    const h_ang = Math.sqrt(GM_E*d.p);
+    const vr = (GM_E/h_ang)*d.e*Math.sin(theta);
+    const vt = h_ang/r;
+    return { r, theta, vr, vt, v:Math.hypot(vr,vt), impacted };
+  }
+  const tau = Math.max(0, tSec);
+  const h_ang = Math.sqrt(GM_E*d.p);
+  const theta = (d.type==="parabola") ? thetaFromT_parabola(tau, d.p) : thetaFromT_hyperbola(tau, d.p, d.e);
+  const r = d.p/(1+d.e*Math.cos(theta));
+  const vr = (GM_E/h_ang)*d.e*Math.sin(theta);
+  const vt = h_ang/r;
+  return { r, theta, vr, vt, v:Math.hypot(vr,vt), impacted:false };
+}
+function solveThetaFromE(E, e){ return Math.atan2(Math.sqrt(1-e*e)*Math.sin(E), Math.cos(E)-e); }
+
+// Rotate the orbit's own polar frame so the launch point (theta0) sits at world angle 90 deg
+// ("north", where Newton's mountain always is), preserving CCW motion.
+function orbitToWorld(r, theta, theta0){
+  const wth = theta - theta0 + Math.PI/2;
+  return { x:r*Math.cos(wth), y:r*Math.sin(wth), wth };
+}
+function polarVelToWorld(vr, vt, wth){
+  return { vx: vr*Math.cos(wth) - vt*Math.sin(wth), vy: vr*Math.sin(wth) + vt*Math.cos(wth) };
+}
+function cannonWorldState(d, tSec){
+  const pos = cannonPositionAtT(d, tSec);
+  const w = orbitToWorld(pos.r, pos.theta, d.theta0);
+  const vw = polarVelToWorld(pos.vr, pos.vt, w.wth);
+  return { r:pos.r, theta:pos.theta, v:pos.v, impacted:pos.impacted, x:w.x, y:w.y, vx:vw.vx, vy:vw.vy };
+}
+
+// Analytic conic polyline in WORLD coordinates (mountain/launch point at north), clipped at
+// impact (ellipse dipping below R_E) or at r=8*r0 / the asymptote (open orbits), per spec.
+function cannonConicPolyline(d, nSeg){
+  nSeg = nSeg || 360;
+  const pts = [];
+  if(d.isFall){
+    pts.push({x:0,y:d.r0});
+    pts.push({x:0,y:R_E});
+    return { pts, labelPt:{x:0,y:(d.r0+R_E)/2}, impactPt:{x:0,y:R_E}, hasImpact:true };
+  }
+  if(d.bound){
+    let impactPt = null, span = TAU;
+    if(d.tImpact != null){
+      const c0 = clamp((d.p/R_E - 1)/d.e, -1, 1);
+      const alpha = Math.acos(c0);
+      const thetaEndAbs = TAU - alpha; // absolute theta (periapsis-referenced) of impact
+      span = thetaEndAbs - d.theta0 + (thetaEndAbs < d.theta0 ? TAU : 0);
+      const w = orbitToWorld(R_E, thetaEndAbs, d.theta0);
+      impactPt = { x:w.x, y:w.y };
+    }
+    for(let i=0;i<=nSeg;i++){
+      const th = d.theta0 + (i/nSeg)*span;
+      const r = d.p/(1+d.e*Math.cos(th));
+      const w = orbitToWorld(r, th, d.theta0);
+      pts.push({x:w.x, y:w.y});
+    }
+    const rApo = d.p/(1+d.e*Math.cos(d.theta0+Math.PI));
+    const wApo = orbitToWorld(rApo, d.theta0+Math.PI, d.theta0);
+    return { pts, labelPt:{x:wApo.x,y:wApo.y}, impactPt, hasImpact:(impactPt!=null) };
+  }
+  const rMax = 8*d.r0;
+  const thetaMax = (d.e>1) ? Math.acos(clamp(-1/d.e,-1,1)) - 1e-3 : Math.PI - 1e-3;
+  function rAt(dth){ return d.p/(1+d.e*Math.cos(dth)); }
+  let lo=0, hi=thetaMax;
+  if(rAt(hi) > rMax){
+    for(let i=0;i<40;i++){ const mid=(lo+hi)/2; if(rAt(mid) < rMax) lo=mid; else hi=mid; }
+  } else { lo = hi; }
+  for(let i=0;i<=nSeg;i++){
+    const th = d.theta0 + (i/nSeg)*lo;
+    const r = rAt((i/nSeg)*lo);
+    const w = orbitToWorld(r, th, d.theta0);
+    pts.push({x:w.x, y:w.y});
+  }
+  return { pts, labelPt: pts[pts.length-1], impactPt:null, hasImpact:false };
+}
+
+// Falling Moon tab.
+function moonMetrics(dtSec){
+  const theta = OMEGA_MOON*dtSec;
+  const d_apple_m = 0.5*(G_EARTH*1000)*dtSec*dtSec;
+  const cosTheta = Math.cos(theta);
+  const d_moon_m = R_MOON*1000*(1-cosTheta);
+  const a_moon_ms2 = OMEGA_MOON*OMEGA_MOON*R_MOON*1000;
+  const cosThetaF32 = Math.fround(Math.cos(theta));
+  const d_moon_f32_m = R_MOON*1000*(1-cosThetaF32);
+  const cosApprox = 1 - theta*theta/2 + theta*theta*theta*theta/24;
+  return { theta, d_apple_m, d_moon_m, a_moon_ms2, ratio: d_apple_m/Math.max(1e-300,d_moon_m),
+           cosTheta, cosThetaF32, d_moon_f32_m, cosApprox };
+}
+
+// Orbital energy tab (solar orbits, real km/s units; reuses solveKepler).
+function solarState(aAU, e, tDays){
+  const a_km = aAU*AU_KM;
+  const n = Math.sqrt(GM_SUN/(a_km*a_km*a_km));
+  const M = n*(tDays*86400);
+  const E = solveKepler(M, e);
+  const theta = solveThetaFromE(E, e);
+  const r_km = a_km*(1-e*Math.cos(E));
+  const h_ang = Math.sqrt(GM_SUN*a_km*(1-e*e));
+  const vr = (GM_SUN/h_ang)*e*Math.sin(theta);
+  const vt = h_ang/r_km;
+  return { theta, r_km, r_AU:r_km/AU_KM, v:Math.hypot(vr,vt), vr, vt };
+}
+function solarApsides(aAU, e){
+  const a_km = aAU*AU_KM;
+  const vp = Math.sqrt(GM_SUN/a_km*(1+e)/(1-e));
+  const va = Math.sqrt(GM_SUN/a_km*(1-e)/(1+e));
+  const Espec = -GM_SUN/(2*a_km);
+  return { vp, va, Espec, a_km, rp_km:a_km*(1-e), ra_km:a_km*(1+e), rp_AU:aAU*(1-e), ra_AU:aAU*(1+e) };
+}
+
+/* =========================================================================
+   3. CONFIG TABLES
+   ========================================================================= */
+const TAB_ORDER = ["cannon","moon","energy"];
+const TAB_LABEL = { cannon:"Cannon stage", moon:"Falling Moon", energy:"Orbital energy" };
+const TAB_SPEED = { cannon:200, moon:1, energy:20 };
+const TAB_SPEED_RANGE = { cannon:[1,2000], energy:[1,3650] };
+const TAB_SPEED_UNIT = { cannon:"s/s", energy:"d/s" };
+const TAB_STEP = { cannon:10, energy:1 };
+
+const FAMILY_MULTS = [
+  {m:0.6, label:"0.6", af:0.55}, {m:0.8, label:"0.8", af:0.70}, {m:1.0, label:"1.0", af:0.85},
+  {m:1.2, label:"1.2", af:1.15}, {m:Math.SQRT2, label:"√2", af:1.30}, {m:1.6, label:"1.6", af:1.45}
+];
+const CANNON_CHIPS = [
+  { kind:"vc",   mult:0.6,  text:"0.6&nbsp;v<sub>c</sub>",  title:"0.6 × circular speed — falls back to the surface" },
+  { kind:"vc",   mult:1.0,  text:"v<sub>c</sub>",           title:"Circular speed — a circle" },
+  { kind:"vc",   mult:1.2,  text:"1.2&nbsp;v<sub>c</sub>",  title:"1.2 × circular speed — an ellipse" },
+  { kind:"vesc", mult:1.0,  text:"v<sub>esc</sub>",         title:"Escape speed — a parabola" },
+  { kind:"vesc", mult:1.25, text:"1.25&nbsp;v<sub>esc</sub>", title:"1.25 × escape speed — a hyperbola" }
+];
+const CANNON_TOGGLES = [
+  { key:"family",  label:"Show the family", def:true },
+  { key:"apsides", label:"Apsides",         def:true },
+  { key:"vectors", label:"Vectors",         def:true }
+];
+const ENERGY_TOGGLES = [
+  { key:"vectors", label:"Velocity vector",   def:true },
+  { key:"dots",    label:"Equal-time dots",   def:true },
+  { key:"apsides", label:"Apsis ticks",       def:true }
+];
+const TAB_TOGGLES = { cannon:CANNON_TOGGLES, moon:[], energy:ENERGY_TOGGLES };
+
+const ENERGY_PRESETS = [
+  { key:"earth",   name:"Earth",           a:1.000,  e:0.0167 },
+  { key:"mercury", name:"Mercury",         a:0.3871, e:0.2056 },
+  { key:"mars",    name:"Mars",            a:1.524,  e:0.0934 },
+  { key:"halley",  name:"Halley's comet",  a:17.83,  e:0.967  }
+];
+function energyPresetByKey(key){ for(let i=0;i<ENERGY_PRESETS.length;i++) if(ENERGY_PRESETS[i].key===key) return ENERGY_PRESETS[i]; return null; }
+
+const DT_SNAPS = [1,10,60,600,3600];
+
+const NOTICE = {
+  cannon: {
+    bullets:[
+      "Every path is the same physics as the falling apple: only the sideways speed differs.",
+      "At v<sub>c</sub> the ground curves away exactly as fast as the projectile falls.",
+      "Escape needs &radic;2 times the circular speed, not infinite speed: the total energy is then exactly zero."
+    ],
+    lecture: "Lecture 5 (Orbital Mechanics), slides 9 and 11&ndash;14: speeds in the orbit, escape speed, orbital energy."
+  },
+  moon: {
+    bullets:[
+      "In one second the Moon falls 1.4&nbsp;mm toward Earth while an apple falls 4.9&nbsp;m: the ratio is 60&sup2;, the inverse-square law.",
+      "The Moon keeps missing the ground only because it also moves sideways.",
+      "Near &theta; = 0 you must expand cos&thinsp;&theta;; a calculator returns exactly 1 and the fall vanishes."
+    ],
+    lecture: "Lecture 4 (Newtonian Mechanics), slides 6&ndash;7: the falling Moon and series expansions."
+  },
+  energy: {
+    bullets:[
+      "Kinetic and potential energy trade back and forth; their sum never changes and is negative for every bound orbit.",
+      "The total energy depends only on a, not on e: Halley's comet and a circular orbit of the same a have the same E.",
+      "Speed at any r follows from energy alone: that is the vis-viva equation."
+    ],
+    lecture: "Lecture 5 (Orbital Mechanics), slides 9 and 11&ndash;14: potential energy, escape speed, orbital energy, vis-viva."
+  }
+};
+
+/* =========================================================================
+   4. DOM CACHE / GENERIC WIDGET BUILDERS
+   ========================================================================= */
+const els = {};
+function cacheEls(){
+  ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum","speedField","speedUnit",
+   "paramsFields","displayFields","displayCard",
+   "extraCard1","extra1Eyebrow","extra1Body","extraCard2","extra2Eyebrow","extra2Body",
+   "formulasBody","noticeBody","lectureLink",
+   "mainPanelTitle","btnResetView","zoomBadge",
+   "rdCannon","rdMoon","rdEnergy",
+   "vCanV0","vCanRatio","vCanE","vCanType","vCanPeriod",
+   "vMoonDt",
+   "vEnPreset","vEnPresetWrap","vEnT","vEnR","vEnV",
+   "stripModeToggle","stripPanelTitle","stripLegend","mainCanvas","stripCanvas"
+  ].forEach(function(id){ els[id] = document.getElementById(id); });
+}
+
+function buildSliderField(container, opts){
+  const field = document.createElement("div");
+  field.className = "field";
+  const label = document.createElement("label");
+  label.className = "field-label";
+  label.innerHTML = opts.label;
+  const row = document.createElement("div");
+  row.className = "field-row";
+  const range = document.createElement("input");
+  range.type = "range"; range.min = opts.min; range.max = opts.max; range.step = opts.step;
+  range.value = opts.value;
+  const num = document.createElement("input");
+  num.type = "number"; num.className = "num-input";
+  num.min = opts.min; num.max = opts.max; num.step = opts.step;
+  num.value = fmtNum(opts.value, opts.step);
+  function commit(v){ opts.onChange(v); }
+  range.addEventListener("input", function(){
+    const v = parseFloat(range.value);
+    num.value = fmtNum(v, opts.step);
+    commit(v);
+  });
+  num.addEventListener("input", function(){
+    const v = parseFloat(num.value);
+    if(!isNaN(v)){ range.value = clamp(v, opts.min, opts.max); commit(v); }
+  });
+  num.addEventListener("blur", function(){
+    let v = parseFloat(num.value);
+    if(isNaN(v)) v = opts.value;
+    v = clamp(v, opts.min, opts.max);
+    num.value = fmtNum(v, opts.step);
+    range.value = v;
+    commit(v);
+  });
+  row.appendChild(range); row.appendChild(num);
+  if(opts.unit){
+    const unit = document.createElement("span");
+    unit.className = "unit";
+    unit.textContent = opts.unit;
+    row.appendChild(unit);
+  }
+  field.appendChild(label); field.appendChild(row);
+  container.appendChild(field);
+  return { field:field, row:row, range:range, num:num };
+}
+
+function buildPresetSelect(container, presets, opts){
+  const field = document.createElement("div");
+  field.className = "field";
+  const label = document.createElement("label");
+  label.className = "field-label";
+  label.textContent = "Preset";
+  const select = document.createElement("select");
+  presets.forEach(function(p){
+    const opt = document.createElement("option");
+    opt.value = p.key; opt.textContent = p.name;
+    select.appendChild(opt);
+  });
+  if(opts.customOption){
+    const customOpt = document.createElement("option");
+    customOpt.value = "custom"; customOpt.textContent = "Custom";
+    select.appendChild(customOpt);
+  }
+  select.value = opts.value;
+  select.addEventListener("change", function(){ opts.onChange(select.value); });
+  field.appendChild(label); field.appendChild(select);
+  container.appendChild(field);
+  return select;
+}
+
+function buildChipRow(container, chips, onPick){
+  const field = document.createElement("div");
+  field.className = "field";
+  field.style.marginTop = "-2px";
+  const row = document.createElement("div");
+  row.style.display = "flex"; row.style.flexWrap = "wrap"; row.style.gap = "5px";
+  chips.forEach(function(chip){
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn";
+    b.style.flex = "1 1 30%"; b.style.minWidth = "64px"; b.style.fontSize = "11px"; b.style.padding = "0 4px";
+    b.innerHTML = chip.text;
+    if(chip.title) b.title = chip.title;
+    b.addEventListener("click", function(){ onPick(chip); });
+    row.appendChild(b);
+  });
+  field.appendChild(row);
+  container.appendChild(field);
+}
+
+function buildToggleButton(container, key, label){
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "toggle";
+  btn.dataset.key = key;
+  btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
+  btn.innerHTML = "<span>"+label+"</span><span class=\"dot\"></span>";
+  container.appendChild(btn);
+  return btn;
+}
+function statRow(container, keyHtml, valId, unitHtml){
+  const row = document.createElement("div");
+  row.className = "stat-row";
+  row.innerHTML = '<span class="k">'+keyHtml+'</span><span><b id="'+valId+'" class="tabular">&mdash;</b>'+(unitHtml?(' '+unitHtml):'')+'</span>';
+  container.appendChild(row);
+}
+function statNote(container, html){
+  const div = document.createElement("div");
+  div.className = "stat-note";
+  div.innerHTML = html;
+  container.appendChild(div);
+}
+
+/* =========================================================================
+   5. APP STATE
+   ========================================================================= */
+const state = {
+  tab: "cannon",
+  t: 0,
+  playing: false,
+  speed: TAB_SPEED.cannon,
+  view: { zoom:1, panX:0, panY:0 },
+  p: {},
+  display: {},
+  stripMode: "",
+  mainW:0, mainH:0, stripW:0, stripH:0,
+  stripDirty: true,
+  _last: {},
+  _lastFormulaMs: 0,
+  cannon: { worldExtent: 20000 },
+  cannonImpacted: false,
+  moonShownDt: 1,
+  moonElapsed: 0,
+  moon: {},
+  energyBarRange: 100
+};
+
+function defaultParamsFor(tab){
+  if(tab === "cannon"){
+    const h = 1000;
+    const vc = cannonDerived(h,0).vc;
+    return { h:h, v0: Math.round(vc*100)/100 };
+  }
+  if(tab === "moon") return { dt: 1 };
+  if(tab === "energy") return { preset:"mercury", a:0.3871, e:0.2056, customA:1.5, customE:0.3 };
+  return {};
+}
+
+/* =========================================================================
+   6. PER-TAB PARAMETER CARDS
+   ========================================================================= */
+let cannonWidgets = {}, moonWidgets = {}, energyWidgets = {};
+
+function buildParamsCard(){
+  const c = els.paramsFields;
+  c.innerHTML = "";
+  if(state.tab === "cannon") buildCannonParams(c);
+  else if(state.tab === "moon") buildMoonParams(c);
+  else if(state.tab === "energy") buildEnergyParams(c);
+}
+
+function currentVcVesc(){ const d = cannonDerived(state.p.h, 0); return { vc:d.vc, vesc:d.vesc }; }
+
+function buildCannonParams(c){
+  cannonWidgets = {};
+  const v0Field = buildSliderField(c, {
+    label: 'Launch speed <span class="math">v</span><sub>0</sub>', min:0, max:14, step:0.01,
+    value: state.p.v0, unit:"km/s", onChange: onCannonV0Change
+  });
+  cannonWidgets.v0 = v0Field;
+  const ticks = document.createElement("div");
+  ticks.className = "slider-ticks";
+  ticks.innerHTML = '<span class="tick tick-vc" id="tickVc">v<sub>c</sub></span><span class="tick tick-vesc" id="tickVesc">v<sub>esc</sub></span>';
+  v0Field.field.appendChild(ticks);
+  cannonWidgets.tickVc = ticks.querySelector("#tickVc");
+  cannonWidgets.tickVesc = ticks.querySelector("#tickVesc");
+
+  buildChipRow(c, CANNON_CHIPS, function(chip){
+    const d0 = cannonDerived(state.p.h, 0);
+    const vref = chip.kind === "vc" ? d0.vc : d0.vesc;
+    const v0 = clamp(chip.mult*vref, 0, 14);
+    state.p.v0 = v0;
+    cannonWidgets.v0.range.value = v0;
+    cannonWidgets.v0.num.value = fmtNum(v0, 0.01);
+    cannonParamsChanged();
+  });
+
+  const hField = buildSliderField(c, { label:"Launch height h", min:0, max:3000, step:10, value:state.p.h, unit:"km", onChange:onCannonHChange });
+  cannonWidgets.h = hField;
+  updateV0Ticks();
+}
+function onCannonV0Change(v){
+  const vv = currentVcVesc();
+  if(Math.abs(v-vv.vc) <= 0.06) v = vv.vc;
+  else if(Math.abs(v-vv.vesc) <= 0.06) v = vv.vesc;
+  state.p.v0 = v;
+  cannonWidgets.v0.range.value = v;
+  cannonWidgets.v0.num.value = fmtNum(v, 0.01);
+  cannonParamsChanged();
+}
+function onCannonHChange(v){
+  state.p.h = v;
+  updateV0Ticks();
+  cannonParamsChanged();
+}
+function updateV0Ticks(){
+  if(!cannonWidgets.tickVc) return;
+  const vv = currentVcVesc();
+  cannonWidgets.tickVc.style.left = clamp(vv.vc/14*100,0,100)+"%";
+  cannonWidgets.tickVesc.style.left = clamp(vv.vesc/14*100,0,100)+"%";
+}
+function cannonParamsChanged(){
+  state.t = 0;
+  state.cannonImpacted = false;
+  computeCannonAutofit();
+  updateMainPanelTitle();
+  state.stripDirty = true;
+  render(true);
+}
+function computeCannonAutofit(){
+  const d = cannonDerived(state.p.h, state.p.v0);
+  let extent;
+  if(d.isFall) extent = d.r0*1.25;
+  else if(d.bound) extent = d.a*(1+d.e);
+  else extent = 8*d.r0;
+  state.cannon.worldExtent = Math.max(extent, d.r0*1.15);
+}
+
+function fmtDt(v){ return v>=100 ? v.toFixed(0) : (v>=10 ? v.toFixed(1) : v.toFixed(2)); }
+function buildMoonParams(c){
+  moonWidgets = {};
+  const logMin=0, logMax=Math.log10(3600);
+  const field=document.createElement("div"); field.className="field";
+  const label=document.createElement("label"); label.className="field-label"; label.innerHTML="Time elapsed &Delta;<span class=\"math\">t</span> (log scale)";
+  const row=document.createElement("div"); row.className="field-row";
+  const range=document.createElement("input");
+  range.type="range"; range.min=String(logMin); range.max=String(logMax); range.step="0.001"; range.value=String(Math.log10(state.p.dt));
+  const num=document.createElement("input");
+  num.type="number"; num.className="num-input"; num.min="1"; num.max="3600"; num.step="1"; num.value=fmtDt(state.p.dt);
+  const unit=document.createElement("span"); unit.className="unit"; unit.textContent="s";
+  function setDt(v){
+    v = clamp(v,1,3600);
+    for(let i=0;i<DT_SNAPS.length;i++){ const s=DT_SNAPS[i]; if(Math.abs(Math.log10(v)-Math.log10(s))<0.035){ v=s; break; } }
+    state.p.dt = v;
+    range.value = String(Math.log10(v));
+    num.value = fmtDt(v);
+    if(!state.playing) state.moonShownDt = v;
+    onMoonParamsChanged();
+  }
+  range.addEventListener("input", function(){ setDt(Math.pow(10,parseFloat(range.value))); });
+  num.addEventListener("input", function(){ const v=parseFloat(num.value); if(!isNaN(v)) setDt(v); });
+  num.addEventListener("blur", function(){ let v=parseFloat(num.value); if(isNaN(v)) v=state.p.dt; setDt(v); });
+  row.appendChild(range); row.appendChild(num); row.appendChild(unit);
+  field.appendChild(label); field.appendChild(row);
+  c.appendChild(field);
+  const ticks = document.createElement("div");
+  ticks.className = "slider-ticks";
+  ticks.innerHTML = DT_SNAPS.map(function(s){
+    const pct = (Math.log10(s)-logMin)/(logMax-logMin)*100;
+    return '<span class="tick" style="left:'+pct.toFixed(1)+'%">'+s+'s</span>';
+  }).join("");
+  field.appendChild(ticks);
+  moonWidgets = { range:range, num:num };
+}
+function onMoonParamsChanged(){
+  state.stripDirty = true;
+  render(true);
+}
+
+function buildEnergyParams(c){
+  energyWidgets = {};
+  buildPresetSelect(c, ENERGY_PRESETS, { value: state.p.preset, customOption:true, onChange:onEnergyPresetChange });
+  if(state.p.preset === "custom") buildEnergyCustomSliders(c);
+}
+function buildEnergyCustomSliders(c){
+  const logMin=Math.log10(0.3), logMax=Math.log10(20);
+  const field=document.createElement("div"); field.className="field";
+  const label=document.createElement("label"); label.className="field-label"; label.innerHTML='Semi-major axis <span class="math">a</span> (log scale)';
+  const row=document.createElement("div"); row.className="field-row";
+  const range=document.createElement("input");
+  range.type="range"; range.min=String(logMin); range.max=String(logMax); range.step="0.001"; range.value=String(Math.log10(state.p.customA));
+  const num=document.createElement("input");
+  num.type="number"; num.className="num-input"; num.min="0.3"; num.max="20"; num.step="0.01"; num.value=state.p.customA.toFixed(3);
+  const unit=document.createElement("span"); unit.className="unit"; unit.textContent="AU";
+  function setA(v){
+    v = clamp(v,0.3,20);
+    state.p.customA = v; state.p.a = v;
+    range.value = String(Math.log10(v));
+    num.value = v.toFixed(3);
+    onEnergyParamsChanged();
+  }
+  range.addEventListener("input", function(){ setA(Math.pow(10,parseFloat(range.value))); });
+  num.addEventListener("input", function(){ const v=parseFloat(num.value); if(!isNaN(v)) setA(v); });
+  num.addEventListener("blur", function(){ let v=parseFloat(num.value); if(isNaN(v)) v=state.p.customA; setA(v); });
+  row.appendChild(range); row.appendChild(num); row.appendChild(unit);
+  field.appendChild(label); field.appendChild(row);
+  c.appendChild(field);
+  energyWidgets.aRange = range; energyWidgets.aNum = num;
+
+  buildSliderField(c, { label:'Eccentricity <span class="math">e</span>', min:0, max:0.97, step:0.001, value:state.p.customE, unit:"",
+    onChange:function(v){ state.p.customE=v; state.p.e=v; onEnergyParamsChanged(); } });
+}
+function onEnergyPresetChange(key){
+  state.p.preset = key;
+  if(key === "custom"){ state.p.a = state.p.customA; state.p.e = state.p.customE; }
+  else { const pr = energyPresetByKey(key); state.p.a = pr.a; state.p.e = pr.e; }
+  buildParamsCard();
+  onEnergyParamsChanged();
+}
+function onEnergyParamsChanged(){
+  state.t = 0;
+  computeEnergyBarRange();
+  updateMainPanelTitle();
+  state.stripDirty = true;
+  render(true);
+}
+function computeEnergyBarRange(){
+  const ap = solarApsides(state.p.a, state.p.e);
+  const vpKE = ap.vp*ap.vp/2, vaKE = ap.va*ap.va/2;
+  const Up = -GM_SUN/ap.rp_km, Ua = -GM_SUN/ap.ra_km;
+  const mx = Math.max(Math.abs(ap.Espec), vpKE, vaKE, Math.abs(Up), Math.abs(Ua), 1);
+  state.energyBarRange = Math.ceil(mx*1.25/50)*50;
+}
+
+/* =========================================================================
+   7. DISPLAY CARD (toggles)
+   ========================================================================= */
+function buildDisplayCard(){
+  const c = els.displayFields;
+  c.innerHTML = "";
+  state.display = {};
+  const toggles = TAB_TOGGLES[state.tab] || [];
+  toggles.forEach(function(t){ state.display[t.key] = t.def; buildToggleButton(c, t.key, t.label); });
+  els.displayCard.hidden = (toggles.length === 0);
+}
+function wireDisplayToggles(){
+  els.displayFields.addEventListener("click", function(ev){
+    const btn = ev.target.closest(".toggle");
+    if(!btn) return;
+    const key = btn.dataset.key;
+    state.display[key] = !state.display[key];
+    btn.setAttribute("aria-pressed", state.display[key] ? "true":"false");
+    state.stripDirty = true;
+    render();
+  });
+}
+
+/* =========================================================================
+   8. FORMULAS CARD
+   ========================================================================= */
+const FORMULA_IDS = { cannon:["fA","fB","fC","fD","fE"], moon:["fA","fB","fC","fD"], energy:["fA","fB","fC","fD"] };
+let fEls = null;
+function formulaLineSkeleton(id){
+  return '<div class="formula-line">' +
+      '<div class="formula-def"><span class="ktx-fallback" id="'+id+'DefFallback"></span><div class="ktx" id="'+id+'DefKtx"></div><span class="formula-note" id="'+id+'DefNote"></span></div>' +
+      '<div class="formula-sub"><span class="ktx-fallback" id="'+id+'SubFallback"></span><div class="ktx" id="'+id+'SubKtx"></div><span class="formula-note" id="'+id+'SubNote"></span></div>' +
+    '</div>';
+}
+function fillFormulaLine(line, defPlainHTML, defLatex, defNoteHTML, subPlainHTML, subLatex, subNoteHTML){
+  line.defFallback.innerHTML = defPlainHTML;
+  katexInto(line.defKtx, line.defFallback, defLatex, true);
+  line.defNote.innerHTML = defNoteHTML || "";
+  line.subFallback.innerHTML = subPlainHTML;
+  katexInto(line.subKtx, line.subFallback, subLatex, true);
+  line.subNote.innerHTML = subNoteHTML || "";
+}
+function buildFormulasCard(){
+  const ids = FORMULA_IDS[state.tab] || [];
+  els.formulasBody.innerHTML = ids.map(formulaLineSkeleton).join("");
+  fEls = {};
+  ids.forEach(function(id){
+    fEls[id] = {
+      defFallback: document.getElementById(id+"DefFallback"), defKtx: document.getElementById(id+"DefKtx"), defNote: document.getElementById(id+"DefNote"),
+      subFallback: document.getElementById(id+"SubFallback"), subKtx: document.getElementById(id+"SubKtx"), subNote: document.getElementById(id+"SubNote")
+    };
+  });
+}
+function updateCannonFormulas(){
+  if(!fEls || !fEls.fA) return;
+  const d = cannonDerived(state.p.h, state.p.v0);
+  const pos = cannonWorldState(d, state.t);
+  const Estr = d.Espec.toFixed(2);
+  fillFormulaLine(fEls.fA,
+    '<i>E</i> = &frac12;<i>v</i>&sup2; &minus; <i>GM</i>/<i>r</i>',
+    String.raw`E = \tfrac12 v^2 - \dfrac{GM}{r}`, "",
+    '<i>E</i> = <b>'+Estr+'</b> km&sup2;/s&sup2;',
+    String.raw`E = \mathbf{${Estr}}\text{ km}^2/\text{s}^2`, "");
+  fillFormulaLine(fEls.fB,
+    '<i>e</i> = |<i>r</i><sub>0</sub><i>v</i><sub>0</sub>&sup2;/<i>GM</i> &minus; 1|',
+    String.raw`e = \left|\dfrac{r_0 v_0^2}{GM}-1\right|`, "",
+    '<i>e</i> = <b>'+d.e.toFixed(3)+'</b>',
+    String.raw`e = \mathbf{${d.e.toFixed(3)}}`, "");
+  fillFormulaLine(fEls.fC,
+    '<i>v<sub>c</sub></i> = &radic;(<i>GM</i>/<i>r</i><sub>0</sub>)',
+    String.raw`v_c = \sqrt{GM/r_0}`, "",
+    '<i>v<sub>c</sub></i> = <b>'+d.vc.toFixed(3)+'</b> km/s',
+    String.raw`v_c = \mathbf{${d.vc.toFixed(3)}}\text{ km/s}`, "");
+  fillFormulaLine(fEls.fD,
+    '<i>v<sub>esc</sub></i> = &radic;(2<i>GM</i>/<i>r</i><sub>0</sub>) = &radic;2&thinsp;<i>v<sub>c</sub></i>',
+    String.raw`v_{esc} = \sqrt{2GM/r_0} = \sqrt{2}\,v_c`, "",
+    '<i>v<sub>esc</sub></i> = <b>'+d.vesc.toFixed(3)+'</b> km/s',
+    String.raw`v_{esc} = \mathbf{${d.vesc.toFixed(3)}}\text{ km/s}`, "");
+  fillFormulaLine(fEls.fE,
+    '<i>a</i> = &minus;<i>GM</i>/(2<i>E</i>)',
+    String.raw`a = -GM/(2E)`, "",
+    d.bound ? ('<i>a</i> = <b>'+d.a.toFixed(0)+'</b> km') : '<i>a</i> = &mdash; (unbound)',
+    d.bound ? String.raw`a = \mathbf{${d.a.toFixed(0)}}\text{ km}` : String.raw`a = \text{---}`, "");
+}
+function updateMoonFormulas(){
+  if(!fEls || !fEls.fA) return;
+  const m = moonMetrics(state.moonShownDt);
+  const gRatio = (m.a_moon_ms2/(G_EARTH*1000));
+  fillFormulaLine(fEls.fA,
+    '<i>a<sub>Moon</sub></i>/<i>g</i> = (<i>R<sub>E</sub></i>/<i>r<sub>M</sub></i>)&sup2; = 1/60.3&sup2;',
+    String.raw`\dfrac{a_{Moon}}{g}=\left(\dfrac{R_E}{r_M}\right)^2=\dfrac{1}{60.3^2}`, "",
+    '<i>a<sub>Moon</sub></i>/<i>g</i> = <b>'+gRatio.toFixed(6)+'</b>',
+    String.raw`\dfrac{a_{Moon}}{g}=\mathbf{${gRatio.toFixed(6)}}`, "");
+  fillFormulaLine(fEls.fB,
+    '<i>a<sub>Moon</sub></i> = &omega;&sup2;<i>r</i> = 4&pi;&sup2;<i>r</i>/<i>P</i>&sup2;',
+    String.raw`a_{Moon}=\omega^2 r=\dfrac{4\pi^2 r}{P^2}`, "",
+    '<i>a<sub>Moon</sub></i> = <b>'+(m.a_moon_ms2*1000).toFixed(3)+'</b> mm/s&sup2;',
+    String.raw`a_{Moon}=\mathbf{${(m.a_moon_ms2*1000).toFixed(3)}}\text{ mm/s}^2`, "");
+  fillFormulaLine(fEls.fC,
+    '<i>d</i> = <i>r</i>(1&minus;cos&thinsp;&theta;) &approx; &frac12;<i>r</i>&theta;&sup2; = &frac12;<i>a</i>&Delta;<i>t</i>&sup2;',
+    String.raw`d=r(1-\cos\theta)\approx\tfrac12 r\theta^2=\tfrac12 a\,\Delta t^2`, "",
+    '<i>d</i> = <b>'+fmtLenSI(m.d_moon_m)+'</b> (exact)',
+    String.raw`d=\mathbf{${fmtLenSI(m.d_moon_m)}}\text{ (exact)}`, "");
+  fillFormulaLine(fEls.fD,
+    'cos&thinsp;&theta; &approx; 1 &minus; &theta;&sup2;/2 + &theta;&#8308;/24',
+    String.raw`\cos\theta\approx 1-\dfrac{\theta^2}{2}+\dfrac{\theta^4}{24}`, "",
+    'cos&thinsp;&theta; = <b>'+m.cosTheta.toPrecision(6)+'</b>',
+    String.raw`\cos\theta=\mathbf{${m.cosTheta.toPrecision(6)}}`, "");
+}
+function updateEnergyFormulas(){
+  if(!fEls || !fEls.fA) return;
+  const a = state.p.a, e = state.p.e;
+  const pos = solarState(a, e, state.t);
+  const ap = solarApsides(a, e);
+  const a_km = a*AU_KM;
+  const vVisViva = Math.sqrt(Math.max(0,GM_SUN*(2/pos.r_km - 1/a_km)));
+  fillFormulaLine(fEls.fA,
+    '<i>v</i>&sup2; = <i>GM</i>(2/<i>r</i> &minus; 1/<i>a</i>) &nbsp;(vis-viva)',
+    String.raw`v^2=GM\left(\dfrac{2}{r}-\dfrac{1}{a}\right)`, "",
+    '<i>v</i> = <b>'+vVisViva.toFixed(2)+'</b> km/s at <i>r</i> = '+pos.r_AU.toFixed(3)+' AU',
+    String.raw`v=\mathbf{${vVisViva.toFixed(2)}}\text{ km/s}`, "");
+  fillFormulaLine(fEls.fB,
+    '<i>v<sub>p</sub></i> = &radic;[<i>GM</i>/<i>a</i>&middot;(1+<i>e</i>)/(1&minus;<i>e</i>)] &nbsp; <i>v<sub>a</sub></i> = &radic;[<i>GM</i>/<i>a</i>&middot;(1&minus;<i>e</i>)/(1+<i>e</i>)]',
+    String.raw`v_p=\sqrt{\tfrac{GM}{a}\tfrac{1+e}{1-e}},\ v_a=\sqrt{\tfrac{GM}{a}\tfrac{1-e}{1+e}}`, "",
+    '<i>v<sub>p</sub></i> = <b>'+ap.vp.toFixed(2)+'</b>, <i>v<sub>a</sub></i> = <b>'+ap.va.toFixed(2)+'</b> km/s',
+    String.raw`v_p=\mathbf{${ap.vp.toFixed(2)}},\ v_a=\mathbf{${ap.va.toFixed(2)}}`, "");
+  fillFormulaLine(fEls.fC,
+    '<i>E</i> = &minus;<i>GM</i>/(2<i>a</i>) &nbsp;(per unit mass)',
+    String.raw`E=-\dfrac{GM}{2a}`, "",
+    '<i>E</i> = <b>'+ap.Espec.toFixed(2)+'</b> km&sup2;/s&sup2;',
+    String.raw`E=\mathbf{${ap.Espec.toFixed(2)}}\text{ km}^2/\text{s}^2`, "");
+  const vesc_r = Math.sqrt(2*GM_SUN/pos.r_km);
+  fillFormulaLine(fEls.fD,
+    '<i>v<sub>esc</sub></i>(<i>r</i>) = &radic;(2<i>GM</i>/<i>r</i>)',
+    String.raw`v_{esc}(r)=\sqrt{2GM/r}`, "",
+    '<i>v<sub>esc</sub></i> = <b>'+vesc_r.toFixed(2)+'</b> km/s at current <i>r</i>',
+    String.raw`v_{esc}=\mathbf{${vesc_r.toFixed(2)}}\text{ km/s}`, "");
+}
+function updateFormulasCard(){
+  if(state.tab === "cannon") updateCannonFormulas();
+  else if(state.tab === "moon") updateMoonFormulas();
+  else if(state.tab === "energy") updateEnergyFormulas();
+}
+
+/* =========================================================================
+   9. NOTICE CARD + EXTRA (tab-specific) READOUT CARDS
+   ========================================================================= */
+function buildNoticeCard(){
+  const cfg = NOTICE[state.tab];
+  els.noticeBody.innerHTML = cfg.bullets.map(function(b){ return "<li>"+b+"</li>"; }).join("");
+  els.lectureLink.innerHTML = "Lecture link: " + cfg.lecture;
+}
+
+function setText(id, text){ const el = document.getElementById(id); if(el) el.textContent = text; }
+function setHTML(id, html){ const el = document.getElementById(id); if(el) el.innerHTML = html; }
+
+function buildExtraCards(){
+  els.extraCard1.hidden = true;
+  els.extraCard2.hidden = true;
+  if(state.tab === "moon"){ buildMoonExtra1(); buildMoonExtra2(); }
+  else if(state.tab === "energy"){ buildEnergyExtra1(); }
+}
+function buildMoonExtra1(){
+  els.extraCard1.hidden = false;
+  els.extra1Eyebrow.textContent = "Readouts";
+  const c = els.extra1Body; c.innerHTML = "";
+  statRow(c, "&theta; = &omega;&Delta;t", "moTheta", "rad");
+  statRow(c, "d<sub>apple</sub>", "moDApple", "");
+  statRow(c, "d<sub>Moon</sub> (exact)", "moDMoon", "");
+  statRow(c, "ratio d<sub>apple</sub>/d<sub>Moon</sub>", "moRatio", "");
+  statRow(c, "a<sub>Moon</sub> = &omega;&sup2;r", "moAMoon", "mm/s&sup2;");
+  statRow(c, "g/60.3&sup2;", "moGRatio", "mm/s&sup2; (same answer)");
+  statNote(c, "The remaining &asymp;1% is the Moon's own mass: &omega;&sup2;r&sup3; = G(M<sub>E</sub> + M<sub>Moon</sub>) (Lecture 4, slide 8).");
+}
+function buildMoonExtra2(){
+  els.extraCard2.hidden = false;
+  els.extra2Eyebrow.textContent = "Series expansion";
+  const c = els.extra2Body; c.innerHTML = "";
+  statRow(c, "d exact = r(1&minus;cos&thinsp;&theta;)", "moDExact", "");
+  statRow(c, "d approx = &frac12;r&theta;&sup2;", "moDApprox", "");
+  statRow(c, "relative difference", "moRelDiff", "(&asymp; &theta;&sup2;/12)");
+  statNote(c, 'With 7 significant digits (float32), cos&thinsp;&theta; rounds to <b id="moCosF32" class="tabular">1.000000</b> and <i>d</i> = <b id="moDF32" class="tabular">0</b> &mdash; vs the double-precision value cos&thinsp;&theta; = <b id="moCosF64" class="tabular">1.000000</b>.');
+}
+function buildEnergyExtra1(){
+  els.extraCard1.hidden = false;
+  els.extra1Eyebrow.textContent = "Escape readout";
+  const c = els.extra1Body; c.innerHTML = "";
+  statRow(c, "<i>v</i> (current)", "enV", "km/s");
+  statRow(c, "<i>v<sub>c</sub></i>(<i>r</i>)", "enVc", "km/s");
+  statRow(c, "<i>v<sub>esc</sub></i>(<i>r</i>)", "enVesc", "km/s");
+  statRow(c, "<i>v</i>/<i>v<sub>esc</sub></i>", "enVRatio", "");
+  statNote(c, '<b id="enVerdict">bound: v &lt; v_esc</b>');
+}
+function updateExtraCards(){
+  if(state.tab === "moon"){
+    const m = moonMetrics(state.moonShownDt);
+    setText("moTheta", m.theta.toExponential(3));
+    setText("moDApple", fmtLenSI(m.d_apple_m));
+    setText("moDMoon", fmtLenSI(m.d_moon_m));
+    setText("moRatio", m.ratio.toFixed(1));
+    setText("moAMoon", (m.a_moon_ms2*1000).toFixed(4));
+    setText("moGRatio", ((G_EARTH*1000)/(60.3*60.3)*1000).toFixed(4));
+    const dApprox = 0.5*R_MOON*1000*m.theta*m.theta;
+    setText("moDExact", fmtLenSI(m.d_moon_m));
+    setText("moDApprox", fmtLenSI(dApprox));
+    setText("moRelDiff", (Math.abs(m.d_moon_m-dApprox)/Math.max(1e-300,m.d_moon_m)).toExponential(2));
+    setText("moCosF32", m.cosThetaF32.toFixed(6));
+    setText("moDF32", fmtLenSI(m.d_moon_f32_m));
+    setText("moCosF64", m.cosTheta.toFixed(6));
+  } else if(state.tab === "energy"){
+    const pos = solarState(state.p.a, state.p.e, state.t);
+    const vc_r = Math.sqrt(GM_SUN/pos.r_km);
+    const vesc_r = Math.sqrt(2*GM_SUN/pos.r_km);
+    setText("enV", pos.v.toFixed(2));
+    setText("enVc", vc_r.toFixed(2));
+    setText("enVesc", vesc_r.toFixed(2));
+    setText("enVRatio", (pos.v/vesc_r).toFixed(3));
+    setHTML("enVerdict", pos.v < vesc_r ? "bound: v &lt; v<sub>esc</sub>" : "unbound: v &ge; v<sub>esc</sub>");
+  }
+}
+
+function updateReadouts(){
+  if(state.tab === "cannon"){
+    const d = cannonDerived(state.p.h, state.p.v0);
+    const pos = cannonWorldState(d, state.t);
+    setText("vCanV0", state.p.v0.toFixed(2));
+    setText("vCanRatio", (state.p.v0/d.vc).toFixed(2));
+    setText("vCanE", d.e.toFixed(3));
+    setText("vCanType", pos.impacted ? "impact" : d.type);
+    setText("vCanPeriod", d.bound ? (d.period/3600).toFixed(2)+" h" : "—");
+  } else if(state.tab === "moon"){
+    setText("vMoonDt", fmtDt(state.moonShownDt));
+  } else if(state.tab === "energy"){
+    const pr = energyPresetByKey(state.p.preset);
+    setText("vEnPreset", pr ? pr.name : "Custom");
+    setText("vEnT", state.t.toFixed(0));
+    const pos = solarState(state.p.a, state.p.e, state.t);
+    setText("vEnR", pos.r_AU.toFixed(3));
+    setText("vEnV", pos.v.toFixed(2));
+  }
+}
+
+/* =========================================================================
+   10. TABS / STRIP-MODE TOGGLE / SWITCHING
+   ========================================================================= */
+const STRIP_MODES = {
+  cannon: [{key:"energy", label:"Energy & well"}],
+  moon:   [{key:"ratio",  label:"Fall distance vs Δt"}],
+  energy: [{key:"energy", label:"Energy & well"}]
+};
+function buildStripModeToggle(){
+  const c = els.stripModeToggle;
+  c.innerHTML = "";
+  const modes = STRIP_MODES[state.tab];
+  state.stripMode = modes[0].key;
+  els.stripPanelTitle.textContent = modes[0].label;
+  if(modes.length <= 1){ c.style.display = "none"; return; }
+  c.style.display = "";
+  modes.forEach(function(m,i){
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.dataset.mode = m.key; btn.setAttribute("role","tab"); btn.textContent = m.label;
+    const active = (i===0);
+    btn.classList.toggle("active", active); btn.setAttribute("aria-selected", active?"true":"false");
+    btn.addEventListener("click", function(){
+      state.stripMode = m.key;
+      c.querySelectorAll("button").forEach(function(b){ const on=b===btn; b.classList.toggle("active",on); b.setAttribute("aria-selected",on?"true":"false"); });
+      els.stripPanelTitle.textContent = m.label;
+      state.stripDirty = true; render();
+    });
+    c.appendChild(btn);
+  });
+}
+function updateMainPanelTitle(){
+  let suffix = "";
+  if(state.tab === "energy"){ const pr = energyPresetByKey(state.p.preset); suffix = pr ? (" ("+pr.name+")") : " (Custom)"; }
+  els.mainPanelTitle.textContent = TAB_LABEL[state.tab] + suffix;
+}
+function wireTabs(){
+  els.tabBar.querySelectorAll("button").forEach(function(btn){
+    btn.addEventListener("click", function(){ switchTab(btn.dataset.tab); });
+  });
+}
+function switchTab(tabId){
+  state.tab = tabId;
+  state.p = defaultParamsFor(tabId);
+  resetView();
+  state.t = 0;
+  state.cannonImpacted = false;
+  state.moonShownDt = state.p.dt || 1;
+  state.moonElapsed = 0;
+  state.playing = false; stopLoop();
+
+  els.tabBar.querySelectorAll("button").forEach(function(b){
+    const active = b.dataset.tab === tabId;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true":"false");
+  });
+
+  const activeReadoutId = "rd" + tabId.charAt(0).toUpperCase() + tabId.slice(1);
+  ["rdCannon","rdMoon","rdEnergy"].forEach(function(id){
+    els[id].style.display = (id === activeReadoutId) ? "" : "none";
+  });
+
+  if(tabId === "moon"){
+    els.speedField.style.display = "none";
+    els.btnStepBack.disabled = true; els.btnStepFwd.disabled = true;
+    els.btnStepBack.title = "Not used on this tab";
+    els.btnStepFwd.title = "Not used on this tab";
+    els.btnPlay.title = "Animate Δt from 0 to the slider value";
+  } else {
+    els.speedField.style.display = "";
+    els.btnStepBack.disabled = false; els.btnStepFwd.disabled = false;
+    state.speed = TAB_SPEED[tabId];
+    const range = TAB_SPEED_RANGE[tabId];
+    els.speedRange.min = range[0]; els.speedRange.max = range[1];
+    els.speedNum.min = range[0]; els.speedNum.max = range[1];
+    els.speedRange.value = state.speed; els.speedNum.value = state.speed;
+    els.speedUnit.textContent = TAB_SPEED_UNIT[tabId];
+    const stepU = tabId==="cannon" ? (TAB_STEP.cannon+" s") : (TAB_STEP.energy+" d");
+    els.btnStepBack.title = "Step back "+stepU;
+    els.btnStepFwd.title = "Step forward "+stepU;
+    els.btnPlay.title = "Play / pause";
+  }
+
+  if(tabId === "cannon") computeCannonAutofit();
+  if(tabId === "energy") computeEnergyBarRange();
+
+  buildParamsCard();
+  buildDisplayCard();
+  buildExtraCards();
+  buildFormulasCard();
+  buildNoticeCard();
+  buildStripModeToggle();
+  updateMainPanelTitle();
+  updatePlayButton();
+
+  state.stripDirty = true;
+  render(true);
+}
+
+/* =========================================================================
+   11. PLAYBACK
+   ========================================================================= */
+function updatePlayButton(){
+  els.btnPlay.innerHTML = state.playing ? "&#10074;&#10074;" : "&#9658;";
+  els.btnPlay.classList.toggle("active", state.playing);
+}
+let rafId = null, lastFrameTs = null;
+function startLoop(){ if(rafId == null){ lastFrameTs = null; rafId = requestAnimationFrame(loop); } }
+function stopLoop(){ if(rafId != null){ cancelAnimationFrame(rafId); rafId = null; } }
+const MAX_FRAME_DT = 1/30;
+function loop(ts){
+  if(lastFrameTs == null) lastFrameTs = ts;
+  const dtSec = (ts - lastFrameTs) / 1000;
+  lastFrameTs = ts;
+  if(dtSec > 0){
+    if(state.tab === "moon"){
+      state.moonElapsed += dtSec;
+      const T = 1.2;
+      const frac = Math.min(1, state.moonElapsed/T);
+      state.moonShownDt = state.p.dt*frac;
+      if(frac >= 1){ state.playing = false; stopLoop(); updatePlayButton(); }
+    } else {
+      state.t += state.speed * Math.min(dtSec, MAX_FRAME_DT);
+    }
+    state.stripDirty = true;
+  }
+  render();
+  if(rafId != null) rafId = requestAnimationFrame(loop);
+}
+function clampCannonTime(){
+  const d = cannonDerived(state.p.h, state.p.v0);
+  const pos = cannonWorldState(d, state.t);
+  if(pos.impacted && state.playing){ state.playing = false; stopLoop(); updatePlayButton(); }
+  state.cannonImpacted = pos.impacted;
+}
+function wirePlayback(){
+  els.btnStepBack.addEventListener("click", function(){
+    if(state.tab === "moon") return;
+    state.t -= TAB_STEP[state.tab]; state.stripDirty = true; render(true);
+  });
+  els.btnStepFwd.addEventListener("click", function(){
+    if(state.tab === "moon") return;
+    state.t += TAB_STEP[state.tab]; state.stripDirty = true; render(true);
+  });
+  els.btnPlay.addEventListener("click", function(){
+    if(state.tab === "moon"){
+      if(!state.playing){ state.moonElapsed = 0; state.moonShownDt = 0; state.playing = true; updatePlayButton(); startLoop(); }
+      else { state.playing = false; updatePlayButton(); stopLoop(); }
+      state.stripDirty = true; render(true); // force: a pause must show the same numbers everywhere immediately
+      return;
+    }
+    state.playing = !state.playing;
+    updatePlayButton();
+    if(state.playing) startLoop(); else stopLoop();
+    render(true);
+  });
+  els.btnReset.addEventListener("click", function(){
+    if(state.tab === "moon"){
+      state.moonShownDt = 0; state.moonElapsed = 0; state.playing = false; stopLoop(); updatePlayButton();
+    } else {
+      state.t = 0; state.cannonImpacted = false;
+    }
+    state.stripDirty = true; render(true);
+  });
+  function syncSpeed(v){
+    const range = TAB_SPEED_RANGE[state.tab] || [1,1000];
+    v = clamp(v, range[0], range[1]);
+    state.speed = v;
+    els.speedRange.value = v; els.speedNum.value = v;
+  }
+  els.speedRange.addEventListener("input", function(){ syncSpeed(parseFloat(els.speedRange.value)); });
+  els.speedNum.addEventListener("input", function(){ const v = parseFloat(els.speedNum.value); if(!isNaN(v)) syncSpeed(v); });
+  els.speedNum.addEventListener("blur", function(){ let v = parseFloat(els.speedNum.value); if(isNaN(v)) v = state.speed; syncSpeed(v); });
+}
+
+/* =========================================================================
+   12. MOVABLE SPLITTERS
+   ========================================================================= */
+let railWidth = 300, stripPanelHeight = 190;
+function applyRailWidth(px){ railWidth = clamp(px,230,420); document.querySelector(".body").style.setProperty("--rail-w", railWidth+"px"); }
+function applyStripHeight(px){ stripPanelHeight = clamp(px,120,320); document.querySelector(".workspace").style.setProperty("--strip-h", stripPanelHeight+"px"); }
+function setupSplitter(el, opts){
+  let dragging=false, startPos=0, startSize=0, activePointerId=null, pendingPos=null, rafScheduled=false;
+  function updateAria(){ el.setAttribute("aria-valuemin",String(opts.min)); el.setAttribute("aria-valuemax",String(opts.max)); el.setAttribute("aria-valuenow",String(Math.round(opts.getSize()))); }
+  updateAria();
+  function applyPending(){
+    rafScheduled=false;
+    if(pendingPos==null) return;
+    const pos=pendingPos; pendingPos=null;
+    let delta=pos-startPos;
+    if(opts.invert) delta=-delta;
+    opts.setSize(clamp(startSize+delta, opts.min, opts.max));
+    updateAria();
+  }
+  function scheduleApply(pos){ pendingPos=pos; if(!rafScheduled){ rafScheduled=true; requestAnimationFrame(applyPending); } }
+  function endDrag(){
+    const was=dragging; dragging=false; pendingPos=null;
+    if(activePointerId!=null){ try{ el.releasePointerCapture(activePointerId); }catch(e){} activePointerId=null; }
+    el.classList.remove("dragging");
+    document.body.classList.remove("resizing-col"); document.body.classList.remove("resizing-row");
+  }
+  el.addEventListener("pointerdown", function(ev){
+    if(ev.button!==0 && ev.pointerType!=="touch" && ev.pointerType!=="pen") return;
+    dragging=true; activePointerId=ev.pointerId;
+    try{ el.setPointerCapture(ev.pointerId); }catch(e){}
+    startPos = opts.axis==="x" ? ev.clientX : ev.clientY;
+    startSize = opts.getSize();
+    el.classList.add("dragging");
+    document.body.classList.add(opts.axis==="x"?"resizing-col":"resizing-row");
+    ev.preventDefault();
+  });
+  el.addEventListener("pointermove", function(ev){ if(!dragging) return; scheduleApply(opts.axis==="x"?ev.clientX:ev.clientY); });
+  el.addEventListener("pointerup", endDrag);
+  el.addEventListener("pointercancel", endDrag);
+  el.addEventListener("lostpointercapture", endDrag);
+  window.addEventListener("pointerup", endDrag, true);
+  window.addEventListener("blur", endDrag);
+  el.addEventListener("keydown", function(ev){
+    const step=10; let dirKey=null;
+    if(opts.axis==="x"){ if(ev.key==="ArrowLeft") dirKey=-1; else if(ev.key==="ArrowRight") dirKey=1; }
+    else { if(ev.key==="ArrowUp") dirKey=-1; else if(ev.key==="ArrowDown") dirKey=1; }
+    if(dirKey===null) return;
+    ev.preventDefault();
+    const signedStep = opts.invert ? -dirKey*step : dirKey*step;
+    opts.setSize(clamp(opts.getSize()+signedStep, opts.min, opts.max));
+    updateAria();
+  });
+}
+function wireSplitters(){
+  const vSplitter=document.getElementById("vSplitter"), hSplitter=document.getElementById("hSplitter");
+  setupSplitter(vSplitter, {axis:"x", invert:false, min:230, max:420, getSize:function(){return railWidth;}, setSize:applyRailWidth});
+  setupSplitter(hSplitter, {axis:"y", invert:true, min:120, max:320, getSize:function(){return stripPanelHeight;}, setSize:applyStripHeight});
+}
+
+/* =========================================================================
+   13. RENDERING HELPERS
+   ========================================================================= */
+function outwardDir(sx,sy,cx,cy){ let vx=sx-cx, vy=sy-cy; const len=Math.hypot(vx,vy); if(len<1e-6) return {dx:0,dy:-1}; return {dx:vx/len, dy:vy/len}; }
+function drawLabel(ctx, sx, sy, text, dir, opts){
+  opts = opts || {};
+  const color = opts.color || COLORS.text, size = opts.size || 11, italic = opts.italic ? "italic " : "";
+  ctx.font = italic + size + "px Inter, sans-serif";
+  const offset = opts.offset==null ? 11 : opts.offset;
+  const x = sx + dir.dx*offset, y = sy + dir.dy*offset;
+  ctx.textAlign = dir.dx>0.15 ? "left" : (dir.dx<-0.15 ? "right" : "center");
+  ctx.textBaseline = dir.dy>0.15 ? "top" : (dir.dy<-0.15 ? "bottom" : "middle");
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+function drawArrow(ctx, from, to, colorHex, alpha, widthMul){
+  alpha = (alpha==null)?1:alpha; widthMul = (widthMul==null)?1:widthMul;
+  ctx.save();
+  ctx.strokeStyle = hexAlpha(colorHex, alpha);
+  ctx.fillStyle = hexAlpha(colorHex, alpha);
+  ctx.lineWidth = 2*widthMul;
+  ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke();
+  const ang = Math.atan2(to.y-from.y, to.x-from.x);
+  const headLen = 8*widthMul, headAngle = Math.PI/7;
+  ctx.beginPath();
+  ctx.moveTo(to.x,to.y);
+  ctx.lineTo(to.x-headLen*Math.cos(ang-headAngle), to.y-headLen*Math.sin(ang-headAngle));
+  ctx.lineTo(to.x-headLen*Math.cos(ang+headAngle), to.y-headLen*Math.sin(ang+headAngle));
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+/* =========================================================================
+   14. VIEW TRANSFORM (pan/zoom -- active on Cannon and Orbital-energy tabs)
+   ========================================================================= */
+const VIEW_ZOOM_MIN = 0.2, VIEW_ZOOM_MAX = 40;
+function resetView(){ state.view.zoom = 1; state.view.panX = 0; state.view.panY = 0; }
+function viewToScreen(baseToScreen, cx, cy){
+  return function(pt){ const s=baseToScreen(pt); const v=state.view; return { x:cx+v.panX+(s.x-cx)*v.zoom, y:cy+v.panY+(s.y-cy)*v.zoom }; };
+}
+function viewScale(baseScale){ return baseScale*state.view.zoom; }
+function zoomViewAt(mx,my,factor){
+  const v = state.view;
+  const newZoom = clamp(v.zoom*factor, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX);
+  const actual = newZoom/v.zoom;
+  const cx = (state.mainW||els.mainCanvas.clientWidth)/2, cy = (state.mainH||els.mainCanvas.clientHeight)/2;
+  v.panX = mx-cx-(mx-cx-v.panX)*actual;
+  v.panY = my-cy-(my-cy-v.panY)*actual;
+  v.zoom = newZoom;
+}
+function updateZoomBadge(){
+  const el = els.zoomBadge; if(!el) return;
+  const z = state.view.zoom;
+  if(state.tab==="moon" || Math.abs(z-1)<0.001){ el.hidden = true; return; }
+  el.hidden = false; el.textContent = "×"+z.toFixed(1);
+}
+function wireMainCanvasView(){
+  const canvas = els.mainCanvas;
+  canvas.addEventListener("wheel", function(ev){
+    if(state.tab==="moon") return;
+    ev.preventDefault();
+    const rect=canvas.getBoundingClientRect();
+    const mx=ev.clientX-rect.left, my=ev.clientY-rect.top;
+    zoomViewAt(mx,my, ev.deltaY<0?1.1:1/1.1);
+    render();
+  }, {passive:false});
+  let drag = null;
+  canvas.addEventListener("pointerdown", function(ev){
+    if(state.tab==="moon" || ev.button!==0) return;
+    drag = { id:ev.pointerId, x0:ev.clientX, y0:ev.clientY, panX0:state.view.panX, panY0:state.view.panY };
+    try{ canvas.setPointerCapture(ev.pointerId); }catch(e){}
+  });
+  canvas.addEventListener("pointermove", function(ev){
+    if(!drag || ev.pointerId!==drag.id) return;
+    state.view.panX = drag.panX0+(ev.clientX-drag.x0);
+    state.view.panY = drag.panY0+(ev.clientY-drag.y0);
+    render();
+  });
+  function endDrag(ev){ if(drag && (!ev||ev.pointerId===drag.id)){ try{ canvas.releasePointerCapture(drag.id); }catch(e){} drag=null; } }
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("lostpointercapture", endDrag);
+  canvas.addEventListener("dblclick", function(){ if(state.tab!=="moon"){ resetView(); render(); } });
+  els.btnResetView.addEventListener("click", function(){ resetView(); render(); });
+}
+
+/* =========================================================================
+   15. MAIN-CANVAS + STRIP DRAWING (dispatchers; per-tab bodies follow)
+   ========================================================================= */
+function drawMain(){
+  const canvas = els.mainCanvas, ctx = canvas.getContext("2d");
+  const w = state.mainW || canvas.clientWidth, h = state.mainH || canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if(w<=0||h<=0) return;
+  if(state.tab === "cannon") drawCannonMain(ctx,w,h);
+  else if(state.tab === "moon") drawMoonMain(ctx,w,h);
+  else if(state.tab === "energy") drawEnergyMain(ctx,w,h);
+}
+function drawStrip(){
+  const canvas = els.stripCanvas, ctx = canvas.getContext("2d");
+  const w = state.stripW || canvas.clientWidth, h = state.stripH || canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if(w<=0||h<=0) return;
+  if(state.tab === "cannon") drawCannonStrip(ctx,w,h);
+  else if(state.tab === "moon") drawMoonStrip(ctx,w,h);
+  else if(state.tab === "energy") drawEnergyStrip(ctx,w,h);
+}
+const EARTH_FILL = "#1c2b3d";
+function fmtSciPlain(n){
+  if(!isFinite(n)) return "inf";
+  if(n===0) return "0";
+  const e = Math.floor(Math.log10(Math.abs(n)));
+  const m = n/Math.pow(10,e);
+  if(e>=-1 && e<3) return n.toPrecision(3);
+  return m.toFixed(2)+"e"+e;
+}
+const SUPERSCRIPT_DIGITS = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","-":"⁻"};
+function toSuperscript(n){ return String(n).split("").map(function(c){ return SUPERSCRIPT_DIGITS[c] != null ? SUPERSCRIPT_DIGITS[c] : c; }).join(""); }
+// "6.6·10¹⁰" style formatting (mantissa to 1 decimal, unicode superscript exponent) --
+// used for the Moon-tab magnifier caption where a plain "6.63e10" reads as a raw JS number.
+function fmtSciSuper(n){
+  if(!isFinite(n) || n===0) return "0";
+  const e = Math.floor(Math.log10(Math.abs(n)));
+  const m = n/Math.pow(10,e);
+  return m.toFixed(1) + "·10" + toSuperscript(e);
+}
+
+/* ---- Cannon tab ---- */
+function drawCannonMain(ctx,w,h){
+  const cx=w/2, cy=h/2;
+  const extent = state.cannon.worldExtent || (R_E+state.p.h)*1.3;
+  const baseScale = Math.min(w,h)*0.44/extent;
+  function baseToScreen(pt){ return { x:cx+pt.x*baseScale, y:cy-pt.y*baseScale }; }
+  const toScreen = viewToScreen(baseToScreen, cx, cy);
+  const scale = viewScale(baseScale);
+  const d = cannonDerived(state.p.h, state.p.v0);
+
+  if(state.display.family){
+    FAMILY_MULTS.forEach(function(fm){
+      const v0f = fm.m*d.vc;
+      if(Math.abs(v0f-state.p.v0) < 0.03) return; // don't double-draw the family member that IS the current shot
+      const df = cannonDerived(state.p.h, v0f);
+      const poly = cannonConicPolyline(df, 220);
+      ctx.beginPath();
+      poly.pts.forEach(function(pt,i){ const s=toScreen(pt); if(i===0) ctx.moveTo(s.x,s.y); else ctx.lineTo(s.x,s.y); });
+      ctx.strokeStyle = hexAlpha(COLORS.muted, 0.30);
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+      // spread each family label to its own angle around the curve so they read as a fan
+      // instead of stacking on top of each other (and of the apsides label) at one point.
+      let labelWorld;
+      if(df.bound){
+        const th = df.theta0 + fm.af*Math.PI;
+        const r = df.p/(1+df.e*Math.cos(th));
+        labelWorld = orbitToWorld(r, th, df.theta0);
+      } else {
+        labelWorld = poly.labelPt;
+      }
+      const ls = toScreen(labelWorld);
+      drawLabel(ctx, ls.x, ls.y, fm.label, outwardDir(ls.x,ls.y,cx,cy), { color:hexAlpha(COLORS.muted,0.8), size:9.5, offset:4 });
+    });
+  }
+
+  const rEarthPx = scale*R_E;
+  ctx.beginPath(); ctx.arc(cx,cy,rEarthPx,0,TAU); ctx.fillStyle = EARTH_FILL; ctx.fill();
+  ctx.lineWidth = 1.4; ctx.strokeStyle = hexAlpha(COLORS.cyan,0.45); ctx.stroke();
+
+  const baseHalfW = R_E*0.045;
+  const apex = toScreen({x:0, y:d.r0});
+  const baseL = toScreen({x:-baseHalfW, y:R_E*0.985});
+  const baseR = toScreen({x: baseHalfW, y:R_E*0.985});
+  ctx.beginPath(); ctx.moveTo(baseL.x,baseL.y); ctx.lineTo(apex.x,apex.y); ctx.lineTo(baseR.x,baseR.y); ctx.closePath();
+  ctx.fillStyle = hexAlpha(COLORS.text, 0.28); ctx.fill();
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.6); ctx.lineWidth = 1; ctx.stroke();
+  drawLabel(ctx, apex.x, apex.y, "Newton's mountain", {dx:0,dy:-1}, { color:COLORS.muted, size:10, offset:8 });
+
+  const poly = cannonConicPolyline(d, 480);
+  ctx.beginPath();
+  poly.pts.forEach(function(pt,i){ const s=toScreen(pt); if(i===0) ctx.moveTo(s.x,s.y); else ctx.lineTo(s.x,s.y); });
+  ctx.strokeStyle = COLORS.cyan; ctx.lineWidth = 2.2; ctx.stroke();
+  if(poly.impactPt){
+    const s = toScreen(poly.impactPt);
+    ctx.strokeStyle = COLORS.magenta; ctx.lineWidth = 2;
+    const r=5;
+    ctx.beginPath(); ctx.moveTo(s.x-r,s.y-r); ctx.lineTo(s.x+r,s.y+r); ctx.moveTo(s.x+r,s.y-r); ctx.lineTo(s.x-r,s.y+r); ctx.stroke();
+  }
+
+  if(state.display.apsides && d.bound){
+    // periapsis is always at orbit-angle 0 and apoapsis at orbit-angle pi (theta0 only
+    // rotates the whole picture so the launch point sits at world-north). Only the apsis
+    // OTHER than the launch point gets a tick+label here -- the launch point already has
+    // Newton's mountain and the projectile marker, so labeling it again just collides text.
+    const farIsApo = d.periapsisLaunch;
+    const farR = farIsApo ? d.p/(1-d.e) : d.periR;
+    const farAngle = farIsApo ? Math.PI : 0;
+    const farW = orbitToWorld(farR, farAngle, d.theta0);
+    const s = toScreen(farW);
+    const dir = outwardDir(s.x,s.y,cx,cy);
+    const perp = {dx:-dir.dy, dy:dir.dx};
+    ctx.beginPath();
+    ctx.moveTo(s.x-perp.dx*5, s.y-perp.dy*5);
+    ctx.lineTo(s.x+perp.dx*5, s.y+perp.dy*5);
+    ctx.strokeStyle = hexAlpha(COLORS.amber,0.8); ctx.lineWidth = 1.5; ctx.stroke();
+    drawLabel(ctx, s.x, s.y, farIsApo ? "apo" : "peri", dir, { color:COLORS.amber, size:9.5, offset:9 });
+  }
+
+  const pos = cannonWorldState(d, state.t);
+  const ppt = toScreen({x:pos.x, y:pos.y});
+  if(state.display.vectors && pos.r>1){
+    const gmag = GM_E/(pos.r*pos.r);
+    const g0 = GM_E/(d.r0*d.r0);
+    const gLen = clamp(14+30*(gmag/g0), 10, 46);
+    const gdirW = { x:-pos.x/pos.r, y:-pos.y/pos.r };
+    const gTip = { x: ppt.x + gdirW.x*gLen, y: ppt.y - gdirW.y*gLen };
+    drawArrow(ctx, ppt, gTip, COLORS.coral, 0.95, 1);
+
+    const vmag = pos.v;
+    if(vmag > 1e-6){
+      const vLen = clamp(16+3.2*vmag, 12, 70);
+      const vdirW = { x:pos.vx/vmag, y:pos.vy/vmag };
+      const vTip = { x: ppt.x + vdirW.x*vLen, y: ppt.y - vdirW.y*vLen };
+      drawArrow(ctx, ppt, vTip, COLORS.green, 1, 1);
+    }
+  }
+  ctx.beginPath(); ctx.arc(ppt.x,ppt.y,4.5,0,TAU); ctx.fillStyle = COLORS.cyan; ctx.fill();
+  ctx.strokeStyle = COLORS.background; ctx.lineWidth = 1; ctx.stroke();
+}
+
+function drawBarsSubplot(ctx, x0,y0,ww,hh, KE,U,E, rangeVal, verdictText){
+  const pad=10;
+  const x0p=x0+pad, y0p=y0+18, w2=ww-2*pad, h2=hh-30;
+  const lo=-rangeVal, hi=rangeVal;
+  function yOf(v){ return y0p + h2*(1-(clamp(v,lo,hi)-lo)/(hi-lo)); }
+  const yZero = yOf(0);
+  ctx.save();
+  ctx.font="10px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  ctx.fillText("Energy (km²/s²)", x0p, y0+11);
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.4); ctx.setLineDash([3,3]); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x0p,yZero); ctx.lineTo(x0p+w2,yZero); ctx.stroke(); ctx.setLineDash([]);
+  // Axis numbers sit just inside the plot's own left edge (not to the left of it) so they
+  // never run off a narrow panel's edge the way a right-aligned "outdent" label would.
+  ctx.textAlign="left";
+  ctx.fillText(hi.toFixed(0), x0p+2, yOf(hi)+8);
+  ctx.fillText(lo.toFixed(0), x0p+2, yOf(lo));
+  ctx.fillText("0", x0p+2, yZero-3);
+
+  const barW = Math.min(30, w2*0.15);
+  const xs = { KE:x0p+w2*0.22, U:x0p+w2*0.5, E:x0p+w2*0.78 };
+  function bar(xc, val, color){
+    const y1=yZero, y2=yOf(val);
+    ctx.fillStyle = hexAlpha(color, 0.85);
+    ctx.fillRect(xc-barW/2, Math.min(y1,y2), barW, Math.max(1,Math.abs(y2-y1)));
+  }
+  bar(xs.KE, KE, COLORS.green);
+  bar(xs.U, U, COLORS.coral);
+  bar(xs.E, E, COLORS.amber);
+  ctx.textAlign="center"; ctx.fillStyle=COLORS.text; ctx.font="10px Inter";
+  ctx.fillText("KE", xs.KE, y0p+h2+13);
+  ctx.fillText("U", xs.U, y0p+h2+13);
+  ctx.fillText("E", xs.E, y0p+h2+13);
+  ctx.fillStyle = COLORS.amber; ctx.font="9.5px Inter";
+  ctx.fillText(verdictText, xs.E, y0p+9);
+  ctx.restore();
+}
+function drawWellSubplot(ctx, x0,y0,ww,hh, opt){
+  const pad=10;
+  const x0p=x0+pad, y0p=y0+18, w2=ww-2*pad, h2=hh-32;
+  function xOf(r){ return x0p + w2*(r-opt.rMin)/(opt.rMax-opt.rMin); }
+  const rSafeMin = Math.max(opt.rMin, (opt.rMax-opt.rMin)*0.01);
+  let yLo, yHi;
+  if(opt.yLo != null){
+    yLo = opt.yLo; yHi = (opt.yHi != null) ? opt.yHi : 0;
+  } else {
+    const candidateLows = [opt.Ufunc(rSafeMin), opt.E*1.2, opt.Ufunc(Math.max(opt.currentR,rSafeMin))*1.15];
+    yLo = Math.min.apply(null, candidateLows);
+    yHi = -yLo*0.03;
+  }
+  function yOf(v){ const vv=clamp(v,yLo,yHi); return y0p + h2*(1-(vv-yLo)/(yHi-yLo)); }
+  ctx.save();
+  ctx.font="10px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="left";
+  ctx.fillText(opt.title || ("Gravity well U(r), r in "+opt.rUnitLabel), x0p, y0+11);
+  if(opt.shadeUnderR){
+    ctx.fillStyle = hexAlpha(COLORS.coral,0.10);
+    ctx.fillRect(x0p, y0p, clamp(xOf(opt.shadeUnderR)-x0p,0,w2), h2);
+  }
+  ctx.beginPath();
+  const N=90;
+  for(let i=0;i<=N;i++){
+    const r = opt.rMin + (opt.rMax-opt.rMin)*i/N;
+    const rr = Math.max(r, rSafeMin);
+    const px=xOf(r), py=yOf(opt.Ufunc(rr));
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.9); ctx.lineWidth=1.6; ctx.stroke();
+  if(opt.orbitRange){
+    ctx.beginPath();
+    const N2=40;
+    for(let i=0;i<=N2;i++){
+      const r = opt.orbitRange[0] + (opt.orbitRange[1]-opt.orbitRange[0])*i/N2;
+      const px=xOf(r), py=yOf(opt.Ufunc(Math.max(r,rSafeMin)));
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.strokeStyle = COLORS.cyan; ctx.lineWidth=2.4; ctx.stroke();
+  }
+  const yE = yOf(opt.E);
+  ctx.strokeStyle = hexAlpha(COLORS.amber,0.85); ctx.setLineDash([5,3]); ctx.lineWidth=1.3;
+  ctx.beginPath(); ctx.moveTo(x0p,yE); ctx.lineTo(x0p+w2,yE); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle=COLORS.amber; ctx.font="9.5px Inter"; ctx.textAlign="left";
+  ctx.fillText("E", x0p+w2-10, yE-4);
+  if(opt.twoA != null && opt.twoA>=opt.rMin && opt.twoA<=opt.rMax){
+    const x2a = xOf(opt.twoA);
+    ctx.strokeStyle = hexAlpha(COLORS.amber,0.9); ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(x2a,yE-5); ctx.lineTo(x2a,yE+5); ctx.stroke();
+    ctx.fillStyle=COLORS.amber; ctx.font="9px Inter"; ctx.textAlign="center";
+    ctx.fillText("2a: no farther", x2a, Math.min(y0p+h2-4, yE+16));
+    ctx.fillText("than this", x2a, Math.min(y0p+h2+6, yE+26));
+  }
+  const xr = xOf(opt.currentR), yU = yOf(opt.Ufunc(Math.max(opt.currentR,rSafeMin)));
+  ctx.strokeStyle = hexAlpha(COLORS.green,0.9); ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(xr,yU); ctx.lineTo(xr,yE); ctx.stroke();
+  ctx.fillStyle=COLORS.green; ctx.font="9.5px Inter"; ctx.textAlign="center";
+  ctx.fillText("KE", clamp(xr+16,x0p+10,x0p+w2-4), (yU+yE)/2);
+  ctx.beginPath(); ctx.arc(xr,yU,4,0,TAU); ctx.fillStyle=COLORS.coral; ctx.fill();
+  ctx.fillStyle=COLORS.muted; ctx.font="9px Inter";
+  if(opt.xTicks){
+    // Explicit tick set (e.g. r_p/r_a plus round Earth-radii/AU marks) -- each tick gets its
+    // own small mark + centered label, clamped so end ticks can't run off the panel edge.
+    opt.xTicks.forEach(function(t){
+      const tx = clamp(xOf(t.v), x0p+2, x0p+w2-2);
+      ctx.strokeStyle = hexAlpha(COLORS.muted,0.4); ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(tx,y0p+h2); ctx.lineTo(tx,y0p+h2+3); ctx.stroke();
+      ctx.fillStyle = t.color || COLORS.muted;
+      ctx.textAlign = (tx<x0p+14) ? "left" : ((tx>x0p+w2-14) ? "right" : "center");
+      ctx.fillText(t.label, tx, y0p+h2+13);
+    });
+  } else {
+    // Anchored inward (left/right) rather than centered on the axis endpoints so a wide number
+    // (e.g. "50968") can't run off the panel's own left/right edge on a narrow layout.
+    ctx.textAlign="left"; ctx.fillText(opt.rMin.toFixed(opt.rMin<1?2:0), x0p, y0p+h2+13);
+    ctx.textAlign="right"; ctx.fillText(opt.rMax.toFixed(opt.rMax<1?2:0), x0p+w2, y0p+h2+13);
+  }
+  ctx.restore();
+}
+function drawCannonStrip(ctx,w,h){
+  const d = cannonDerived(state.p.h, state.p.v0);
+  const pos = cannonWorldState(d, state.t);
+  const KE = pos.v*pos.v/2, U = -GM_E/pos.r, E = d.Espec;
+  const verdict = E<-1e-6 ? "bound" : (Math.abs(E)<1e-6 ? "escape" : "unbound");
+  const halfW = w/2;
+  drawBarsSubplot(ctx, 0,0, halfW,h, KE,U,E, 70, verdict);
+  ctx.strokeStyle = hexAlpha(COLORS.border,0.8); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(halfW,4); ctx.lineTo(halfW,h-4); ctx.stroke();
+  drawWellSubplot(ctx, halfW,0, w-halfW,h, {
+    rMin:0.8*R_E, rMax:8*R_E, title:"Gravity well U(r), r (R_E)",
+    Ufunc:function(r){ return -GM_E/r; }, E:E, currentR:pos.r,
+    shadeUnderR:R_E, twoA: d.bound ? 2*d.a : null, orbitRange:null,
+    xTicks:[1,2,4,8].map(function(n){ return { v:n*R_E, label:String(n) }; })
+  });
+}
+
+/* ---- Falling Moon tab ---- */
+function drawMoonMain(ctx,w,h){
+  const gap=6, halfW=(w-gap)/2;
+  drawApplePanel(ctx, 0,0, halfW, h);
+  ctx.strokeStyle = hexAlpha(COLORS.border,0.8); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(halfW+gap/2,6); ctx.lineTo(halfW+gap/2,h-6); ctx.stroke();
+  drawMoonPanel(ctx, halfW+gap, 0, halfW, h);
+}
+function drawApplePanel(ctx,x0,y0,ww,hh){
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x0,y0,ww,hh); ctx.clip();
+  ctx.font="10.5px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="center";
+  ctx.fillText("Apple at r = R_E", x0+ww/2, y0+16);
+  const pad=26;
+  const drawableH = hh-2*pad;
+  const dtShown = state.moonShownDt || 0;
+  const dTarget = 0.5*(G_EARTH*1000)*state.p.dt*state.p.dt;
+  const scale = (0.6*drawableH)/Math.max(dTarget,1e-9);
+  const dShown = 0.5*(G_EARTH*1000)*dtShown*dtShown;
+  const cxp = x0+ww/2;
+  const yStart = y0+pad, yNow = clamp(yStart + dShown*scale, yStart, y0+hh-pad);
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.7); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cxp-26,yStart); ctx.lineTo(cxp+26,yStart); ctx.stroke();
+  ctx.fillStyle=COLORS.muted; ctx.font="9.5px Inter"; ctx.textAlign="left";
+  ctx.fillText("release", cxp+30, yStart+3);
+  ctx.strokeStyle = hexAlpha(COLORS.text,0.5); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cxp-40,yStart); ctx.lineTo(cxp-40,yNow); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cxp-44,yStart); ctx.lineTo(cxp-36,yStart); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cxp-44,yNow); ctx.lineTo(cxp-36,yNow); ctx.stroke();
+  ctx.fillStyle=COLORS.text; ctx.font="11px Inter"; ctx.textAlign="right";
+  ctx.fillText(fmtLenSI(dShown), cxp-48, (yStart+yNow)/2+4);
+  ctx.beginPath(); ctx.arc(cxp,yNow,7,0,TAU); ctx.fillStyle=COLORS.coral; ctx.fill();
+  ctx.fillStyle=COLORS.muted; ctx.font="9px Inter"; ctx.textAlign="right";
+  ctx.fillText("scale ×"+fmtSciPlain(scale)+" px/m", x0+ww-8, y0+hh-8);
+  ctx.restore();
+}
+function drawMoonPanel(ctx,x0,y0,ww,hh){
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x0,y0,ww,hh); ctx.clip();
+  ctx.font="10.5px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="center";
+  ctx.fillText("Moon at r = 60.3 R_E", x0+ww/2, y0+16);
+  const cx=x0+ww/2, cy=y0+hh/2+6;
+  const Rdisp = Math.min(ww,hh)*0.36;
+  const dtShown = state.moonShownDt || 0;
+  const theta = OMEGA_MOON*dtShown;
+
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.5); ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.arc(cx,cy,Rdisp,0,TAU); ctx.stroke();
+  const rE = Math.max(2.5, Rdisp*(R_E/R_MOON));
+  ctx.beginPath(); ctx.arc(cx,cy,rE,0,TAU); ctx.fillStyle=EARTH_FILL; ctx.fill();
+  ctx.strokeStyle=hexAlpha(COLORS.cyan,0.5); ctx.lineWidth=1; ctx.stroke();
+
+  const startPt = { x:cx+Rdisp, y:cy };
+  ctx.strokeStyle = hexAlpha(COLORS.green,0.7); ctx.setLineDash([4,3]); ctx.lineWidth=1.3;
+  ctx.beginPath(); ctx.moveTo(startPt.x,cy-Rdisp*0.5); ctx.lineTo(startPt.x,cy+Rdisp*0.15); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle=hexAlpha(COLORS.green,0.85); ctx.font="9px Inter"; ctx.textAlign="right";
+  ctx.fillText("tangent", Math.min(startPt.x+6, x0+ww-4), cy-Rdisp*0.5-2);
+
+  const mx = cx+Rdisp*Math.cos(theta), my = cy-Rdisp*Math.sin(theta);
+  ctx.beginPath(); ctx.arc(mx,my,5,0,TAU); ctx.fillStyle=COLORS.cyan; ctx.fill();
+  ctx.fillStyle=COLORS.text; ctx.font="9.5px Inter"; ctx.textAlign="right";
+  ctx.fillText("Moon", mx-8, my);
+
+  // Fixed corner placement (rather than anchored to the Moon marker) keeps the inset well
+  // clear of the orbit/Moon-label area regardless of panel size -- the Moon always sits at
+  // world angle 0 (the right side of the circle), so the upper-left corner is always free.
+  const insetR = Math.min(52, Math.min(ww,hh)*0.20);
+  const insetCx = x0 + insetR + 12;
+  const insetCy = y0 + insetR + 30;
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.4); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(insetCx,insetCy); ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(insetCx,insetCy,insetR,0,TAU); ctx.clip();
+  ctx.fillStyle = hexAlpha(COLORS["panel-deep"],0.97); ctx.fillRect(insetCx-insetR,insetCy-insetR,insetR*2,insetR*2);
+  const gapPxNormal = Rdisp*(1-Math.cos(theta));
+  const arcPxNormal = Rdisp*theta;
+  const magX = 40/Math.max(1e-12, gapPxNormal);
+  const magY = 30/Math.max(1e-9, arcPxNormal);
+  ctx.strokeStyle = hexAlpha(COLORS.green,0.8); ctx.setLineDash([3,2]); ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(insetCx, insetCy-insetR+3); ctx.lineTo(insetCx, insetCy+insetR-3); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  const M=20;
+  for(let i=0;i<=M;i++){
+    const th=(theta*i)/M;
+    const lx = -(Rdisp*(1-Math.cos(th)))*magX;
+    const ly = -(Rdisp*Math.sin(th))*magY;
+    const px=insetCx+lx, py=insetCy+ly;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle = COLORS.cyan; ctx.lineWidth=2; ctx.stroke();
+  const endLx = -(Rdisp*(1-Math.cos(theta)))*magX, endLy = -(Rdisp*Math.sin(theta))*magY;
+  const endPx = insetCx+endLx, endPy = insetCy+endLy;
+  ctx.beginPath(); ctx.arc(endPx,endPy,3.5,0,TAU); ctx.fillStyle=COLORS.cyan; ctx.fill();
+  ctx.strokeStyle = hexAlpha(COLORS.amber,0.85); ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(insetCx,endPy); ctx.lineTo(endPx,endPy); ctx.stroke();
+  ctx.restore();
+  ctx.strokeStyle = hexAlpha(COLORS.border,0.9); ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.arc(insetCx,insetCy,insetR,0,TAU); ctx.stroke();
+  ctx.fillStyle=COLORS.amber; ctx.font="9px Inter"; ctx.textAlign="center";
+  ctx.fillText("gap ×"+fmtSciSuper(magX), insetCx, insetCy+insetR+11);
+  ctx.restore();
+}
+// log-log fall-distance chart: both curves are pure power laws (d ~ dt^2) so two points would
+// suffice, but the Moon curve is sampled properly since it's the "exact" r(1-cos) formula, not
+// the small-angle approximation -- it just happens to stay indistinguishable from a slope-2 line
+// over this whole range, which is itself the point being demonstrated.
+function drawMoonStrip(ctx,w,h){
+  const x0=46, x1=w-14, y0=16, y1=h-22;
+  const xLogMin=0, xLogMax=Math.log10(3600); // Delta t: 1 .. 3600 s
+  const yLogMin=-4, yLogMax=5;                // fall distance: 1e-4 m (0.1 mm) .. 1e5 m (100 km)
+  function xOf(dt){ return x0 + (x1-x0)*(Math.log10(dt)-xLogMin)/(xLogMax-xLogMin); }
+  function yOf(d_m){
+    const lv = clamp(Math.log10(Math.max(d_m,1e-12)), yLogMin, yLogMax);
+    return y1 - (y1-y0)*(lv-yLogMin)/(yLogMax-yLogMin);
+  }
+  ctx.save();
+  ctx.font="10px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="left";
+  ctx.fillText("Fall distance vs Δt (log-log)", x0, 10);
+
+  const yTicks = [ {v:1e-4,label:"0.1 mm"}, {v:1e-3,label:"1 mm"}, {v:1,label:"1 m"}, {v:1e3,label:"1 km"}, {v:1e5,label:"100 km"} ];
+  ctx.font="9px Inter";
+  yTicks.forEach(function(t){
+    const py = yOf(t.v);
+    ctx.strokeStyle = hexAlpha(COLORS.muted,0.2); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x0,py); ctx.lineTo(x1,py); ctx.stroke();
+    ctx.fillStyle = COLORS.muted; ctx.textAlign="right";
+    ctx.fillText(t.label, x0-4, clamp(py+3, y0+8, y1));
+  });
+  ctx.textAlign="center";
+  [1,10,60,600,3600].forEach(function(s){ ctx.fillText(s+"s", xOf(s), y1+12); });
+
+  // apple: d = 1/2 g dt^2 (slope 2) -- clipped where it runs off the top of the chart
+  ctx.beginPath();
+  let started=false;
+  const N=60;
+  for(let i=0;i<=N;i++){
+    const dt = Math.pow(10, xLogMin + (xLogMax-xLogMin)*i/N);
+    const d = 0.5*(G_EARTH*1000)*dt*dt;
+    if(Math.log10(d) > yLogMax){ started=false; continue; }
+    const px=xOf(dt), py=yOf(d);
+    if(!started){ ctx.moveTo(px,py); started=true; } else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle = COLORS.coral; ctx.lineWidth=2; ctx.stroke();
+
+  // Moon: d = r(1 - cos(omega dt)) (slope 2, and stays on-scale for the whole range)
+  ctx.beginPath();
+  for(let i=0;i<=N;i++){
+    const dt = Math.pow(10, xLogMin + (xLogMax-xLogMin)*i/N);
+    const px=xOf(dt), py=yOf(moonMetrics(dt).d_moon_m);
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle = COLORS.cyan; ctx.lineWidth=2; ctx.stroke();
+
+  // current Delta t: mark both lines, bracket the gap between them. The value labels and the
+  // bracket+ratio label are always kept on the SAME side of the marker (never straddling it),
+  // and that side is chosen by actually measuring the three text boxes against the remaining
+  // width to the right edge -- not a fixed percentage -- so none of the three can ever collide
+  // with each other or run off the panel, at any Delta t (checked at 1, 60, 600, 3600 s).
+  const curDt = clamp(state.moonShownDt||1, 1, 3600);
+  const curX = xOf(curDt);
+  const dApple = 0.5*(G_EARTH*1000)*curDt*curDt;
+  const dMoon = moonMetrics(curDt).d_moon_m;
+  const appleY = yOf(dApple), moonY = yOf(dMoon);
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.4); ctx.setLineDash([3,3]); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(curX,y0); ctx.lineTo(curX,y1); ctx.stroke(); ctx.setLineDash([]);
+
+  const moonLabel = fmtLenSI(dMoon), appleLabel = fmtLenSI(dApple);
+  const ratio = dApple/Math.max(1e-300,dMoon);
+  const bracketLabel = "×"+ratio.toFixed(0)+" ≈ 60.3²";
+  ctx.font = "9.5px Inter";
+  const moonW = ctx.measureText(moonLabel).width, appleW = ctx.measureText(appleLabel).width;
+  const bracketW = ctx.measureText(bracketLabel).width;
+  const labelGap = 7, bracketGap = 14;
+  const neededToRight = labelGap + Math.max(moonW,appleW) + bracketGap + bracketW;
+  const dir = (curX + neededToRight > x1 - 4) ? -1 : 1; // +1 grows right of the marker, -1 left
+  const valueX = curX + dir*labelGap;
+
+  // Both value labels sit ABOVE their own point (never straddling the y-tick gridline just
+  // below a small Delta t's Moon point, which sits only a few px above the "1 mm" line) --
+  // and apple's own label is always kept at least one line above Moon's, even when the two
+  // points fall close together in pixel space (e.g. large Delta t, where apple's true value is
+  // clamped off the top of the chart and Moon's on-scale value sits only a few px under it).
+  const LABEL_LINE = 12;
+  let appleLabelY = Math.max(appleY-6, y0+8);
+  let moonLabelY = Math.max(moonY-6, y0+8);
+  if(moonLabelY - appleLabelY < LABEL_LINE) moonLabelY = appleLabelY + LABEL_LINE;
+
+  ctx.beginPath(); ctx.arc(curX,moonY,4,0,TAU); ctx.fillStyle=COLORS.cyan; ctx.fill();
+  ctx.fillStyle=COLORS.cyan; ctx.textAlign = dir>0 ? "left" : "right";
+  ctx.fillText(moonLabel, valueX, moonLabelY);
+
+  ctx.beginPath(); ctx.arc(curX,appleY,4,0,TAU); ctx.fillStyle=COLORS.coral; ctx.fill();
+  ctx.fillStyle=COLORS.coral;
+  ctx.fillText(appleLabel, valueX, appleLabelY);
+
+  // Bracket (and its label, further out still) sits beyond whichever value label reaches
+  // farthest from the marker, on that same side, so it can't touch either value label.
+  const bx = curX + dir*(labelGap + Math.max(moonW,appleW) + bracketGap);
+  const tick = -dir*4;
+  ctx.strokeStyle = hexAlpha(COLORS.amber,0.85); ctx.lineWidth=1.3;
+  ctx.beginPath();
+  ctx.moveTo(bx+tick,appleY); ctx.lineTo(bx,appleY); ctx.lineTo(bx,moonY); ctx.lineTo(bx+tick,moonY);
+  ctx.stroke();
+  ctx.fillStyle=COLORS.amber; ctx.textAlign = dir>0 ? "left" : "right";
+  ctx.fillText(bracketLabel, bx-tick, clamp((appleY+moonY)/2+3, y0+9, y1-3));
+  ctx.restore();
+}
+
+/* ---- Orbital energy tab ---- */
+function drawEnergyMain(ctx,w,h){
+  const cx=w/2, cy=h/2;
+  const a=state.p.a, e=state.p.e;
+  const ap = solarApsides(a,e);
+  const extentAU = ap.ra_AU*1.15;
+  const baseScale = Math.min(w,h)*0.44/extentAU;
+  function baseToScreen(pt){ return {x:cx+pt.x*baseScale, y:cy-pt.y*baseScale}; }
+  const toScreen = viewToScreen(baseToScreen,cx,cy);
+
+  const p_slr = a*(1-e*e);
+  ctx.beginPath();
+  const N=220;
+  for(let i=0;i<=N;i++){
+    const th=(i/N)*TAU;
+    const r=p_slr/(1+e*Math.cos(th));
+    const s=toScreen({x:r*Math.cos(th), y:r*Math.sin(th)});
+    if(i===0) ctx.moveTo(s.x,s.y); else ctx.lineTo(s.x,s.y);
+  }
+  ctx.strokeStyle = hexAlpha(COLORS["border-strong"],0.9); ctx.lineWidth=1.6; ctx.stroke();
+
+  const sunS = toScreen({x:0,y:0});
+  ctx.beginPath(); ctx.arc(sunS.x,sunS.y, clamp(6*state.view.zoom,4,26),0,TAU);
+  ctx.fillStyle=COLORS.amber; ctx.fill();
+
+  if(state.display.dots){
+    for(let k=0;k<24;k++){
+      const M=(k/24)*TAU;
+      const E=solveKepler(M,e);
+      const th=solveThetaFromE(E,e);
+      const r=a*(1-e*Math.cos(E));
+      const s=toScreen({x:r*Math.cos(th), y:r*Math.sin(th)});
+      ctx.beginPath(); ctx.arc(s.x,s.y,2,0,TAU); ctx.fillStyle=hexAlpha(COLORS.text,0.55); ctx.fill();
+    }
+  }
+
+  if(state.display.apsides){
+    [[ap.rp_AU,0,"peri",ap.vp],[ap.ra_AU,Math.PI,"apo",ap.va]].forEach(function(row){
+      const s = toScreen({x:row[0]*Math.cos(row[1]), y:row[0]*Math.sin(row[1])});
+      const dir = outwardDir(s.x,s.y,cx,cy);
+      const perp={dx:-dir.dy,dy:dir.dx};
+      ctx.beginPath(); ctx.moveTo(s.x-perp.dx*5,s.y-perp.dy*5); ctx.lineTo(s.x+perp.dx*5,s.y+perp.dy*5);
+      ctx.strokeStyle=hexAlpha(COLORS.amber,0.8); ctx.lineWidth=1.5; ctx.stroke();
+      drawLabel(ctx, s.x,s.y, row[2]+" "+row[3].toFixed(1)+" km/s", dir, {color:COLORS.amber, size:9.5, offset:9});
+    });
+  }
+
+  const pos = solarState(a,e,state.t);
+  const ppt = toScreen({x:pos.r_AU*Math.cos(pos.theta), y:pos.r_AU*Math.sin(pos.theta)});
+  if(state.display.vectors && pos.v>1e-6){
+    const vLen = clamp(14+1.1*pos.v,12,60);
+    const vxw = pos.vr*Math.cos(pos.theta)-pos.vt*Math.sin(pos.theta);
+    const vyw = pos.vr*Math.sin(pos.theta)+pos.vt*Math.cos(pos.theta);
+    const vdir = {x:vxw/pos.v, y:vyw/pos.v};
+    const vTip = {x:ppt.x+vdir.x*vLen, y:ppt.y-vdir.y*vLen};
+    drawArrow(ctx, ppt, vTip, COLORS.green, 1, 1);
+  }
+  ctx.beginPath(); ctx.arc(ppt.x,ppt.y,4.5,0,TAU); ctx.fillStyle=COLORS.cyan; ctx.fill();
+  ctx.fillStyle=COLORS.text; ctx.font="10.5px Inter"; ctx.textAlign="left";
+  ctx.fillText(pos.v.toFixed(2)+" km/s", ppt.x+8, ppt.y-8);
+}
+// Round-number tick positions (1/2/5 x10^k) spanning [lo,hi], targeting ~`count` of them --
+// used for the energy tab's AU axis, where the sensible step size depends on the preset (Earth
+// vs Halley span very different ranges).
+function niceAUTicks(lo, hi, count){
+  const range = hi-lo;
+  if(range<=0) return [];
+  const rawStep = range/count;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep/mag;
+  const step = (norm<1.5) ? mag : (norm<3 ? 2*mag : (norm<7 ? 5*mag : 10*mag));
+  const start = Math.ceil(lo/step)*step;
+  const ticks = [];
+  for(let v=start; v<=hi+1e-9; v+=step){ if(v>lo+1e-9 && v<hi-1e-9) ticks.push(v); }
+  return ticks;
+}
+function fmtAUTick(v){ return v>=10 ? v.toFixed(0) : (v>=1 ? v.toFixed(1) : v.toFixed(2)); }
+
+function drawEnergyStrip(ctx,w,h){
+  const pos = solarState(state.p.a, state.p.e, state.t);
+  const ap = solarApsides(state.p.a, state.p.e);
+  const KE = pos.v*pos.v/2, U = -GM_SUN/pos.r_km, E = ap.Espec;
+  const halfW = w/2;
+  drawBarsSubplot(ctx,0,0,halfW,h, KE,U,E, state.energyBarRange, "bound");
+  ctx.strokeStyle = hexAlpha(COLORS.border,0.8); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(halfW,4); ctx.lineTo(halfW,h-4); ctx.stroke();
+  // x: 0.5 r_p to 1.4 r_a so both apsides sit well inside the frame; y: down to 1.1x the
+  // curve's value at the left edge, up to 0, so the (negative) E line and the KE gap read
+  // clearly instead of being squeezed into the top few pixels.
+  const rMinAU = 0.5*ap.rp_AU, rMaxAU = 1.4*ap.ra_AU;
+  const Ufunc = function(rAU){ return -GM_SUN/(rAU*AU_KM); };
+  const yLo = 1.1*Ufunc(rMinAU);
+  const span = rMaxAU-rMinAU;
+  const niceTicks = niceAUTicks(rMinAU, rMaxAU, 3).filter(function(v){
+    return Math.abs(v-ap.rp_AU) > 0.08*span && Math.abs(v-ap.ra_AU) > 0.08*span;
+  });
+  const xTicks = [
+    { v:ap.rp_AU, label:"r_p", color:COLORS.amber },
+    { v:ap.ra_AU, label:"r_a", color:COLORS.amber }
+  ].concat(niceTicks.map(function(v){ return { v:v, label:fmtAUTick(v) }; })).sort(function(a,b){ return a.v-b.v; });
+  drawWellSubplot(ctx, halfW,0, w-halfW,h, {
+    rMin:rMinAU, rMax:rMaxAU, title:"Gravity well U(r), r (AU)",
+    Ufunc:Ufunc, E:E, currentR:pos.r_AU,
+    shadeUnderR:null, twoA:null, orbitRange:[ap.rp_AU, ap.ra_AU],
+    yLo:yLo, yHi:0, xTicks:xTicks
+  });
+}
+
+/* =========================================================================
+   16. RENDER LOOP ENTRY + CANVAS RESIZE + BOOTSTRAP
+   ========================================================================= */
+// `forceFormulas` bypasses the ~10Hz throttle below -- used whenever the numbers must be exactly
+// in sync with the (untouched) header readouts: on pause, step, reset, and any params change.
+// Without it, a paused page could keep showing formula numbers computed a frame or two before
+// the animation actually stopped, while the header (never throttled) already shows the final t.
+function render(forceFormulas){
+  if(state.tab === "cannon") clampCannonTime();
+  updateReadouts();
+  updateExtraCards();
+  { const nowMs = performance.now(); if(forceFormulas || !state.playing || nowMs-(state._lastFormulaMs||0)>100){ state._lastFormulaMs = nowMs; updateFormulasCard(); } }
+  drawMain();
+  updateZoomBadge();
+  if(state.stripDirty){ drawStrip(); state.stripDirty = false; }
+}
+function setupCanvasResize(canvas, onSize){
+  const ctx = canvas.getContext("2d");
+  const ro = new ResizeObserver(function(){
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.max(1, Math.round(rect.width)), ch = Math.max(1, Math.round(rect.height));
+    canvas.width = cw*dpr; canvas.height = ch*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    if(onSize) onSize(cw,ch);
+    render();
+  });
+  ro.observe(canvas);
+}
+function init(){
+  if(new URLSearchParams(location.search).get("embed")) document.body.classList.add("embed");
+  cacheEls();
+  loadColors();
+  wireTabs();
+  wireDisplayToggles();
+  wirePlayback();
+  wireSplitters();
+  wireMainCanvasView();
+  setupCanvasResize(els.mainCanvas, function(w,h){ state.mainW=w; state.mainH=h; });
+  setupCanvasResize(els.stripCanvas, function(w,h){ state.stripW=w; state.stripH=h; state.stripDirty=true; });
+  switchTab(state.tab);
+  const requestedTab = new URLSearchParams(location.search).get("tab");
+  if(requestedTab && TAB_ORDER.indexOf(requestedTab)>=0) switchTab(requestedTab);
+}
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+
+})();
+</script>
+</body>
+</html>

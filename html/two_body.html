@@ -1,0 +1,1757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Two-Body Orbits — PHYS 320</title>
+<style>
+  :root{
+    --background:#050607;
+    --rail:#171a1f;
+    --canvas:#0d1015;
+    --panel-deep:#151a20;
+    --panel:#202328;
+    --panel-raised:#292d32;
+    --border:#3b4046;
+    --border-strong:#4a5057;
+    --border-hover:#69717a;
+    --text:#e7e9eb;
+    --muted:#979ea6;
+    --cyan:#56c7d9;
+    --magenta:#ee65be;
+    --purple:#a99bff;
+    --amber:#ffcc66;
+    --green:#56dc72;
+    --coral:#ff7f66;
+    --on-accent:#0c181b;
+    --control-hover:#343a41;
+    --cyan-wash: rgb(86 199 217/10%);
+    --cyan-border: rgb(86 199 217/55%);
+    --black-shadow: rgb(0 0 0/25%);
+    --black-shadow-soft: rgb(0 0 0/13%);
+  }
+
+  *,*::before,*::after{ box-sizing:border-box; }
+  html,body{ height:100%; width:100%; overflow-x:hidden; }
+  body{
+    margin:0;
+    background:var(--background);
+    color:var(--text);
+    font-family:Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:13px;
+    line-height:1.4;
+    -webkit-font-smoothing:antialiased;
+  }
+  .math{ font-family:"STIX Two Math","Cambria Math","Times New Roman",serif; font-style:italic; }
+  .tabular{ font-variant-numeric:tabular-nums; }
+
+  button, input, select{ font-family:inherit; }
+
+  /* ---------- app shell ---------- */
+  #app{ height:100dvh; width:100%; display:grid; grid-template-rows:44px 1fr; overflow:hidden; }
+
+  .topbar{
+    grid-row:1; display:flex; align-items:center; justify-content:space-between;
+    gap:12px; height:44px; padding:0 12px;
+    background:var(--rail); border-bottom:1px solid var(--border);
+    min-width:0; overflow:hidden;
+  }
+  .brand{ display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; text-decoration:none; color:inherit; border-radius:4px; }
+  .brand:hover .brand-title{ color:var(--cyan); }
+  .brand:hover .brand-sub{ text-decoration:underline; }
+  .brand-icon{ flex:0 0 auto; filter:drop-shadow(0 0 5px rgb(86 199 217/28%)); }
+  .brand-text{ display:flex; flex-direction:column; line-height:1.15; min-width:0; }
+  .brand-title{ font-size:15px; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
+  .brand-sub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .tabbar{ flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; scrollbar-width:thin; }
+  .tabbar::-webkit-scrollbar{ height:4px; }
+  .tabbar::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
+
+  .segmented{
+    display:inline-flex; align-items:stretch;
+    border:1px solid var(--border); border-radius:6px; overflow:hidden;
+    background:var(--panel-raised); white-space:nowrap;
+  }
+  .segmented button{
+    appearance:none; border:none; border-right:1px solid var(--border);
+    background:transparent; color:var(--text);
+    font-size:12px; min-height:28px; padding:0 12px; cursor:pointer; white-space:nowrap;
+    transition:background .12s ease, color .12s ease;
+  }
+  .segmented button:last-child{ border-right:none; }
+  .segmented button:hover{ background:var(--control-hover); }
+  .segmented button.active{ background:var(--cyan); color:var(--on-accent); font-weight:600; }
+  .segmented button:disabled{ opacity:.45; cursor:default; }
+
+  /* ---------- body / rail / workspace ---------- */
+  .body{
+    grid-row:2; display:grid;
+    grid-template-columns: var(--rail-w, 300px) 6px minmax(0,1fr);
+    min-height:0; min-width:0;
+  }
+
+  .rail{
+    background:var(--rail); border-right:1px solid var(--border);
+    overflow-y:auto; overflow-x:hidden;
+    display:flex; flex-direction:column; gap:8px; padding:10px; min-width:0;
+  }
+
+  .workspace{
+    min-width:0; min-height:0; padding:10px;
+    display:grid; grid-template-rows:minmax(0,1fr) 6px var(--strip-h, 190px); gap:0;
+    background:radial-gradient(circle at 50% 45%, var(--panel-deep) 0%, var(--canvas) 60%, var(--background) 100%);
+  }
+
+  /* ---------- movable splitters ---------- */
+  .splitter{ position:relative; background:transparent; z-index:2; touch-action:none; }
+  .splitter::after{
+    content:""; position:absolute; background:var(--cyan); opacity:0; border-radius:2px;
+    transition:opacity .12s ease;
+  }
+  .splitter:hover::after, .splitter.dragging::after, .splitter:focus-visible::after{ opacity:.4; }
+  .v-splitter{ cursor:col-resize; }
+  .v-splitter::after{ top:0; bottom:0; left:2px; width:2px; }
+  .h-splitter{ cursor:row-resize; margin:8px 0; }
+  .h-splitter::after{ left:0; right:0; top:2px; height:2px; }
+  body.resizing-col, body.resizing-col *{ cursor:col-resize !important; user-select:none !important; }
+  body.resizing-row, body.resizing-row *{ cursor:row-resize !important; user-select:none !important; }
+
+  .card{
+    border-radius:6px; border:1px solid var(--border); background:var(--panel);
+    box-shadow:0 5px 18px var(--black-shadow-soft); padding:10px; flex:0 0 auto; min-width:0;
+  }
+  .eyebrow{ font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 8px; }
+
+  /* ---------- canvas panels ---------- */
+  .panel{
+    border-radius:6px; border:1px solid var(--border); background:var(--canvas);
+    box-shadow:0 5px 18px var(--black-shadow-soft);
+    display:flex; flex-direction:column; overflow:hidden; min-height:0; min-width:0;
+  }
+  .panel-header{
+    height:34px; flex:0 0 34px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 10px; background:var(--panel-deep); border-bottom:1px solid var(--border);
+    gap:10px; overflow:hidden;
+  }
+  .panel-title{ font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .panel-readouts{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); white-space:nowrap; flex:0 0 auto; }
+  .panel-readouts b{ color:var(--text); font-weight:600; }
+  .panel-header-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; margin-left:auto; }
+  .icon-btn{ min-width:28px; padding:0 8px; font-size:13px; line-height:1; }
+  .panel-caption{
+    flex:0 0 auto; font-size:11px; line-height:1.35; color:var(--muted);
+    padding:5px 10px; background:var(--panel-deep); border-bottom:1px solid var(--border);
+  }
+  .panel-body{ flex:1 1 auto; min-height:0; min-width:0; position:relative; }
+  .panel-body canvas{ display:block; width:100%; height:100%; }
+  #mainCanvas{ touch-action:none; cursor:grab; }
+  #mainCanvas:active{ cursor:grabbing; }
+  .zoom-badge{
+    position:absolute; right:8px; bottom:8px; z-index:3;
+    font-size:10px; color:var(--muted); background:color-mix(in srgb, var(--panel-deep) 85%, transparent);
+    border:1px solid var(--border); border-radius:4px; padding:2px 6px;
+    pointer-events:none; font-variant-numeric:tabular-nums;
+  }
+
+  .swatch{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    min-height:28px; padding:0 10px; color:var(--text); background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; font-size:12px; cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .btn:hover{ background:var(--control-hover); border-color:var(--border-hover); }
+  .btn:disabled{ opacity:.45; cursor:default; }
+
+  /* ---------- transport (playback) ---------- */
+  .transport{ width:100%; margin-bottom:10px; }
+  .transport button{ flex:1 1 0; }
+
+  /* ---------- slider + number fields ---------- */
+  .field{ margin-bottom:10px; }
+  .field:last-child{ margin-bottom:0; }
+  .field-label{ display:block; font-size:11px; color:var(--muted); margin-bottom:5px; }
+  .field-label .math{ color:var(--text); font-size:12px; }
+  .field-row{ display:flex; align-items:center; gap:8px; min-width:0; }
+  input[type=range]{ flex:1 1 auto; min-width:0; accent-color:var(--cyan); height:22px; background:transparent; }
+  .num-input{
+    width:64px; flex:0 0 auto; min-height:28px; background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; color:var(--text);
+    padding:4px 7px; font:inherit; font-variant-numeric:tabular-nums; text-align:right;
+  }
+  .unit{ flex:0 0 auto; font-size:11px; color:var(--muted); }
+
+  select{
+    width:100%; min-height:28px; background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:4px; color:var(--text);
+    padding:4px 7px; font:inherit;
+  }
+  input:disabled, select:disabled{ opacity:.45; cursor:default; }
+
+  /* ---------- toggles (display card) ---------- */
+  .toggle{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    width:100%; min-height:28px; padding:0 10px; margin-bottom:6px;
+    background:var(--panel-raised); border:1px solid var(--border); border-radius:4px;
+    color:var(--text); font-size:12px; cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .toggle:last-child{ margin-bottom:0; }
+  .toggle:hover{ background:var(--control-hover); border-color:var(--border-hover); }
+  .toggle .dot{ width:8px; height:8px; border-radius:50%; background:var(--border-strong); flex:0 0 auto; }
+  .toggle[aria-pressed="true"]{ background:var(--cyan); color:var(--on-accent); border-color:var(--cyan); font-weight:600; }
+  .toggle[aria-pressed="true"] .dot{ background:var(--on-accent); }
+
+  /* ---------- shared tooltip (unused hover text hook, kept for shell parity) ---------- */
+  .tip{
+    position:fixed; z-index:50; max-width:240px;
+    background:color-mix(in srgb, var(--cyan) 8%, var(--panel));
+    border:1px solid color-mix(in srgb, var(--cyan) 35%, var(--border));
+    border-radius:6px; padding:8px 10px; font-size:11.5px; line-height:1.4;
+    color:var(--text); box-shadow:0 8px 24px rgb(0 0 0/25%);
+    pointer-events:none; opacity:0; transform:translateY(-50%) translateX(-4px);
+    transition:opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible{ opacity:1; transform:translateY(-50%) translateX(0); }
+  @media (prefers-reduced-motion: reduce){
+    .tip{ transition:none; }
+  }
+
+  /* ---------- formulas (strip panel: def line + substituted line per formula) ---------- */
+  .formula-line{ margin-bottom:10px; }
+  .formula-def{ font-size:12.5px; margin-bottom:3px; }
+  .formula-sub{ font-size:11.5px; color:var(--muted); word-break:break-word; }
+  .formula-sub b{ color:var(--text); font-weight:600; }
+
+  /* ---------- KaTeX typesetting (vendored, offline -- vendor/katex/) ----------
+     Every .ktx target starts hidden and .ktx-fallback (the plain HTML/entity text
+     already in the markup) stands in until a render call flips them, so the page
+     still teaches correctly if the vendored library is missing/blocked. */
+  .ktx{ display:none; }
+  .card .katex{ font-size:1.05em; color:inherit; }
+  .card .katex-display{ margin:6px 0; text-align:left; overflow-x:auto; overflow-y:hidden; }
+  #stripBody .katex-display{ margin:4px 0; }
+  .formula-note{ font-size:11.5px; color:var(--muted); }
+  .formula-def .formula-note{ margin-top:2px; display:block; }
+  .formula-sub .formula-note{ margin-left:4px; }
+
+  /* ---------- strip panel: formula lines laid out as wrapping columns ---------- */
+  #stripBody{
+    position:absolute; inset:0; overflow:auto; box-sizing:border-box;
+    padding:10px 16px; display:flex; flex-wrap:wrap; align-content:flex-start;
+    gap:6px 32px;
+  }
+  #stripBody .formula-line{ flex:1 1 260px; max-width:440px; min-width:200px; margin-bottom:0; }
+
+  /* ---------- what-to-notice card ---------- */
+  #noticeList{ margin:0; padding-left:17px; }
+  #noticeList li{ color:var(--text); margin-bottom:6px; }
+  #noticeList li:last-child{ margin-bottom:0; }
+  .lecture-link{ font-size:11px; color:var(--muted); margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+
+  /* ---------- about card ---------- */
+  .about h3{ font-size:12px; font-weight:700; margin:0 0 8px; }
+  .about p{ margin:0 0 8px; color:var(--text); }
+  .about p:last-child{ margin-bottom:0; }
+  .about em{ font-style:italic; }
+  .about b{ color:var(--text); }
+  .tint-cyan{ background:color-mix(in srgb, var(--cyan) 7%, var(--panel)); border-color:color-mix(in srgb, var(--cyan) 30%, var(--border)); }
+
+  :focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition:none !important; animation:none !important; }
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width:900px){
+    /* grid-auto-rows:max-content -- without this, a single-column .body sizes its two implicit
+       rows (workspace, rail) to fit the viewport rather than their natural content height, so the
+       taller one (here: the strip panel's 3 formula-lines) silently overflows into the row below
+       instead of the intended outcome, .body scrolling as a whole (overflow-y:auto, just below). */
+    .body{ grid-template-columns:1fr; grid-auto-rows:max-content; overflow-y:auto; }
+    .rail{
+      order:2; border-right:none; border-top:1px solid var(--border);
+      display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start;
+      overflow-y:visible;
+    }
+    .workspace{ order:1; grid-template-rows:clamp(320px, 55vw, 420px) 160px; gap:8px; }
+    .splitter{ display:none; }
+  }
+  @media (max-width:560px){
+    .rail{ grid-template-columns:1fr; }
+  }
+  @media (max-width:480px){
+    .brand-sub{ display:none; }
+    .panel-title{ font-size:11px; }
+    .panel-readouts{ font-size:10px; gap:6px; }
+    .panel-header{ padding:0 8px; }
+  }
+
+  /* ---------- embed mode (?embed=1): orbital diagram only, no chrome ---------- */
+  body.embed .topbar,
+  body.embed .rail,
+  body.embed .splitter,
+  body.embed #stripPanel,
+  body.embed .panel-header,
+  body.embed .panel-caption,
+  body.embed .drag-hint{ display:none; }
+  body.embed #app{ grid-template-rows:1fr; }
+  body.embed .body{ grid-template-columns:1fr; }
+  body.embed .workspace{ padding:0; grid-template-rows:1fr; }
+  body.embed #mainPanel{ width:100vw; height:100vh; border:none; border-radius:0; box-shadow:none; }
+</style>
+<link rel="stylesheet" href="../vendor/katex/katex.min.css">
+<script defer src="../vendor/katex/katex.min.js"></script>
+<script defer src="../vendor/katex/contrib/auto-render.min.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <a class="brand" href="../index.html" title="Back to the visualizations index">
+      <svg class="brand-icon" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+        <line x1="4" y1="10" x2="16" y2="10" stroke="#4a5057" stroke-width="1" opacity="0.6"/>
+        <ellipse cx="7.6" cy="10" rx="2.6" ry="2.6" fill="none" stroke="#4a5057" stroke-width="1" opacity="0.5"/>
+        <circle cx="6.2" cy="10" r="1.7" fill="#ffcc66"/>
+        <circle cx="14.6" cy="10" r="1.2" fill="#56c7d9"/>
+        <line x1="9.3" y1="10" x2="10.7" y2="10" stroke="#ee65be" stroke-width="1.3"/>
+        <line x1="10" y1="9.3" x2="10" y2="10.7" stroke="#ee65be" stroke-width="1.3"/>
+      </svg>
+      <div class="brand-text">
+        <div class="brand-title">TWO-BODY ORBITS</div>
+        <div class="brand-sub">&lsaquo; PHYS 320 Visualizations &middot; Orbital Mechanics</div>
+      </div>
+    </a>
+    <div class="tabbar">
+      <div class="segmented" id="tabBar" role="tablist" aria-label="Two-body view">
+        <button type="button" data-tab="lab" role="tab" aria-selected="false">Lab frame</button>
+        <button type="button" data-tab="cm" class="active" role="tab" aria-selected="true">CM frame</button>
+        <button type="button" data-tab="reduced" role="tab" aria-selected="false">Reduced mass</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="rail">
+
+      <div class="card" id="playbackCard">
+        <div class="eyebrow">Playback</div>
+        <div class="segmented transport" id="transport">
+          <button type="button" id="btnStepBack" title="Step back (P/72)">&lang; step</button>
+          <button type="button" id="btnPlay" title="Play / pause (Space)">&#9658;</button>
+          <button type="button" id="btnStepFwd" title="Step forward (P/72)">step &rang;</button>
+          <button type="button" id="btnReset" title="Reset (t = 0, periapsis)">&#8634;</button>
+        </div>
+        <div class="field">
+          <label class="field-label" for="speedRange">Speed</label>
+          <div class="field-row">
+            <input type="range" id="speedRange" min="0.1" max="5" step="0.1" value="1">
+            <input type="number" id="speedNum" class="num-input" min="0.1" max="5" step="0.1" value="1">
+            <span class="unit">&times;</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="paramsCard">
+        <div class="eyebrow">Parameters</div>
+        <div id="paramsFields"></div>
+      </div>
+
+      <div class="card" id="displayCard">
+        <div class="eyebrow">Display</div>
+        <div id="displayFields"></div>
+      </div>
+
+      <div class="card" id="noticeCard">
+        <div class="eyebrow">What to notice</div>
+        <ul id="noticeList"></ul>
+        <div class="lecture-link" id="lectureLink"></div>
+      </div>
+
+      <div class="card about tint-cyan" id="aboutCard">
+        <div class="eyebrow">About this stage</div>
+        <h3 id="aboutTitle"></h3>
+        <div id="aboutBody"></div>
+      </div>
+
+    </div>
+
+    <div class="splitter v-splitter" id="vSplitter" tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize sidebar width"></div>
+
+    <div class="workspace">
+      <div class="panel" id="mainPanel">
+        <div class="panel-header">
+          <div class="panel-title" id="mainPanelTitle">Two-body orbits — CM frame</div>
+          <div class="panel-readouts" id="rdLab" style="display:none">
+            t = <b id="vLabT" class="tabular">0.00</b> P &nbsp;
+            |<span class="math">R</span>| = <b id="vLabRmag" class="tabular">0.000</b> &nbsp;
+            <span class="math">V</span><sub>cm</sub> = <b id="vLabVcm" class="tabular">0.35</b>
+          </div>
+          <div class="panel-readouts" id="rdCm">
+            <span class="math">q</span> = <b id="vCmQ" class="tabular">1.000</b> &nbsp;
+            <span class="math">a</span><sub>1</sub> = <b id="vCmA1" class="tabular">0.500</b> <span class="unit" id="vCmA1Unit">&times;a</span> &nbsp;
+            <span class="math">a</span><sub>2</sub> = <b id="vCmA2" class="tabular">0.500</b> <span class="unit" id="vCmA2Unit">&times;a</span> &nbsp;
+            <span class="math">P</span> = <b id="vCmP" class="tabular">2&pi;</b> <span class="unit" id="vCmPUnit"></span>
+          </div>
+          <div class="panel-readouts" id="rdReduced" style="display:none">
+            &mu;/<span class="math">M</span> = <b id="vRedMuM" class="tabular">0.2500</b> &nbsp;
+            <span class="math">a</span> = <b id="vRedA" class="tabular">1.000</b> <span class="unit" id="vRedAUnit">&times;a</span> &nbsp;
+            <span class="math">P</span> = <b id="vRedP" class="tabular">2&pi;</b> <span class="unit" id="vRedPUnit"></span>
+          </div>
+          <div class="panel-header-right">
+            <button type="button" class="btn icon-btn" id="btnResetView" title="Reset zoom/pan">&#8962;</button>
+          </div>
+        </div>
+        <div class="panel-caption" id="mainPanelCaption" hidden></div>
+        <div class="panel-body">
+          <canvas id="mainCanvas"></canvas>
+          <div class="zoom-badge" id="zoomBadge" hidden>&times;1.0</div>
+        </div>
+      </div>
+
+      <div class="splitter h-splitter" id="hSplitter" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="Resize strip panel height"></div>
+
+      <div class="panel" id="stripPanel">
+        <div class="panel-header">
+          <div class="panel-title" id="stripPanelTitle">Formulas — CM frame</div>
+        </div>
+        <div class="panel-body"><div id="stripBody"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tip" role="tooltip" id="sharedTip" hidden></div>
+
+<script>
+(function(){
+"use strict";
+
+/* =========================================================================
+   Two-Body Orbits -- PHYS 320
+   Model: dimensionless relative orbit (a=1, GM=1, n=1, P=2*pi). Masses enter
+   only through the ratio q = m2/m1 (m1 >= m2). f1=m1/M, f2=m2/M; r1=-f2*r,
+   r2=+f1*r about a fixed center of mass; mu/M = f1*f2. See SPEC_two_body.md.
+   ========================================================================= */
+
+const TAU = Math.PI*2, RAD = Math.PI/180, DEG = 180/Math.PI;
+const BASE_RATE = TAU/4;      // rad of relative-orbit phase per second at speed=1x (one period per 4s)
+const MAX_FRAME_DT = 1/30;    // seconds -- caps a single frame's simulated advance so a stall doesn't jump
+const STEP_SIZE = TAU/72;     // one step-back/forward click (P/72)
+const VIEW_ZOOM_MIN = 0.2, VIEW_ZOOM_MAX = 40;
+const CM_HALF_EXTENT = 1.15;  // default view: fit a box of +-1.15a around the CM (cm/reduced tabs)
+const LAB_X0 = 0.5;           // world x where the CM starts, just right of O
+const LAB_GAP = 0.18;         // world-unit clearance kept between O and the band's bottom edge
+// Lab tab's vertical fit: unlike the CM/reduced tabs (fixed +-1.15a about a stage-centered CM),
+// the Lab stage keeps O fixed at the lower-left, so the band that must fit is sized from the
+// CURRENT preset/q (max(a1,a2) = f1, since m1>=m2 => f1>=f2) -- recomputed on every draw call, so
+// it always tracks the live preset/q/e (e does not change f1, but a param change still redraws
+// through this same function -- see drawLabMain) and stays correct after a resize too.
+function labLayout(q){
+  const f1 = massFractions(q).f1;      // = max(a1,a2), the larger of the two body orbits (dimensionless)
+  const halfBand = CM_HALF_EXTENT*f1;  // same +-1.15*(orbit radius) convention as the CM tab's +-1.15a
+  const cmY = halfBand + LAB_GAP;      // CM track height: keeps O (y=0) strictly below the band
+  const worldHeight = cmY + halfBand;  // view top edge = the band's own top (no extra margin, as CM tab)
+  return { cmY:cmY, worldHeight:worldHeight, halfBand:halfBand };
+}
+const DISK_R1 = 7, DISK_R2 = 5, DISK_MU = 5, DISK_M = 9; // on-screen body radii, px
+const FORCE_ARROW_K = 15, VEL_ARROW_K = 20; // px-scale constants for force/velocity arrows
+
+/* =========================================================================
+   1. STATE
+   ========================================================================= */
+const state = {
+  tab: "cm",
+  t: 0,               // dimensionless relative-orbit phase (mean anomaly since n=1)
+  playing: false,
+  speed: 1,
+  view: { zoom:1, panX:0, panY:0 },
+  preset: "equal",
+  p: { q:1.0, e:0.30, vcm:0.35 },
+  display: { vel:false, forces:true, trails:true },
+  lastPresetE: 0.30,
+  mainW:0, mainH:0
+};
+const els = {};
+function cacheEls(){
+  ["tabBar","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum",
+   "paramsFields","displayCard","displayFields","noticeList","lectureLink",
+   "aboutTitle","aboutBody",
+   "mainPanelTitle","mainPanelCaption","btnResetView","zoomBadge","mainCanvas",
+   "rdLab","rdCm","rdReduced",
+   "vLabT","vLabVcm","vLabRmag",
+   "vCmQ","vCmA1","vCmA1Unit","vCmA2","vCmA2Unit","vCmP","vCmPUnit",
+   "vRedMuM","vRedA","vRedAUnit","vRedP","vRedPUnit",
+   "stripPanelTitle","stripBody"
+  ].forEach(function(id){ els[id] = document.getElementById(id); });
+}
+
+/* =========================================================================
+   2. GENERIC HELPERS (colors, formatting, KaTeX) -- verbatim pattern shared
+      with kepler_laws.html / ptolemy_model.html.
+   ========================================================================= */
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+const COLORS = {};
+function loadColors(){
+  ["background","rail","canvas","panel-deep","panel","panel-raised","border",
+   "border-strong","border-hover","text","muted","cyan","magenta","purple",
+   "amber","green","on-accent","coral"].forEach(function(n){ COLORS[n] = cssVar("--"+n); });
+}
+function hexToRgb(hex){
+  hex = hex.replace("#","");
+  if(hex.length===3){ hex = hex.split("").map(function(c){ return c+c; }).join(""); }
+  const num = parseInt(hex,16);
+  return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+}
+function hexAlpha(hex, a){ const c = hexToRgb(hex); return "rgba("+c.r+","+c.g+","+c.b+","+a+")"; }
+function clamp(v,lo,hi){ return Math.min(hi, Math.max(lo, v)); }
+function decimalsFromStep(step){
+  const s = String(step);
+  const i = s.indexOf(".");
+  return i<0 ? 0 : (s.length - i - 1);
+}
+function fmtNum(v, step){ return Number(v).toFixed(decimalsFromStep(step)); }
+function formatQ(v){
+  if(!(v>0)) return "0";
+  if(v < 0.001) return v.toExponential(3);
+  if(v < 1) return v.toFixed(4);
+  return v.toFixed(3);
+}
+function formatLen(val){
+  const av = Math.abs(val);
+  if(av>0 && av<0.001) return val.toExponential(3);
+  if(av<1) return val.toFixed(6);
+  if(av<100) return val.toFixed(3);
+  return val.toFixed(1);
+}
+function fracPeriod(t){ let f=(t/TAU)%1; if(f<0) f+=1; return f; }
+
+function katexReady(){ return !!(window.katex && typeof window.katex.render === "function"); }
+const _katexSig = new WeakMap();
+function katexInto(ktxEl, fallbackEl, latex, displayMode){
+  if(!ktxEl) return;
+  if(!katexReady()){
+    ktxEl.style.display = "none";
+    if(fallbackEl) fallbackEl.style.display = "";
+    return;
+  }
+  const sig = (displayMode ? "D:" : "I:") + latex;
+  if(_katexSig.get(ktxEl) !== sig){
+    try{
+      window.katex.render(latex, ktxEl, { throwOnError:false, displayMode: !!displayMode });
+      _katexSig.set(ktxEl, sig);
+    }catch(e){
+      ktxEl.style.display = "none";
+      if(fallbackEl) fallbackEl.style.display = "";
+      return;
+    }
+  }
+  ktxEl.style.display = "block";
+  if(fallbackEl) fallbackEl.style.display = "none";
+}
+function renderMathSpans(root){
+  if(!root || !katexReady()) return;
+  root.querySelectorAll("[data-latex]").forEach(function(el){
+    try{ window.katex.render(el.dataset.latex, el, { throwOnError:false, displayMode:false }); }
+    catch(e){ /* leave the original glyph content on error */ }
+  });
+}
+
+/* =========================================================================
+   3. PRESETS
+   ========================================================================= */
+const PRESETS = [
+  { key:"equal",       name:"Equal masses",  q:1.000,     e:0.30,   aReal:null,   aUnit:null, PReal:null,  PUnit:null, r1Real:null,    r1Unit:null,
+    note:"Dimensionless a = 1; e = 0.30 is this preset's default." },
+  { key:"sunearth",    name:"Sun–Earth",     q:3.003e-6,  e:0.0167, aReal:1.000,  aUnit:"AU", PReal:1.000, PUnit:"yr", r1Real:0.004650, r1Unit:"AU",
+    note:"a₁ = 449 km, deep inside the Sun." },
+  { key:"sunjupiter",  name:"Sun–Jupiter",   q:9.546e-4,  e:0.0489, aReal:5.203,  aUnit:"AU", PReal:11.86, PUnit:"yr", r1Real:0.004650, r1Unit:"AU",
+    note:"a₁ = 1.07 R☉, just outside the Sun." },
+  { key:"earthmoon",   name:"Earth–Moon",    q:0.01230,   e:0.0549, aReal:384400, aUnit:"km", PReal:27.32, PUnit:"d",  r1Real:6371,     r1Unit:"km",
+    note:"a₁ = 4670 km, inside Earth." },
+  { key:"plutocharon", name:"Pluto–Charon",  q:0.1220,    e:0.0002, aReal:19596,  aUnit:"km", PReal:6.387, PUnit:"d",  r1Real:1188,     r1Unit:"km",
+    note:"a₁ = 2130 km, outside Pluto." },
+  { key:"siriusab",    name:"Sirius A–B",    q:0.495,     e:0.591,  aReal:19.8,   aUnit:"AU", PReal:50.13, PUnit:"yr", r1Real:null,    r1Unit:null,
+    note:"A real visual binary." }
+];
+function presetByKey(key){ for(let i=0;i<PRESETS.length;i++) if(PRESETS[i].key===key) return PRESETS[i]; return null; }
+function currentPreset(){ return state.preset==="custom" ? null : presetByKey(state.preset); }
+
+/* =========================================================================
+   4. PHYSICS (pure functions of the model's own dimensionless time t --
+      nothing here is stateful, so trails/formulas can resample at any past
+      t with no integration history to maintain.)
+   ========================================================================= */
+
+// Kepler's equation E - e sin E = M, solved by Newton's method (copy of kepler_laws.html's
+// solveKepler). M is reduced to (-pi,pi] first so the iteration starts near the root even for
+// very large t (many orbits elapsed) and so floating-point error never accumulates with time.
+function solveKepler(M, e){
+  let Mw = M % TAU;
+  if(Mw < -Math.PI) Mw += TAU; else if(Mw > Math.PI) Mw -= TAU;
+  let E = Mw + e*Math.sin(Mw);
+  for(let i=0;i<8;i++){
+    const f = E - e*Math.sin(E) - Mw;
+    const fp = 1 - e*Math.cos(E);
+    const d = f/fp;
+    E -= d;
+    if(Math.abs(d) < 1e-10) break;
+  }
+  return E;
+}
+
+// Relative orbit r = r2-r1 (a=1, GM=1, n=1 so mean anomaly M = t exactly). Periapsis along +x,
+// motion counter-clockwise.
+function relState(e, t){
+  const E = solveKepler(t, e);
+  const cosE = Math.cos(E), sinE = Math.sin(E);
+  const r = 1 - e*cosE;
+  const nu = Math.atan2(Math.sqrt(1-e*e)*sinE, cosE-e);
+  const x = r*Math.cos(nu), y = r*Math.sin(nu);
+  const dEdt = 1/(1-e*cosE);
+  const drdt = e*sinE*dEdt;
+  const h = Math.sqrt(1-e*e);
+  const dnudt = h/(r*r);
+  const vx = drdt*Math.cos(nu) - r*Math.sin(nu)*dnudt;
+  const vy = drdt*Math.sin(nu) + r*Math.cos(nu)*dnudt;
+  return { E:E, r:r, nu:nu, x:x, y:y, vx:vx, vy:vy };
+}
+function massFractions(q){ return { f1: 1/(1+q), f2: q/(1+q) }; } // f1=m1/M, f2=m2/M
+function bodyPositions(t, q, e){
+  const rel = relState(e, t);
+  const mf = massFractions(q);
+  return {
+    rel: rel, f1: mf.f1, f2: mf.f2,
+    r1: { x:-mf.f2*rel.x, y:-mf.f2*rel.y },
+    r2: { x: mf.f1*rel.x, y: mf.f1*rel.y },
+    v1: { x:-mf.f2*rel.vx, y:-mf.f2*rel.vy },
+    v2: { x: mf.f1*rel.vx, y: mf.f1*rel.vy }
+  };
+}
+// One body's own ellipse about the CM, generated directly from the shared relative-orbit
+// parametrization: sign=-1,scale=f2 traces body 1 (periapsis opposite the relative orbit's);
+// sign=+1,scale=f1 traces body 2; sign=+1,scale=1 traces the relative orbit itself (a=1).
+function bodyEllipsePoints(scaleFactor, sign, e, n){
+  const pts = []; const N = n||128;
+  for(let i=0;i<=N;i++){
+    const nu = i/N*TAU;
+    const rr = (1-e*e)/(1+e*Math.cos(nu));
+    pts.push({ x: sign*scaleFactor*rr*Math.cos(nu), y: sign*scaleFactor*rr*Math.sin(nu) });
+  }
+  return pts;
+}
+function bodyPeriPoint(scaleFactor, sign, e){ return { x: sign*scaleFactor*(1-e), y:0 }; }
+function wrapCM(t, vcm, wrapWidth, xOffset){
+  let x = xOffset + vcm*t;
+  x = ((x % wrapWidth) + wrapWidth) % wrapWidth;
+  return x;
+}
+
+/* =========================================================================
+   5. VIEW TRANSFORM (wheel-zoom + drag-pan on the main stage) -- verbatim
+      pattern from kepler_laws.html. Every drawing function builds its own
+      BASE world->screen function, then wraps it once with viewToScreen()
+      around that scene's own on-screen anchor point.
+   ========================================================================= */
+function resetView(){ state.view.zoom = 1; state.view.panX = 0; state.view.panY = 0; }
+function viewToScreen(baseToScreen, cx, cy){
+  return function(pt){
+    const s = baseToScreen(pt);
+    const v = state.view;
+    return { x: cx + v.panX + (s.x-cx)*v.zoom, y: cy + v.panY + (s.y-cy)*v.zoom };
+  };
+}
+function viewScale(baseScale){ return baseScale * state.view.zoom; }
+function zoomViewAt(mx, my, factor){
+  const v = state.view;
+  const newZoom = clamp(v.zoom*factor, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX);
+  const actual = newZoom / v.zoom;
+  const cx = (state.mainW || els.mainCanvas.clientWidth)/2, cy = (state.mainH || els.mainCanvas.clientHeight)/2;
+  v.panX = mx - cx - (mx - cx - v.panX)*actual;
+  v.panY = my - cy - (my - cy - v.panY)*actual;
+  v.zoom = newZoom;
+}
+function updateZoomBadge(){
+  const el = els.zoomBadge;
+  if(!el) return;
+  const z = state.view.zoom;
+  if(Math.abs(z-1) < 0.001){ el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = "×" + z.toFixed(1);
+}
+function wireMainCanvasView(){
+  const canvas = els.mainCanvas;
+  canvas.addEventListener("wheel", function(ev){
+    ev.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    zoomViewAt(mx, my, ev.deltaY < 0 ? 1.1 : 1/1.1);
+    render();
+  }, { passive:false });
+
+  let drag = null;
+  canvas.addEventListener("pointerdown", function(ev){
+    if(ev.button !== 0) return;
+    drag = { id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, panX0: state.view.panX, panY0: state.view.panY };
+    try{ canvas.setPointerCapture(ev.pointerId); }catch(e){}
+  });
+  canvas.addEventListener("pointermove", function(ev){
+    if(!drag || ev.pointerId !== drag.id) return;
+    state.view.panX = drag.panX0 + (ev.clientX - drag.x0);
+    state.view.panY = drag.panY0 + (ev.clientY - drag.y0);
+    render();
+  });
+  function endDrag(ev){
+    if(drag && (!ev || ev.pointerId === drag.id)){
+      try{ canvas.releasePointerCapture(drag.id); }catch(e){}
+      drag = null;
+    }
+  }
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("lostpointercapture", endDrag);
+  canvas.addEventListener("dblclick", function(){ resetView(); render(); });
+  els.btnResetView.addEventListener("click", function(){ resetView(); render(); });
+}
+
+/* =========================================================================
+   6. CANVAS RESIZE (devicePixelRatio + ResizeObserver) -- verbatim helper.
+   ========================================================================= */
+function setupCanvasResize(canvas, onSize){
+  const ctx = canvas.getContext("2d");
+  const ro = new ResizeObserver(function(){
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.max(1, Math.round(rect.width));
+    const ch = Math.max(1, Math.round(rect.height));
+    canvas.width = cw*dpr; canvas.height = ch*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    if(onSize) onSize(cw,ch);
+    render();
+  });
+  ro.observe(canvas);
+}
+
+/* =========================================================================
+   7. SPLITTERS (rail width / strip-panel height) -- verbatim helper.
+   ========================================================================= */
+let railWidth = 300;
+let stripPanelHeight = 190;
+function applyRailWidth(px){
+  railWidth = clamp(px, 230, 420);
+  document.querySelector(".body").style.setProperty("--rail-w", railWidth+"px");
+}
+function applyStripHeight(px){
+  stripPanelHeight = clamp(px, 120, 320);
+  document.querySelector(".workspace").style.setProperty("--strip-h", stripPanelHeight+"px");
+}
+function setupSplitter(el, opts){
+  let dragging = false, startPos = 0, startSize = 0, activePointerId = null;
+  let pendingPos = null, rafScheduled = false;
+  function updateAria(){
+    el.setAttribute("aria-valuemin", String(opts.min));
+    el.setAttribute("aria-valuemax", String(opts.max));
+    el.setAttribute("aria-valuenow", String(Math.round(opts.getSize())));
+  }
+  updateAria();
+  function applyPending(){
+    rafScheduled = false;
+    if(pendingPos == null) return;
+    const pos = pendingPos; pendingPos = null;
+    let delta = pos - startPos;
+    if(opts.invert) delta = -delta;
+    opts.setSize(clamp(startSize + delta, opts.min, opts.max));
+    updateAria();
+  }
+  function scheduleApply(pos){
+    pendingPos = pos;
+    if(!rafScheduled){ rafScheduled = true; requestAnimationFrame(applyPending); }
+  }
+  function endDrag(){
+    const wasDragging = dragging;
+    dragging = false;
+    pendingPos = null;
+    if(activePointerId != null){
+      try{ el.releasePointerCapture(activePointerId); }catch(e){}
+      activePointerId = null;
+    }
+    el.classList.remove("dragging");
+    document.body.classList.remove("resizing-col");
+    document.body.classList.remove("resizing-row");
+  }
+  el.addEventListener("pointerdown", function(ev){
+    if(ev.button !== 0 && ev.pointerType !== "touch" && ev.pointerType !== "pen") return;
+    dragging = true;
+    activePointerId = ev.pointerId;
+    try{ el.setPointerCapture(ev.pointerId); }catch(e){}
+    startPos = opts.axis === "x" ? ev.clientX : ev.clientY;
+    startSize = opts.getSize();
+    el.classList.add("dragging");
+    document.body.classList.add(opts.axis === "x" ? "resizing-col" : "resizing-row");
+    ev.preventDefault();
+  });
+  el.addEventListener("pointermove", function(ev){
+    if(!dragging) return;
+    scheduleApply(opts.axis === "x" ? ev.clientX : ev.clientY);
+  });
+  el.addEventListener("pointerup", endDrag);
+  el.addEventListener("pointercancel", endDrag);
+  el.addEventListener("lostpointercapture", endDrag);
+  window.addEventListener("pointerup", endDrag, true);
+  window.addEventListener("blur", endDrag);
+  el.addEventListener("keydown", function(ev){
+    const step = 10;
+    let dirKey = null;
+    if(opts.axis === "x"){
+      if(ev.key === "ArrowLeft") dirKey = -1; else if(ev.key === "ArrowRight") dirKey = 1;
+    } else {
+      if(ev.key === "ArrowUp") dirKey = -1; else if(ev.key === "ArrowDown") dirKey = 1;
+    }
+    if(dirKey === null) return;
+    ev.preventDefault();
+    const signedStep = opts.invert ? -dirKey*step : dirKey*step;
+    opts.setSize(clamp(opts.getSize() + signedStep, opts.min, opts.max));
+    updateAria();
+  });
+}
+function wireSplitters(){
+  const vSplitter = document.getElementById("vSplitter");
+  const hSplitter = document.getElementById("hSplitter");
+  setupSplitter(vSplitter, { axis:"x", invert:false, min:230, max:420, getSize:function(){ return railWidth; }, setSize:applyRailWidth });
+  setupSplitter(hSplitter, { axis:"y", invert:true, min:120, max:320, getSize:function(){ return stripPanelHeight; }, setSize:applyStripHeight });
+}
+
+/* =========================================================================
+   8. DRAWING HELPERS
+   ========================================================================= */
+function labelsOn(){ return true; }
+function outwardDir(sx, sy, cx, cy){
+  let vx = sx - cx, vy = sy - cy;
+  const len = Math.hypot(vx, vy);
+  if(len < 1e-6) return { dx:0, dy:-1 };
+  return { dx: vx/len, dy: vy/len };
+}
+// Tilts a direction upward off the horizontal so a label placed along the line of centers (where
+// the Forces arrows are also drawn) doesn't sit on top of them.
+function biasPerp(dir){
+  const dx = dir.dx, dy = dir.dy - 0.65;
+  const len = Math.hypot(dx,dy) || 1;
+  return { dx: dx/len, dy: dy/len };
+}
+function drawLabel(ctx, sx, sy, text, dir, opts){
+  if(!labelsOn()) return;
+  opts = opts || {};
+  const color = opts.color || COLORS.text;
+  const size = opts.size || 11;
+  const italic = opts.italic ? "italic " : "";
+  ctx.font = italic + size + "px Inter, sans-serif";
+  const offset = opts.offset || 11;
+  const x = sx + dir.dx * offset;
+  const y = sy + dir.dy * offset;
+  ctx.textAlign = dir.dx > 0.15 ? "left" : (dir.dx < -0.15 ? "right" : "center");
+  ctx.textBaseline = dir.dy > 0.15 ? "top" : (dir.dy < -0.15 ? "bottom" : "middle");
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+function drawArrow(ctx, from, to, colorHex, alpha, widthMul){
+  alpha = (alpha==null)?1:alpha; widthMul=(widthMul==null)?1:widthMul;
+  if(Math.hypot(to.x-from.x, to.y-from.y) < 1) return;
+  ctx.save();
+  ctx.strokeStyle = hexAlpha(colorHex, alpha);
+  ctx.fillStyle = hexAlpha(colorHex, alpha);
+  ctx.lineWidth = 2*widthMul;
+  ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke();
+  const ang = Math.atan2(to.y-from.y, to.x-from.x);
+  const headLen = 8*widthMul, headAngle = Math.PI/7;
+  ctx.beginPath();
+  ctx.moveTo(to.x,to.y);
+  ctx.lineTo(to.x - headLen*Math.cos(ang-headAngle), to.y - headLen*Math.sin(ang-headAngle));
+  ctx.lineTo(to.x - headLen*Math.cos(ang+headAngle), to.y - headLen*Math.sin(ang+headAngle));
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawCurve(ctx, toScreen, pts){
+  ctx.beginPath();
+  pts.forEach(function(pt,i){ const s=toScreen(pt); if(i===0) ctx.moveTo(s.x,s.y); else ctx.lineTo(s.x,s.y); });
+  ctx.stroke();
+}
+function drawDisk(ctx, pt, r, fillHex, rimHex){
+  ctx.beginPath(); ctx.fillStyle=fillHex; ctx.arc(pt.x,pt.y,r,0,TAU); ctx.fill();
+  if(rimHex){ ctx.lineWidth=1.5; ctx.strokeStyle=rimHex; ctx.stroke(); }
+}
+function drawCMMark(ctx, pt, size){
+  size = size||6;
+  ctx.save(); ctx.strokeStyle=COLORS.magenta; ctx.lineWidth=1.5;
+  ctx.beginPath();
+  ctx.moveTo(pt.x-size,pt.y-size); ctx.lineTo(pt.x+size,pt.y+size);
+  ctx.moveTo(pt.x+size,pt.y-size); ctx.lineTo(pt.x-size,pt.y+size);
+  ctx.stroke(); ctx.restore();
+}
+function drawOriginMark(ctx, pt){
+  ctx.save(); ctx.fillStyle=COLORS.text; ctx.beginPath(); ctx.arc(pt.x,pt.y,3,0,TAU); ctx.fill(); ctx.restore();
+}
+function drawPeriTick(ctx, toScreen, worldPt, colorHex){
+  const s = toScreen(worldPt);
+  ctx.save(); ctx.strokeStyle=hexAlpha(colorHex,0.9); ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(s.x-4,s.y-4); ctx.lineTo(s.x+4,s.y+4); ctx.stroke();
+  ctx.restore();
+}
+// Short fading trail (cm/reduced tabs): sampled directly from true anomaly, no history buffer.
+function drawShortTrail(ctx, toScreen, scaleFactor, sign, e, curNu, colorHex){
+  const span = 32*RAD, N = 24;
+  let prev = null;
+  ctx.save(); ctx.lineWidth = 1.4; ctx.lineCap = "round";
+  for(let i=N;i>=0;i--){
+    const age = span*i/N;
+    const nu = curNu - age;
+    const rr = (1-e*e)/(1+e*Math.cos(nu));
+    const pt = { x: sign*scaleFactor*rr*Math.cos(nu), y: sign*scaleFactor*rr*Math.sin(nu) };
+    const s = toScreen(pt);
+    if(prev){
+      const alpha = clamp(1-age/span,0,1)*0.6;
+      if(alpha>0.01){
+        ctx.strokeStyle = hexAlpha(colorHex, alpha);
+        ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(s.x,s.y); ctx.stroke();
+      }
+    }
+    prev = s;
+  }
+  ctx.restore();
+}
+// Long fading trail (lab tab): sampled directly from absolute time over the last ~1.5 periods,
+// so the looping/trochoid path is recomputed fresh every frame with no persisted history. Uses a
+// single rigid shift (wrapDelta, the wrap correction currently in effect for curT) rather than
+// re-wrapping every sample independently -- re-wrapping each historical sample on its own would
+// fold "1.5 periods ago" back into view as a spurious loop on the far side of the stage whenever
+// that sample's unwrapped time predates the CM's first wrap. The rigid shift keeps the trail a
+// smooth, unbroken continuation immediately behind the current position; it only runs off the
+// left edge of the canvas (harmless, clipped) if the total drift exceeds the visible width.
+function drawLabTrail(ctx, toScreen, scaleFactor, sign, e, curT, colorHex, vcm, xOffset, wrapDelta, cmY){
+  const span = 1.5*TAU, N = 160;
+  let prev = null;
+  ctx.save(); ctx.lineWidth = 1.25; ctx.lineCap = "round";
+  for(let i=N;i>=0;i--){
+    const age = span*i/N;
+    const tt = curT - age;
+    const rel = relState(e, tt);
+    const cmx = xOffset + vcm*tt + wrapDelta;
+    const world = { x: cmx + sign*scaleFactor*rel.x, y: cmY + sign*scaleFactor*rel.y };
+    const s = toScreen(world);
+    if(prev){
+      const alpha = clamp(1-age/span,0,1)*0.5;
+      if(alpha>0.01){
+        ctx.strokeStyle = hexAlpha(colorHex, alpha);
+        ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(s.x,s.y); ctx.stroke();
+      }
+    }
+    prev = s;
+  }
+  ctx.restore();
+}
+
+/* =========================================================================
+   9. MAIN-CANVAS DRAWING (one function per tab)
+   ========================================================================= */
+function fitTransform(w,h,halfExtent,padPx,cx,cy){
+  const pad = padPx==null?10:padPx;
+  const scale = Math.min(w-2*pad, h-2*pad) / (2*halfExtent);
+  return { scale: Math.max(scale,1), cx: cx==null?w/2:cx, cy: cy==null?h/2:cy };
+}
+
+// Two bodies orbiting a fixed CM (world origin). Shared by the CM tab and the left half of the
+// Reduced-mass tab. `toScreen` already has the view zoom/pan baked in.
+function drawCmScene(ctx, toScreen, q, e, t, opts){
+  opts = opts || {};
+  const mf = massFractions(q);
+  const bp = bodyPositions(t, q, e);
+  const s1 = toScreen(bp.r1), s2 = toScreen(bp.r2), sCM = toScreen({x:0,y:0});
+
+  // full ellipses (thin)
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = hexAlpha(COLORS.amber, 0.55);
+  drawCurve(ctx, toScreen, bodyEllipsePoints(mf.f2, -1, e));
+  ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.55);
+  drawCurve(ctx, toScreen, bodyEllipsePoints(mf.f1, +1, e));
+
+  // line joining the bodies, through the CM
+  ctx.strokeStyle = hexAlpha(COLORS.muted, 0.5); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(s1.x,s1.y); ctx.lineTo(s2.x,s2.y); ctx.stroke();
+
+  // periapsis ticks
+  drawPeriTick(ctx, toScreen, bodyPeriPoint(mf.f2,-1,e), COLORS.amber);
+  drawPeriTick(ctx, toScreen, bodyPeriPoint(mf.f1,+1,e), COLORS.cyan);
+
+  // trails (short fading arcs, ~30 deg of true anomaly)
+  if(state.display.trails){
+    drawShortTrail(ctx, toScreen, mf.f2, -1, e, bp.rel.nu, COLORS.amber);
+    drawShortTrail(ctx, toScreen, mf.f1, +1, e, bp.rel.nu, COLORS.cyan);
+  }
+
+  // forces: equal-length, opposite arrows along the line of centers, magnitude ~ 1/r^2
+  if(state.display.forces){
+    const r = bp.rel.r;
+    const ux = (bp.r2.x-bp.r1.x)/ (r||1), uy = (bp.r2.y-bp.r1.y)/(r||1);
+    const len = clamp(FORCE_ARROW_K/(r*r), 8, 40);
+    drawArrow(ctx, s1, { x:s1.x+ux*len, y:s1.y+uy*len }, COLORS.coral, 1, 1);
+    drawArrow(ctx, s2, { x:s2.x-ux*len, y:s2.y-uy*len }, COLORS.coral, 1, 1);
+  }
+  // velocities: green arrows at each body
+  if(state.display.vel){
+    const len1 = clamp(Math.hypot(bp.v1.x,bp.v1.y)*VEL_ARROW_K, 6, 46);
+    const len2 = clamp(Math.hypot(bp.v2.x,bp.v2.y)*VEL_ARROW_K, 6, 46);
+    const a1 = Math.atan2(bp.v1.y,bp.v1.x), a2 = Math.atan2(bp.v2.y,bp.v2.x);
+    drawArrow(ctx, s1, { x:s1.x+Math.cos(a1)*len1, y:s1.y-Math.sin(a1)*len1 }, COLORS.green, 1, 1);
+    drawArrow(ctx, s2, { x:s2.x+Math.cos(a2)*len2, y:s2.y-Math.sin(a2)*len2 }, COLORS.green, 1, 1);
+  }
+
+  // relative vector r = r2 - r1 (Reduced-mass tab's left panel only)
+  if(opts.showVectorR){
+    drawArrow(ctx, s1, s2, COLORS.purple, 1, 1.1);
+    const mid = { x:(s1.x+s2.x)/2, y:(s1.y+s2.y)/2 };
+    const dir = biasPerp(outwardDir(mid.x, mid.y, sCM.x, sCM.y));
+    drawLabel(ctx, mid.x, mid.y, "r", dir, { color:COLORS.purple, italic:true, offset:14 });
+  }
+
+  // bodies (disks, body 1 larger) + CM marker
+  drawDisk(ctx, s1, DISK_R1, COLORS.amber);
+  drawDisk(ctx, s2, DISK_R2, COLORS.cyan);
+  drawCMMark(ctx, sCM);
+
+  // labels near the mid-points of the CM-to-body segments -- nudged perpendicular to the line of
+  // centers (not just radially outward) so they clear the Forces arrows drawn along that same line
+  const mid1 = { x:(s1.x+sCM.x)/2, y:(s1.y+sCM.y)/2 };
+  const mid2 = { x:(s2.x+sCM.x)/2, y:(s2.y+sCM.y)/2 };
+  drawLabel(ctx, mid1.x, mid1.y, "r₁", biasPerp(outwardDir(mid1.x,mid1.y,sCM.x,sCM.y)), { color:COLORS.amber, italic:true, offset:14 });
+  drawLabel(ctx, mid2.x, mid2.y, "r₂", biasPerp(outwardDir(mid2.x,mid2.y,sCM.x,sCM.y)), { color:COLORS.cyan, italic:true, offset:14 });
+  drawLabel(ctx, sCM.x, sCM.y, "CM", {dx:0,dy:1}, { color:COLORS.magenta, offset:11, size:10 });
+}
+
+// Bottom-right inset (CM tab only): body 1's own ellipse magnified to fill the box, with the CM
+// marker and (when the preset's primary radius is known) the primary's disk drawn to the same
+// dimensionless scale, so the student can see whether the barycenter sits inside or outside it.
+function drawInset(ctx, w, h, a1, e, mainScale){
+  const size = w*0.30;
+  const margin = 10;
+  const x0 = w-size-margin, y0 = h-size-margin;
+  const preset = currentPreset();
+  const insetHalf = Math.max(a1*(1+e)*1.12, 1e-9);
+  const scale = (size/2 - 16) / insetHalf;
+  const cx = x0+size/2, cy = y0+size/2+6;
+  const toScreenInset = function(pt){ return { x:cx+pt.x*scale, y:cy-pt.y*scale }; };
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x0,y0,size,size);
+  ctx.fillStyle = "rgba(21,26,32,0.92)"; ctx.fill();
+  ctx.strokeStyle = COLORS.border; ctx.lineWidth = 1; ctx.stroke();
+  ctx.save(); ctx.clip();
+  ctx.strokeStyle = hexAlpha(COLORS.amber, 0.7); ctx.lineWidth = 1;
+  drawCurve(ctx, toScreenInset, bodyEllipsePoints(a1, -1, e, 96));
+  drawCMMark(ctx, toScreenInset({x:0,y:0}), 5);
+  let r1norm = null;
+  if(preset && preset.r1Real!=null && preset.aReal){ r1norm = preset.r1Real/preset.aReal; }
+  if(r1norm!=null){
+    const rpx = Math.max(r1norm*scale, 1.2);
+    drawDisk(ctx, { x:cx, y:cy }, rpx, hexAlpha(COLORS.amber,0.85));
+  } else {
+    const bp = bodyPositions(state.t, state.p.q, e);
+    drawDisk(ctx, toScreenInset(bp.r1), 3, COLORS.amber);
+  }
+  ctx.restore();
+  ctx.fillStyle = COLORS.text; ctx.font = "10px Inter, sans-serif";
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  const mag = Math.max(1, Math.round(scale/Math.max(mainScale,1e-9)));
+  ctx.fillText("Primary's motion, ×"+mag, x0+6, y0+4);
+  ctx.fillStyle = COLORS.muted; ctx.font = "9.5px Inter, sans-serif";
+  let readout;
+  if(preset && preset.r1Real!=null && preset.aReal){
+    const a1real = a1*preset.aReal;
+    readout = "a₁ = "+formatLen(a1real)+" "+preset.aUnit+" = "+(a1real/preset.r1Real).toFixed(3)+" R₁";
+  } else {
+    readout = "a₁ = "+formatQ(a1)+" ×a";
+  }
+  ctx.fillText(readout, x0+6, y0+size-16);
+  ctx.restore();
+}
+
+function drawCmTabMain(ctx,w,h){
+  const tr = fitTransform(w,h,CM_HALF_EXTENT);
+  const baseToScreen = function(pt){ return { x:tr.cx+pt.x*tr.scale, y:tr.cy-pt.y*tr.scale }; };
+  const toScreen = viewToScreen(baseToScreen, tr.cx, tr.cy);
+  drawCmScene(ctx, toScreen, state.p.q, state.p.e, state.t, { showVectorR:false });
+  const mf = massFractions(state.p.q);
+  if(mf.f2 < 0.05){
+    drawInset(ctx, w, h, mf.f2, state.p.e, viewScale(tr.scale));
+  }
+}
+
+function drawReducedMain(ctx,w,h){
+  const gap = 14;
+  const halfW = (w-gap)/2;
+  const tr = fitTransform(halfW, h, CM_HALF_EXTENT, 10, halfW/2, h/2);
+  const cxLeft = halfW/2, cxRight = halfW+gap+halfW/2, cy = h/2;
+  const baseLeft = function(pt){ return { x:cxLeft+pt.x*tr.scale, y:cy-pt.y*tr.scale }; };
+  const baseRight = function(pt){ return { x:cxRight+pt.x*tr.scale, y:cy-pt.y*tr.scale }; };
+  const toScreenLeft = viewToScreen(baseLeft, cxLeft, cy);
+  const toScreenRight = viewToScreen(baseRight, cxRight, cy);
+  const q = state.p.q, e = state.p.e, t = state.t;
+
+  drawCmScene(ctx, toScreenLeft, q, e, t, { showVectorR:true });
+
+  // right: one body of mass mu about a fixed mass M
+  const rel = relState(e, t);
+  const sM = toScreenRight({x:0,y:0});
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = hexAlpha(COLORS.muted, 0.55);
+  drawCurve(ctx, toScreenRight, bodyEllipsePoints(1, +1, e));
+  if(state.display.trails) drawShortTrail(ctx, toScreenRight, 1, +1, e, rel.nu, COLORS.purple);
+  const sMu = toScreenRight(rel);
+  drawArrow(ctx, sM, sMu, COLORS.purple, 1, 1.1);
+  drawDisk(ctx, sM, DISK_M, COLORS.amber, COLORS.cyan);
+  drawDisk(ctx, sMu, DISK_MU, COLORS.purple);
+  drawLabel(ctx, sM.x, sM.y, "M = m₁+m₂", {dx:0,dy:1}, { offset:DISK_M+10, size:10 });
+  drawLabel(ctx, sMu.x, sMu.y, "μ", outwardDir(sMu.x,sMu.y,sM.x,sM.y), { color:COLORS.purple, italic:true });
+
+  // divider + sub-panel titles
+  ctx.strokeStyle = COLORS.border; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(halfW+gap/2,8); ctx.lineTo(halfW+gap/2,h-8); ctx.stroke();
+  ctx.fillStyle = COLORS.muted; ctx.font = "11px Inter, sans-serif";
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("Two bodies about the CM", 10, 8);
+  ctx.fillText("One body of mass μ about fixed M", halfW+gap+10, 8);
+}
+
+function drawLabMain(ctx,w,h){
+  const pad = 44;
+  const q0 = state.p.q;
+  const layout = labLayout(q0);
+  const cmY = layout.cmY;
+  const scaleBase = (h-2*pad)/layout.worldHeight;
+  const oxBase = pad, oyBase = h-pad;
+  const baseToScreen = function(pt){ return { x:oxBase+pt.x*scaleBase, y:oyBase-pt.y*scaleBase }; };
+  const toScreen = viewToScreen(baseToScreen, oxBase, oyBase);
+  const worldW = Math.max((w-2*pad)/scaleBase, 1);
+  const vcm = state.p.vcm, q = state.p.q, e = state.p.e, t = state.t;
+  const cmx = wrapCM(t, vcm, worldW, LAB_X0);
+  const bp = bodyPositions(t, q, e);
+  const world1 = { x:cmx+bp.r1.x, y:cmY+bp.r1.y };
+  const world2 = { x:cmx+bp.r2.x, y:cmY+bp.r2.y };
+  const worldCM = { x:cmx, y:cmY };
+  const worldO = { x:0, y:0 };
+  const sO = toScreen(worldO), sCM = toScreen(worldCM);
+
+  // CM track: a thin straight line across the full visible width
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.4); ctx.lineWidth = 1; ctx.setLineDash([]);
+  const sTrackL = toScreen({x:0,y:cmY}), sTrackR = toScreen({x:worldW,y:cmY});
+  ctx.beginPath(); ctx.moveTo(sTrackL.x,sTrackL.y); ctx.lineTo(sTrackR.x,sTrackR.y); ctx.stroke();
+
+  // fading trails of both bodies over the last ~1.5 periods
+  const wrapDelta = cmx - (LAB_X0 + vcm*t);
+  drawLabTrail(ctx, toScreen, mf_f2(q), -1, e, t, COLORS.amber, vcm, LAB_X0, wrapDelta, cmY);
+  drawLabTrail(ctx, toScreen, mf_f1(q), +1, e, t, COLORS.cyan,  vcm, LAB_X0, wrapDelta, cmY);
+
+  // R: dashed vector from O to the CM
+  ctx.save(); ctx.setLineDash([4,4]); ctx.strokeStyle = hexAlpha(COLORS.text,0.6); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(sO.x,sO.y); ctx.lineTo(sCM.x,sCM.y); ctx.stroke(); ctx.restore();
+
+  // r1, r2: vectors from O to each body
+  const s1 = toScreen(world1), s2 = toScreen(world2);
+  drawArrow(ctx, sO, s1, COLORS.amber, 1, 1);
+  drawArrow(ctx, sO, s2, COLORS.cyan, 1, 1);
+
+  drawCMMark(ctx, sCM);
+  drawOriginMark(ctx, sO);
+  drawDisk(ctx, s1, DISK_R1, COLORS.amber);
+  drawDisk(ctx, s2, DISK_R2, COLORS.cyan);
+
+  drawLabel(ctx, sO.x, sO.y, "O", {dx:-0.6,dy:0.8}, { offset:10 });
+  drawLabel(ctx, sCM.x, sCM.y, "CM", {dx:0,dy:1}, { color:COLORS.magenta, offset:11, size:10 });
+  const midR = { x:(sO.x+sCM.x)/2, y:(sO.y+sCM.y)/2 };
+  drawLabel(ctx, midR.x, midR.y, "R", {dx:0,dy:-1}, { italic:true, offset:9 });
+  drawLabel(ctx, s1.x, s1.y, "r₁", outwardDir(s1.x,s1.y,sO.x,sO.y), { color:COLORS.amber, italic:true });
+  drawLabel(ctx, s2.x, s2.y, "r₂", outwardDir(s2.x,s2.y,sO.x,sO.y), { color:COLORS.cyan, italic:true });
+}
+function mf_f1(q){ return 1/(1+q); }
+function mf_f2(q){ return q/(1+q); }
+
+function drawMain(){
+  const canvas = els.mainCanvas;
+  const ctx = canvas.getContext("2d");
+  const w = state.mainW || canvas.clientWidth;
+  const h = state.mainH || canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if(w<=0||h<=0) return;
+  if(state.tab==="lab") drawLabMain(ctx,w,h);
+  else if(state.tab==="cm") drawCmTabMain(ctx,w,h);
+  else if(state.tab==="reduced") drawReducedMain(ctx,w,h);
+}
+
+/* =========================================================================
+   10. PANEL-HEADER READOUTS
+   ========================================================================= */
+function fillLenReadout(bEl, unitEl, valDimless, preset){
+  if(!bEl) return;
+  if(preset && preset.aReal!=null){
+    bEl.textContent = formatLen(valDimless*preset.aReal);
+    if(unitEl) unitEl.textContent = preset.aUnit;
+  } else {
+    bEl.textContent = valDimless.toFixed(4);
+    if(unitEl) unitEl.textContent = "×a";
+  }
+}
+function fillPeriodReadout(bEl, unitEl, preset){
+  if(!bEl) return;
+  if(preset && preset.PReal!=null){
+    bEl.textContent = preset.PReal.toFixed(preset.PReal<10?3:2);
+    if(unitEl) unitEl.textContent = preset.PUnit;
+  } else {
+    bEl.textContent = "2π";
+    if(unitEl) unitEl.textContent = "(n=1, a=1)";
+  }
+}
+function updateReadouts(){
+  const q = state.p.q, e = state.p.e, t = state.t;
+  const mf = massFractions(q);
+  const preset = currentPreset();
+  if(state.tab==="lab"){
+    els.vLabT.textContent = fracPeriod(t).toFixed(2);
+    els.vLabVcm.textContent = state.p.vcm.toFixed(2);
+    // |R|: live distance of the CM from O, matching the dashed R vector actually drawn on the
+    // Lab stage (same wrapped cmx used there, via the same pad=44 stage geometry).
+    const layout = labLayout(q);
+    const pad = 44;
+    const h = state.mainH || (els.mainCanvas ? els.mainCanvas.clientHeight : 0);
+    const w = state.mainW || (els.mainCanvas ? els.mainCanvas.clientWidth : 0);
+    const scaleBase = Math.max(h-2*pad,1)/layout.worldHeight;
+    const worldW = Math.max((w-2*pad)/scaleBase, 1);
+    const cmx = wrapCM(t, state.p.vcm, worldW, LAB_X0);
+    els.vLabRmag.textContent = Math.hypot(cmx, layout.cmY).toFixed(3);
+  } else if(state.tab==="cm"){
+    els.vCmQ.textContent = formatQ(q);
+    fillLenReadout(els.vCmA1, els.vCmA1Unit, mf.f2, preset);
+    fillLenReadout(els.vCmA2, els.vCmA2Unit, mf.f1, preset);
+    fillPeriodReadout(els.vCmP, els.vCmPUnit, preset);
+  } else if(state.tab==="reduced"){
+    els.vRedMuM.textContent = (mf.f1*mf.f2).toFixed(4);
+    fillLenReadout(els.vRedA, els.vRedAUnit, 1, preset);
+    fillPeriodReadout(els.vRedP, els.vRedPUnit, preset);
+  }
+}
+
+/* =========================================================================
+   11. FORMULAS (bottom strip panel) -- def line + live substituted line per
+       formula, same DOM/KaTeX pattern as kepler_laws.html's rail Formulas
+       card, just hosted in the strip panel instead (see COMMON.md).
+   ========================================================================= */
+function formulaLineSkeleton(id){
+  return '<div class="formula-line">' +
+      '<div class="formula-def"><span class="ktx-fallback" id="'+id+'DefFallback"></span><div class="ktx" id="'+id+'DefKtx"></div><span class="formula-note" id="'+id+'DefNote"></span></div>' +
+      '<div class="formula-sub"><span class="ktx-fallback" id="'+id+'SubFallback"></span><div class="ktx" id="'+id+'SubKtx"></div><span class="formula-note" id="'+id+'SubNote"></span></div>' +
+    '</div>';
+}
+function fillFormulaLine(line, defPlainHTML, defLatex, defNoteHTML, subPlainHTML, subLatex, subNoteHTML){
+  line.defFallback.innerHTML = defPlainHTML;
+  katexInto(line.defKtx, line.defFallback, defLatex, true);
+  line.defNote.innerHTML = defNoteHTML || "";
+  line.subFallback.innerHTML = subPlainHTML;
+  katexInto(line.subKtx, line.subFallback, subLatex, true);
+  line.subNote.innerHTML = subNoteHTML || "";
+}
+const STRIP_TITLE = { lab:"Formulas — Lab frame", cm:"Formulas — CM frame", reduced:"Formulas — Reduced mass" };
+let fEls = null;
+function buildStripFormulas(){
+  els.stripPanelTitle.textContent = STRIP_TITLE[state.tab];
+  const ids = state.tab==="lab" ? ["fL1","fL2","fL3"] : state.tab==="cm" ? ["fC1","fC2","fC3"] : ["fR1","fR2","fR3"];
+  els.stripBody.innerHTML = ids.map(formulaLineSkeleton).join("");
+  fEls = {};
+  ids.forEach(function(id){
+    fEls[id] = {
+      defKtx: document.getElementById(id+"DefKtx"), defFallback: document.getElementById(id+"DefFallback"), defNote: document.getElementById(id+"DefNote"),
+      subKtx: document.getElementById(id+"SubKtx"), subFallback: document.getElementById(id+"SubFallback"), subNote: document.getElementById(id+"SubNote")
+    };
+  });
+  updateStripFormulas();
+}
+function updateStripFormulas(){
+  if(!fEls) return;
+  const q=state.p.q, e=state.p.e, t=state.t;
+  const mf = massFractions(q);
+  const preset = currentPreset();
+  if(state.tab==="lab"){
+    const vcm = state.p.vcm;
+    const worldW = 6; // nominal reference width for the readout only -- drawing recomputes its own
+    const cmx = wrapCM(t, vcm, worldW, LAB_X0);
+    fillFormulaLine(fEls.fL1,
+      '<i>R</i> = (m&#8321;<b>r</b>&#8321; + m&#8322;<b>r</b>&#8322;)/(m&#8321;+m&#8322;)',
+      String.raw`\mathbf{R} = \dfrac{m_1\mathbf{r}_1 + m_2\mathbf{r}_2}{m_1+m_2}`, "",
+      '<i>R<sub>x</sub></i>(t) = <b>'+cmx.toFixed(3)+'</b>',
+      String.raw`R_x(t) = ${cmx.toFixed(3)}`, "(this tab's world x, O at the origin)");
+    fillFormulaLine(fEls.fL2,
+      'M d<i>R</i>/d<i>t</i> = <b>p</b>&#8321;+<b>p</b>&#8322; = const',
+      String.raw`M\dot{\mathbf{R}} = \mathbf{p}_1+\mathbf{p}_2 = \text{const}`, "",
+      '|d<i>R</i>/d<i>t</i>| = <i>V</i><sub>cm</sub> = <b>'+vcm.toFixed(3)+'</b>',
+      String.raw`|\dot{\mathbf{R}}| = V_{cm} = ${vcm.toFixed(3)}`, "");
+    fillFormulaLine(fEls.fL3,
+      'M d&sup2;<i>R</i>/d<i>t</i>&sup2; = <b>F</b><sub>ext</sub> = 0',
+      String.raw`M\ddot{\mathbf{R}} = \mathbf{F}_{ext} = 0`, "",
+      'd&sup2;<i>R</i>/d<i>t</i>&sup2; = <b>0</b>',
+      String.raw`\ddot{\mathbf{R}} = 0`, "no external force acts on the pair");
+  } else if(state.tab==="cm"){
+    const bp = bodyPositions(t,q,e);
+    const r1m = Math.hypot(bp.r1.x,bp.r1.y), r2m = Math.hypot(bp.r2.x,bp.r2.y);
+    const ratio = r2m>1e-9 ? r1m/r2m : 0;
+    fillFormulaLine(fEls.fC1,
+      'm&#8321;<b>r</b>&#8321; + m&#8322;<b>r</b>&#8322; = 0 &rArr; <i>r</i>&#8321;/<i>r</i>&#8322; = m&#8322;/m&#8321; = <i>q</i>',
+      String.raw`m_1\mathbf{r}_1+m_2\mathbf{r}_2=0 \;\Rightarrow\; \dfrac{r_1}{r_2}=\dfrac{m_2}{m_1}=q`, "",
+      '<i>r</i>&#8321;/<i>r</i>&#8322; = <b>'+ratio.toFixed(4)+'</b> = <i>q</i>',
+      String.raw`r_1/r_2 = ${ratio.toFixed(4)} = q`, "");
+    fillFormulaLine(fEls.fC2,
+      '<b>r</b>&#8321; = &minus;(m&#8322;/M)<b>r</b>, &nbsp; <b>r</b>&#8322; = +(m&#8321;/M)<b>r</b>',
+      String.raw`\mathbf{r}_1=-\dfrac{m_2}{M}\mathbf{r},\quad \mathbf{r}_2=+\dfrac{m_1}{M}\mathbf{r}`, "",
+      'm&#8322;/M = <b>'+mf.f2.toFixed(4)+'</b>, &nbsp; m&#8321;/M = <b>'+mf.f1.toFixed(4)+'</b>',
+      String.raw`m_2/M = ${mf.f2.toFixed(4)}, \; m_1/M = ${mf.f1.toFixed(4)}`, "");
+    // fC3's substituted line reuses the same unit logic as the panel-header a1/a2 readouts
+    const a1txt = preset && preset.aReal!=null ? formatLen(mf.f2*preset.aReal)+" "+preset.aUnit : mf.f2.toFixed(4)+" ×a";
+    const a2txt = preset && preset.aReal!=null ? formatLen(mf.f1*preset.aReal)+" "+preset.aUnit : mf.f1.toFixed(4)+" ×a";
+    fillFormulaLine(fEls.fC3,
+      '<i>a</i>&#8321; = (m&#8322;/M)<i>a</i>, &nbsp; <i>a</i>&#8322; = (m&#8321;/M)<i>a</i>',
+      String.raw`a_1=\dfrac{m_2}{M}a,\quad a_2=\dfrac{m_1}{M}a`, "",
+      '<i>a</i>&#8321; = <b>'+a1txt+'</b>, &nbsp; <i>a</i>&#8322; = <b>'+a2txt+'</b>',
+      String.raw`a_1 = \mathbf{${a1txt}}, \; a_2 = \mathbf{${a2txt}}`, "");
+  } else if(state.tab==="reduced"){
+    const rel = relState(e,t);
+    const muM = mf.f1*mf.f2;
+    fillFormulaLine(fEls.fR1,
+      '&mu; = m&#8321;m&#8322;/(m&#8321;+m&#8322;)',
+      String.raw`\mu=\dfrac{m_1 m_2}{m_1+m_2}`, "",
+      '&mu;/M = <i>f</i>&#8321;<i>f</i>&#8322; = <b>'+muM.toFixed(4)+'</b>',
+      String.raw`\mu/M = f_1 f_2 = ${muM.toFixed(4)}`, "");
+    fillFormulaLine(fEls.fR2,
+      '&mu;<b>r</b>&#776; = &minus;(Gm&#8321;m&#8322;/<i>r</i>&sup2;)<b>r&#770;</b> &rArr; <b>r</b>&#776; = &minus;(GM/<i>r</i>&sup2;)<b>r&#770;</b>',
+      String.raw`\mu\ddot{\mathbf{r}}=-\dfrac{Gm_1m_2}{r^2}\hat{\mathbf r} \;\Rightarrow\; \ddot{\mathbf r}=-\dfrac{GM}{r^2}\hat{\mathbf r}`, "",
+      '<i>r</i>(<i>t</i>) = <b>'+rel.r.toFixed(3)+'</b> ×a',
+      String.raw`r(t) = ${rel.r.toFixed(3)}\;(\times a)`, "");
+    const pTxt = preset && preset.PReal!=null ? preset.PReal.toFixed(preset.PReal<10?3:2)+" "+preset.PUnit : "2π (n=1, a=1, GM=1)";
+    fillFormulaLine(fEls.fR3,
+      '<i>P</i>&sup2; = 4&pi;&sup2;<i>a</i>&sup3;/(G(m&#8321;+m&#8322;))',
+      String.raw`P^2=\dfrac{4\pi^2 a^3}{G(m_1+m_2)}`, "",
+      '<i>P</i> = <b>'+pTxt+'</b>',
+      String.raw`P = \mathbf{${pTxt}}`, "");
+  }
+}
+
+/* =========================================================================
+   12. CONTROLS -- slider+number fields, log-scale mass-ratio slider, preset
+       select. onChange fires live; the number box clamps/reformats on blur.
+   ========================================================================= */
+function buildSliderField(container, opts){
+  const field = document.createElement("div");
+  field.className = "field";
+  const label = document.createElement("label");
+  label.className = "field-label";
+  label.innerHTML = opts.label;
+  const row = document.createElement("div");
+  row.className = "field-row";
+  const range = document.createElement("input");
+  range.type = "range"; range.min = opts.min; range.max = opts.max; range.step = opts.step;
+  range.value = opts.value;
+  const num = document.createElement("input");
+  num.type = "number"; num.className = "num-input";
+  num.min = opts.min; num.max = opts.max; num.step = opts.step;
+  num.value = fmtNum(opts.value, opts.step);
+  function commit(v){ opts.onChange(v); }
+  range.addEventListener("input", function(){
+    const v = parseFloat(range.value);
+    num.value = fmtNum(v, opts.step);
+    commit(v);
+  });
+  num.addEventListener("input", function(){
+    const v = parseFloat(num.value);
+    if(!isNaN(v)){ range.value = clamp(v, opts.min, opts.max); commit(v); }
+  });
+  num.addEventListener("blur", function(){
+    let v = parseFloat(num.value);
+    if(isNaN(v)) v = opts.value;
+    v = clamp(v, opts.min, opts.max);
+    num.value = fmtNum(v, opts.step);
+    range.value = v;
+    commit(v);
+  });
+  row.appendChild(range); row.appendChild(num);
+  if(opts.unit){
+    const unit = document.createElement("span");
+    unit.className = "unit";
+    unit.textContent = opts.unit;
+    row.appendChild(unit);
+  }
+  field.appendChild(label); field.appendChild(row);
+  container.appendChild(field);
+  return { field:field, range:range, num:num };
+}
+// Mass ratio q spans three decades, so its slider works in log10(q) space; the numeric box
+// still shows and accepts q itself. The visible slider thumb is clamped to [min,max] (spec: "q on
+// a log scale 0.001-1"), but the number box (and the physics) accept values outside that range --
+// several real presets (Sun-Earth, Sun-Jupiter) have q below the slider's own floor.
+function buildLogSliderField(container, opts){
+  const field = document.createElement("div");
+  field.className = "field";
+  const label = document.createElement("label");
+  label.className = "field-label";
+  label.innerHTML = opts.label;
+  const row = document.createElement("div");
+  row.className = "field-row";
+  const logMin = Math.log10(opts.min), logMax = Math.log10(opts.max);
+  const range = document.createElement("input");
+  range.type = "range"; range.min = String(logMin); range.max = String(logMax); range.step = "0.002";
+  const num = document.createElement("input");
+  num.type = "number"; num.className = "num-input"; num.step = "any";
+  function setDisplay(v){
+    range.value = String(Math.log10(clamp(v, opts.min, opts.max)));
+    num.value = formatQ(v);
+  }
+  setDisplay(opts.value);
+  range.addEventListener("input", function(){
+    const v = Math.pow(10, parseFloat(range.value));
+    num.value = formatQ(v);
+    opts.onChange(v);
+  });
+  num.addEventListener("input", function(){
+    const v = parseFloat(num.value);
+    if(!isNaN(v) && v>0){ range.value = String(Math.log10(clamp(v, opts.min, opts.max))); opts.onChange(v); }
+  });
+  num.addEventListener("blur", function(){
+    let v = parseFloat(num.value);
+    if(isNaN(v) || v<=0) v = opts.value;
+    v = clamp(v, 1e-7, 1);
+    num.value = formatQ(v);
+    range.value = String(Math.log10(clamp(v, opts.min, opts.max)));
+    opts.onChange(v);
+  });
+  row.appendChild(range); row.appendChild(num);
+  field.appendChild(label); field.appendChild(row);
+  container.appendChild(field);
+  return { field:field, range:range, num:num, setDisplay:setDisplay };
+}
+function buildPresetSelect(container, opts){
+  const field = document.createElement("div");
+  field.className = "field";
+  const label = document.createElement("label");
+  label.className = "field-label";
+  label.textContent = "Preset";
+  const select = document.createElement("select");
+  PRESETS.forEach(function(p){
+    const opt = document.createElement("option");
+    opt.value = p.key; opt.textContent = p.name;
+    select.appendChild(opt);
+  });
+  const customOpt = document.createElement("option");
+  customOpt.value = "custom"; customOpt.textContent = "Custom";
+  select.appendChild(customOpt);
+  select.value = opts.value;
+  select.addEventListener("change", function(){ opts.onChange(select.value); });
+  field.appendChild(label); field.appendChild(select);
+  container.appendChild(field);
+  return select;
+}
+function buildToggleButtonSimple(container, key, label){
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.className = "toggle"; btn.dataset.key = key;
+  btn.setAttribute("aria-pressed", state.display[key] ? "true":"false");
+  btn.innerHTML = "<span>"+label+"</span><span class=\"dot\"></span>";
+  btn.addEventListener("click", function(){
+    state.display[key] = !state.display[key];
+    btn.setAttribute("aria-pressed", state.display[key] ? "true":"false");
+    render();
+  });
+  container.appendChild(btn);
+  return btn;
+}
+
+let paramWidgets = {};
+function snapE(v){
+  const targets = [0, state.lastPresetE];
+  for(let i=0;i<targets.length;i++){ if(Math.abs(v-targets[i]) <= 0.0075) return targets[i]; }
+  return v;
+}
+function markCustom(){
+  if(state.preset !== "custom"){
+    state.preset = "custom";
+    if(paramWidgets.select) paramWidgets.select.value = "custom";
+    updatePresetNote();
+  }
+}
+function syncParamSliders(){
+  if(paramWidgets.select) paramWidgets.select.value = state.preset;
+  if(paramWidgets.qW) paramWidgets.qW.setDisplay(state.p.q);
+  if(paramWidgets.eW){ paramWidgets.eW.range.value = state.p.e; paramWidgets.eW.num.value = fmtNum(state.p.e, paramWidgets.eW.range.step); }
+  updatePresetNote();
+}
+function applyPreset(key){
+  const preset = presetByKey(key);
+  if(!preset) return;
+  state.preset = key;
+  state.p.q = preset.q; state.p.e = preset.e;
+  state.lastPresetE = preset.e;
+  syncParamSliders();
+  onParamsChanged();
+}
+function updatePresetNote(){
+  const el = document.getElementById("presetNoteEl");
+  if(!el) return;
+  const preset = currentPreset();
+  el.textContent = preset && preset.note ? preset.note : "";
+}
+function onParamsChanged(){ render(); }
+
+function buildParamsCard(){
+  const c = els.paramsFields; c.innerHTML = "";
+  paramWidgets = {};
+  paramWidgets.select = buildPresetSelect(c, {
+    value: state.preset,
+    onChange: function(key){
+      if(key==="custom"){ state.preset = "custom"; syncParamSliders(); onParamsChanged(); return; }
+      applyPreset(key);
+    }
+  });
+  paramWidgets.qW = buildLogSliderField(c, {
+    label: 'Mass ratio <span class="math" data-latex="q=m_2/m_1">q = m&#8322;/m&#8321;</span>',
+    value: state.p.q, min:0.001, max:1,
+    onChange: function(v){ state.p.q = v; markCustom(); onParamsChanged(); }
+  });
+  paramWidgets.eW = buildSliderField(c, {
+    label: 'Eccentricity <span class="math" data-latex="e">e</span>',
+    value: state.p.e, min:0, max:0.9, step:0.005,
+    onChange: function(v){
+      const sv = snapE(v);
+      state.p.e = sv;
+      if(sv !== v){ paramWidgets.eW.range.value = sv; paramWidgets.eW.num.value = fmtNum(sv, paramWidgets.eW.range.step); }
+      markCustom(); onParamsChanged();
+    }
+  });
+  if(state.tab==="lab"){
+    paramWidgets.vcmW = buildSliderField(c, {
+      label: 'Center-of-mass speed <span class="math" data-latex="V_{cm}">V<sub>cm</sub></span>',
+      value: state.p.vcm, min:0, max:1, step:0.01, unit:"n·a",
+      onChange: function(v){ state.p.vcm = v; render(); }
+    });
+  }
+  const note = document.createElement("div");
+  note.className = "unit"; note.id = "presetNoteEl"; note.style.marginTop = "6px";
+  c.appendChild(note);
+  updatePresetNote();
+}
+function buildDisplayCard(){
+  const c = els.displayFields; c.innerHTML = "";
+  if(state.tab==="lab"){ els.displayCard.style.display = "none"; return; }
+  els.displayCard.style.display = "";
+  buildToggleButtonSimple(c, "vel", "Velocities");
+  buildToggleButtonSimple(c, "forces", "Forces");
+  buildToggleButtonSimple(c, "trails", "Trails");
+}
+
+/* =========================================================================
+   13. NOTICE / LECTURE LINK / ABOUT (per-tab prose)
+   ========================================================================= */
+const NOTICE = {
+  lab: [
+    "The center of mass moves in a straight line at constant speed: no external force acts on the pair.",
+    "Each body's path looks complicated only because the origin is arbitrary."
+  ],
+  cm: [
+    "Both bodies pass periapsis at the same instant, on opposite sides of the center of mass.",
+    "m&#8321;r&#8321; = m&#8322;r&#8322; at every instant: the heavier body moves less.",
+    "For Sun&ndash;Jupiter the barycenter lies just outside the Sun's surface."
+  ],
+  reduced: [
+    "The same vector r(t) appears in both panels: the relative motion IS a one-body Kepler orbit.",
+    "The fictitious body has mass &mu;, but the central mass is the TOTAL mass M, so the period is set by m&#8321; + m&#8322;.",
+    "As m&#8322; &rarr; 0, &mu; &rarr; m&#8322; and the picture reduces to a planet around a fixed Sun."
+  ]
+};
+const LECTURE_LINK = {
+  lab: "Lecture 5 (Orbital Mechanics), slide 6 &middot; &ldquo;Arbitrary origin&rdquo; panel.",
+  cm: "Lecture 5 (Orbital Mechanics), slide 6 &middot; &ldquo;Origin at CM&rdquo; panel.",
+  reduced: "Lecture 5 (Orbital Mechanics), slide 6 &middot; &ldquo;Equivalent one-body problem&rdquo; panel."
+};
+const ABOUT = {
+  lab: {
+    title: "An arbitrary origin, a complicated path",
+    html: '<p>Pick any fixed point O and both bodies trace loopy, wandering curves as they orbit their common center of mass while that center itself drifts past O at constant velocity <span class="math" data-latex="V_{cm}">V<sub>cm</sub></span>.</p>' +
+      '<p>The looping happens because each body\'s lab-frame position is the steady drift <span class="math" data-latex="\\mathbf{R}(t)">R(t)</span> plus a small orbital wiggle about it.</p>' +
+      '<p>No force pushes on the pair from outside, so <span class="math" data-latex="\\mathbf{R}(t)">R(t)</span> is exactly a straight line. Only the choice of origin makes the motion look complicated.</p>'
+  },
+  cm: {
+    title: "Two ellipses, one center of mass",
+    html: '<p>Move the origin to the center of mass and the confusion disappears: each body traces its own clean ellipse, with the center of mass at a focus of both.</p>' +
+      '<p>The two ellipses share the same eccentricity <span class="math" data-latex="e">e</span> and are scaled inversely to mass: the heavier body\'s ellipse is smaller, since <span class="math" data-latex="m_1 r_1 = m_2 r_2">m&#8321;r&#8321; = m&#8322;r&#8322;</span> at every instant.</p>' +
+      '<p>Both bodies reach periapsis at the same moment, on opposite sides of the center of mass.</p>'
+  },
+  reduced: {
+    title: "The equivalent one-body problem",
+    html: '<p>The vector from body 1 to body 2, <span class="math" data-latex="\\mathbf{r}=\\mathbf{r}_2-\\mathbf{r}_1">r = r&#8322; &minus; r&#8321;</span>, obeys the same equation of motion as a single fictitious body of reduced mass <span class="math" data-latex="\\mu">&mu;</span> orbiting a fixed mass equal to the total, <span class="math" data-latex="M=m_1+m_2">M = m&#8321;+m&#8322;</span>.</p>' +
+      '<p>This is why Kepler\'s third law involves the total mass, not just the Sun\'s. As one mass shrinks toward zero, <span class="math" data-latex="\\mu \\to m_2">&mu; &rarr; m&#8322;</span> and the familiar fixed-Sun picture is recovered.</p>'
+  }
+};
+function buildNoticeCard(){
+  els.noticeList.innerHTML = (NOTICE[state.tab]||[]).map(function(s){ return "<li>"+s+"</li>"; }).join("");
+  els.lectureLink.innerHTML = LECTURE_LINK[state.tab] || "";
+}
+function buildAboutCard(){
+  const a = ABOUT[state.tab];
+  if(!a) return;
+  els.aboutTitle.textContent = a.title;
+  els.aboutBody.innerHTML = a.html;
+  renderMathSpans(els.aboutBody);
+}
+
+/* =========================================================================
+   14. TABS, MAIN-PANEL TITLE/CAPTION, ?tab= / ?embed=1
+   ========================================================================= */
+const TAB_ORDER = ["lab","cm","reduced"];
+const MAIN_TITLE = {
+  lab: "Two-body orbits — Lab frame",
+  cm: "Two-body orbits — CM frame",
+  reduced: "Two-body orbits — Reduced mass"
+};
+const MAIN_CAPTION = {
+  reduced: "Left: the two real bodies orbiting their common center of mass. Right: the same relative vector r(t), now drawn as a single fictitious body of mass &mu; orbiting a fixed mass M = m&#8321;+m&#8322; at the focus. The purple arrow is identical in both panels at every instant."
+};
+function updateMainPanelTitle(){ els.mainPanelTitle.textContent = MAIN_TITLE[state.tab] || "Two-body orbits"; }
+function wireTabs(){
+  els.tabBar.querySelectorAll("button").forEach(function(btn){
+    btn.addEventListener("click", function(){ switchTab(btn.dataset.tab); });
+  });
+}
+function switchTab(tabId){
+  state.tab = tabId;
+
+  els.tabBar.querySelectorAll("button").forEach(function(b){
+    const active = b.dataset.tab === tabId;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true":"false");
+  });
+  ["rdLab","rdCm","rdReduced"].forEach(function(id){
+    els[id].style.display = (id === "rd"+tabId.charAt(0).toUpperCase()+tabId.slice(1)) ? "" : "none";
+  });
+
+  updateMainPanelTitle();
+  if(MAIN_CAPTION[tabId]){ els.mainPanelCaption.innerHTML = MAIN_CAPTION[tabId]; els.mainPanelCaption.hidden = false; }
+  else { els.mainPanelCaption.hidden = true; }
+
+  buildParamsCard();
+  buildDisplayCard();
+  buildNoticeCard();
+  buildAboutCard();
+  buildStripFormulas();
+  resetView();
+  render();
+}
+
+/* =========================================================================
+   15. PLAYBACK
+   ========================================================================= */
+let rafId = null, lastFrameTs = null;
+function startLoop(){ if(rafId == null){ lastFrameTs = null; rafId = requestAnimationFrame(loop); } }
+function stopLoop(){ if(rafId != null){ cancelAnimationFrame(rafId); rafId = null; } }
+function loop(ts){
+  if(lastFrameTs == null) lastFrameTs = ts;
+  const dtSec = (ts - lastFrameTs) / 1000;
+  lastFrameTs = ts;
+  if(dtSec > 0) state.t += state.speed * BASE_RATE * Math.min(dtSec, MAX_FRAME_DT);
+  render();
+  rafId = requestAnimationFrame(loop);
+}
+function updatePlayButton(){
+  els.btnPlay.innerHTML = state.playing ? "&#10074;&#10074;" : "&#9658;";
+}
+function wirePlayback(){
+  els.btnStepBack.addEventListener("click", function(){ state.t -= STEP_SIZE; render(); });
+  els.btnStepFwd.addEventListener("click", function(){ state.t += STEP_SIZE; render(); });
+  els.btnPlay.addEventListener("click", function(){
+    state.playing = !state.playing;
+    updatePlayButton();
+    if(state.playing) startLoop(); else stopLoop();
+  });
+  els.btnReset.addEventListener("click", function(){ state.t = 0; render(); });
+  els.speedRange.addEventListener("input", function(){
+    const v = parseFloat(els.speedRange.value);
+    els.speedNum.value = fmtNum(v, els.speedRange.step);
+    state.speed = v;
+  });
+  els.speedNum.addEventListener("input", function(){
+    const v = parseFloat(els.speedNum.value);
+    if(!isNaN(v)){ els.speedRange.value = clamp(v,0.1,5); state.speed = v; }
+  });
+  els.speedNum.addEventListener("blur", function(){
+    let v = parseFloat(els.speedNum.value);
+    if(isNaN(v)) v = state.speed;
+    v = clamp(v,0.1,5);
+    els.speedNum.value = fmtNum(v, els.speedRange.step);
+    els.speedRange.value = v;
+    state.speed = v;
+  });
+}
+// Space = play/pause, ArrowLeft/ArrowRight = step (per COMMON.md hard requirement 4). Ignored
+// while a text/number/select field or a keyboard-resizable splitter has focus, so it never
+// fights normal field editing or the rail/strip splitters' own arrow-key resize.
+function wireKeyboard(){
+  document.addEventListener("keydown", function(ev){
+    const el = document.activeElement;
+    const tag = el ? el.tagName : "";
+    if(tag==="INPUT" || tag==="SELECT" || tag==="TEXTAREA") return;
+    if(el && el.getAttribute && el.getAttribute("role")==="separator") return;
+    if(ev.code === "Space"){ ev.preventDefault(); els.btnPlay.click(); }
+    else if(ev.code === "ArrowLeft"){ ev.preventDefault(); els.btnStepBack.click(); }
+    else if(ev.code === "ArrowRight"){ ev.preventDefault(); els.btnStepFwd.click(); }
+  });
+}
+
+/* =========================================================================
+   16. RENDER LOOP
+   ========================================================================= */
+function render(){
+  updateReadouts();
+  const nowMs = performance.now();
+  if(!state.playing || nowMs - (state._lastFormulaMs||0) > 100){ state._lastFormulaMs = nowMs; updateStripFormulas(); }
+  drawMain();
+  updateZoomBadge();
+}
+
+/* =========================================================================
+   17. BOOTSTRAP
+   ========================================================================= */
+function init(){
+  if(new URLSearchParams(location.search).get("embed")) document.body.classList.add("embed");
+
+  cacheEls();
+  loadColors();
+
+  wireTabs();
+  wirePlayback();
+  wireKeyboard();
+  wireSplitters();
+  wireMainCanvasView();
+
+  setupCanvasResize(els.mainCanvas, function(w,h){ state.mainW=w; state.mainH=h; });
+
+  switchTab(state.tab);
+  updatePlayButton();
+
+  const requestedTab = new URLSearchParams(location.search).get("tab");
+  if(requestedTab && TAB_ORDER.indexOf(requestedTab)>=0) switchTab(requestedTab);
+}
+
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+
+})();
+</script>
+</body>
+</html>

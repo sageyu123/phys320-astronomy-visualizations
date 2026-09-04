@@ -35,6 +35,9 @@ shot() {
 shot "html/ptolemy_model.html?tab=compare&embed=1" "ptolemy_model"
 shot "html/altaz_radec.html?tab=grids&embed=1"     "altaz_radec"
 shot "html/kepler_laws.html?tab=areas&embed=1"     "kepler_laws"
+shot "html/two_body.html?tab=cm&embed=1"            "two_body"
+shot "html/newtons_cannon.html?tab=cannon&embed=1"  "newtons_cannon"
+shot "html/star_distances.html?tab=parallax&embed=1" "star_distances"
 
 # If a WebGL panel renders black, retry that page's `shot` call with:
 #   --use-angle=swiftshader --enable-unsafe-swiftshader --use-gl=angle
