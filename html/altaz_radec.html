@@ -1185,8 +1185,17 @@ let meridianUpper, meridianLower; // {line,material,baseOpacity,baseLinewidth} w
 // "diurnal circle"/"rises"/"sets" text sprites (diurnalCircleLabel's own
 // visibility follows the Labels toggle -- see applyDisplayVisibility()).
 let diurnalDisk = null, diurnalCircleLabel = null, diurnalRiseLabel = null, diurnalSetLabel = null;
+// the two diurnal declination-limit labels ("circumpolar above"/"never rises
+// below"), promoted from a rebuildDiurnalCircle()-local variable to module
+// scope so the Task 1 label-declutter pass can track them across frames;
+// null when the current star sits exactly on that limit (see rebuildDiurnalCircle)
+let diurnalAboveLabel = null, diurnalBelowLabel = null;
 let meridianLabel; // the "meridian" text sprite -- hidden on the triangle tab (collides with its Az label there); see applyDisplayVisibility()
-let ncpLabel; // the "NCP" text sprite (child of polarAxisPart) -- nudged outward by avoidNcpZenithOverlap() when it reads too close to "Z" on screen
+let zenLabel; // the "Z" zenith text sprite (child of scene, fixed)
+let ncpLabel, scpLabel; // "NCP"/"SCP" text sprites (children of polarAxisPart)
+let equinoxLabel; // the vernal-equinox glyph text sprite (child of equinoxPart)
+let celestialEquatorLabel; // the "celestial equator" text sprite (child of eGridPart)
+let compassLabels = []; // [{sprite,angDeg}] for the N/E/S/W text sprites (children of hGridGroup)
 let starSphere, starGlow, starLabel, starLabelText = null;
 let starHourCircle; // the star's own hour circle (great circle through both poles at native RA = alpha) — Task B
 const matRefs = { hGrid: [], eGrid: [] }; // {material, base} — opacity scaled by state.gridAlpha
@@ -1293,7 +1302,8 @@ function applyHighlight(){
     setHighlightedOpacity(o.material, o.baseOpacity, "meridian", hk, o.baseLinewidth);
   });
 
-  [arcAz, arcAlt, arcDec, arcH, arcRA, starHourCircle].forEach(function(o){
+  [arcAz, arcAlt, arcDec, arcH, arcRA, starHourCircle,
+   arcAzBelow, arcAltBelow, arcDecBelow, arcHBelow, arcRABelow].forEach(function(o){
     setHighlightedOpacity(o.material, o.baseOpacity, "arcs", hk, o.baseLinewidth);
   });
   [arrowAz, arrowAlt, arrowDec, arrowH, arrowRA].forEach(function(mesh){ setHighlightedOpacity(mesh.material, 1, "arcs", hk); });
@@ -1482,6 +1492,7 @@ function makeTextSprite(text, colorHex, opts){
   const sprite = new THREE.Sprite(mat);
   sprite.userData.aspect = c.width / c.height;
   sprite.userData.pixelHeight = targetGlyphPx * c.height / inkH; // full box height that makes the INK equal targetGlyphPx
+  sprite.userData.debugText = text; // verification-only: lets layoutDomeLabels()'s debug snapshot name each box
   sprite.renderOrder = 10;
   labelRegistry.push(sprite);
   applySpriteScale(sprite);
@@ -1491,6 +1502,7 @@ function disposeSprite(sprite){
   if(!sprite) return;
   const idx = labelRegistry.indexOf(sprite);
   if(idx >= 0) labelRegistry.splice(idx,1);
+  domeLabelState.delete(sprite); // Task 1: drop any smoothed-position/hidden-state entry (see layoutDomeLabels() below) -- a disposed sprite (e.g. a rebuilt diurnal label) must never leave stale state for a future lookalike to inherit
   if(sprite.material){ if(sprite.material.map) sprite.material.map.dispose(); sprite.material.dispose(); }
 }
 
@@ -1593,23 +1605,33 @@ function buildStaticScene(){
   const groundMat = new THREE.MeshBasicMaterial({ color:0x1b222b, transparent:true, opacity:0.72, side:THREE.DoubleSide, depthWrite:false });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI/2;
+  // Explicit back-to-front renderOrder (see the render-order scheme comment
+  // above buildDynamicArcsGroup()) rather than relying on THREE's default
+  // depth sort for same-renderOrder transparent objects -- the ground plane
+  // is coplanar (y=0) with the Az arc, and an unstable depth tie between two
+  // equal-renderOrder transparent objects was the cause of the Az arc
+  // intermittently reading dimmed (painted over by this 72%-opaque plane).
+  ground.renderOrder = -30;
   scene.add(ground);
 
   const grid = new THREE.GridHelper(6, 12, COLORI["border-strong"], 0x2a2f36);
   grid.material.transparent = true;
   grid.material.opacity = 0.30;
+  grid.renderOrder = -30;
   scene.add(grid);
 
   // sky dome (upper hemisphere), two passes so it reads from outside too
   const domeGeo = new THREE.SphereGeometry(1, 48, 24, 0, TAU, 0, Math.PI/2);
   const domeBack = new THREE.Mesh(domeGeo, new THREE.MeshBasicMaterial({ color:COLORI.cyan, transparent:true, opacity:0.05, side:THREE.BackSide, depthWrite:false }));
   const domeFront = new THREE.Mesh(domeGeo, new THREE.MeshBasicMaterial({ color:COLORI.cyan, transparent:true, opacity:0.03, side:THREE.FrontSide, depthWrite:false }));
+  domeBack.renderOrder = -20; domeFront.renderOrder = -20;
   scene.add(domeBack, domeFront);
 
   // horizon ring
   const ringGeo = new THREE.TorusGeometry(1, 0.0035, 8, 160);
   const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color:0x69717a, transparent:true, opacity:0.6 }));
   ring.rotation.x = Math.PI/2;
+  ring.renderOrder = -20;
   scene.add(ring);
 
   // observer marker at the origin
@@ -1622,7 +1644,7 @@ function buildStaticScene(){
   const zen = new THREE.Mesh(zenGeo, new THREE.MeshBasicMaterial({ color:COLORI.text }));
   zen.position.set(0,1,0);
   scene.add(zen);
-  const zenLabel = makeTextSprite("Z", COLORS.text, { pixelHeight:16 });
+  zenLabel = makeTextSprite("Z", COLORS.text, { pixelHeight:16 });
   zenLabel.position.set(0, 1.117, 0); // offset from surface raised ~1.3x for the larger (16px) labels
   scene.add(zenLabel);
 
@@ -1636,6 +1658,7 @@ function buildStaticScene(){
     const lab = makeTextSprite(pair[0], COLORS.muted, { pixelHeight:16 });
     lab.position.copy(v);
     scene.add(lab);
+    compassLabels.push({ sprite:lab, angDeg:pair[1] }); // Task 1: declutter anchor = hzToVec(angDeg,0)
   });
 
   // horizontal grid: altitude circles a=30,60 (cyan) + azimuth verticals every 30 deg
@@ -1643,6 +1666,7 @@ function buildStaticScene(){
     const pts = [];
     for(let i=0;i<=CIRCLE_N;i++) pts.push(toThreeVec3(hzToVec((i/CIRCLE_N)*360, a)));
     const r = makeLineLoop(pts, COLORI.cyan, 0.18);
+    r.line.renderOrder = -10;
     hGridGroup.add(r.line);
     matRefs.hGrid.push({ material:r.material, base:0.18 });
   });
@@ -1653,6 +1677,7 @@ function buildStaticScene(){
     const nseg = 32;
     for(let i=0;i<=nseg;i++) pts.push(toThreeVec3(hzToVec(A0, (i/nseg)*90)));
     const r = makeLineStrip(pts, COLORI.cyan, 0.18, false);
+    r.line.renderOrder = -10;
     hGridGroup.add(r.line);
     matRefs.hGrid.push({ material:r.material, base:0.18 });
   }
@@ -1673,6 +1698,7 @@ function buildStaticScene(){
   for(let i=0;i<=nseg;i++) lowerPts.push(meridianPoint(180 + (i/nseg)*180));
   meridianUpper = makeFatLineStrip(upperPts, COLORI.purple, 0.7, 2.0);
   meridianLower = makeFatLineStrip(lowerPts, COLORI.purple, 0.25, 2.0);
+  meridianUpper.line.renderOrder = -10; meridianLower.line.renderOrder = -10;
   meridianGroup.add(meridianUpper.line, meridianLower.line);
 
   // "meridian" label just above the south point (th=165, 15 deg up from the
@@ -1704,14 +1730,16 @@ function buildEquatorialGroup(){
   // this same circle/its hour circles) always read as the dominant overlay
   {
     const r = makeFatLineLoop(nativeSmallCirclePoints(0), COLORI.amber, 0.45, 1.5);
+    r.line.renderOrder = -10;
     eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base:0.45 });
-    const lab = makeTextSprite("celestial equator", COLORS.amber, { pixelHeight:12 });
-    lab.position.copy(nativePointFromRA(90,0).multiplyScalar(1.06)); // near the east end of the equator
-    eGridPart.add(lab);
+    celestialEquatorLabel = makeTextSprite("celestial equator", COLORS.amber, { pixelHeight:12 });
+    celestialEquatorLabel.position.copy(nativePointFromRA(90,0).multiplyScalar(1.06)); // near the east end of the equator
+    eGridPart.add(celestialEquatorLabel);
   }
   // declination circles +-30, +-60
   [30,-30,60,-60].forEach(function(d){
     const r = makeLineLoop(nativeSmallCirclePoints(d), COLORI.amber, 0.18);
+    r.line.renderOrder = -10;
     eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base:0.18 });
   });
   // hour circles every 2h (6 great circles cover all 12 half-meridians); 0h brighter
@@ -1719,6 +1747,7 @@ function buildEquatorialGroup(){
     const raH = k*2;
     const bright = (raH === 0);
     const r = makeLineLoop(nativeHourCirclePoints(raH*15), COLORI.amber, bright ? 0.32 : 0.14);
+    r.line.renderOrder = -10;
     eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base: bright ? 0.32 : 0.14 });
   }
 
@@ -1728,6 +1757,7 @@ function buildEquatorialGroup(){
     const mat = new THREE.LineDashedMaterial({ color:COLORI.magenta, transparent:true, opacity:0.7, dashSize:0.045, gapSize:0.03, depthWrite:false });
     const line = new THREE.Line(geo, mat);
     line.computeLineDistances();
+    line.renderOrder = -10;
     polarAxisPart.add(line);
   }
   const ncpDot = new THREE.Mesh(new THREE.SphereGeometry(0.014,10,8), new THREE.MeshBasicMaterial({ color:COLORI.magenta }));
@@ -1737,7 +1767,7 @@ function buildEquatorialGroup(){
   polarAxisPart.add(ncpDot, scpDot);
   ncpLabel = makeTextSprite("NCP", COLORS.magenta, { pixelHeight:16 });
   ncpLabel.position.set(0,1.117,0);
-  const scpLabel = makeTextSprite("SCP", COLORS.magenta, { pixelHeight:16 });
+  scpLabel = makeTextSprite("SCP", COLORS.magenta, { pixelHeight:16 });
   scpLabel.position.set(0,-1.117,0);
   polarAxisPart.add(ncpLabel, scpLabel);
 
@@ -1746,9 +1776,9 @@ function buildEquatorialGroup(){
     const p = nativePointFromRA(0,0);
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012,10,8), new THREE.MeshBasicMaterial({ color:COLORI.amber }));
     dot.position.copy(p);
-    const lab = makeTextSprite("♈", COLORS.amber, { pixelHeight:16 });
-    lab.position.copy(p.clone().multiplyScalar(1.13));
-    equinoxPart.add(dot, lab);
+    equinoxLabel = makeTextSprite("♈", COLORS.amber, { pixelHeight:16 });
+    equinoxLabel.position.copy(p.clone().multiplyScalar(1.13));
+    equinoxPart.add(dot, equinoxLabel);
   }
 
   // the star's own hour circle: the great circle through both celestial poles
@@ -1759,6 +1789,7 @@ function buildEquatorialGroup(){
   // the coordinate arcs (state.display.arcs) since it is part of the same
   // "star's own coordinates" didactic layer — see updateDynamicArcs().
   starHourCircle = makeFatLineRaw(COLORI.amber, 0.35, 1.25, false, CIRCLE_N+1);
+  starHourCircle.line.renderOrder = -10;
   equatorialGroup.add(starHourCircle.line);
 
   // diurnal circle lives in world space (see rebuildDiurnalCircle) — NOT a
@@ -1874,6 +1905,7 @@ function rebuildDiurnalCircle(){
     c.material && c.material.dispose();
   }
   diurnalDisk = null; diurnalCircleLabel = null; diurnalRiseLabel = null; diurnalSetLabel = null;
+  diurnalAboveLabel = null; diurnalBelowLabel = null;
 
   const n = CIRCLE_N;
   const worldPts = [], zSign = [], zVals = [];
@@ -1927,6 +1959,7 @@ function rebuildDiurnalCircle(){
       const path = makeFatLineStrip(pathPts, COLORI.text, 0.75, 2);
       path.material.userData.baseOpacity = 0.7;
       path.material.userData.baseLinewidth = 1.5;
+      path.line.renderOrder = -10;
       diurnalGroup.add(path.line);
     } else {
       const below = makeFatLineRaw(COLORI.text, 0.3, 2, true, run.pts.length);
@@ -1935,6 +1968,7 @@ function rebuildDiurnalCircle(){
       setLinePoints(below, run.pts); // fills the geometry + calls computeLineDistances() (dashed+fat)
       below.material.userData.baseOpacity = 0.35;
       below.material.userData.baseLinewidth = 1.5;
+      below.line.renderOrder = -10;
       diurnalGroup.add(below.line);
     }
   });
@@ -1953,7 +1987,7 @@ function rebuildDiurnalCircle(){
     const disk = new THREE.Mesh(geo, mat);
     disk.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), poleDir);
     disk.position.copy(poleDir).multiplyScalar(Math.sin(dRad));
-    disk.renderOrder = -1; // draw below the path/glow lines (renderOrder 0), matching the coordinate-sector fans' own convention
+    disk.renderOrder = -10; // grouped with the diurnal circle's own rim lines in the explicit render-order scheme (see buildDynamicArcsGroup()'s comment)
     diurnalGroup.add(disk);
     diurnalDisk = disk; // applyHighlight() gives this its own (non-generic) hover opacity
   }
@@ -1984,6 +2018,7 @@ function rebuildDiurnalCircle(){
       ringLine.material.userData.baseOpacity = 0.35;
       ringLine.material.userData.baseLinewidth = 1.25;
       setLinePoints(ringLine, ringPts); // fills the geometry + calls computeLineDistances() (dashed+fat)
+      ringLine.line.renderOrder = -10;
       diurnalGroup.add(ringLine.line);
 
       const tangentP = toThreeVec3(eqToVec(def.tangentH, def.delta, state.phi));
@@ -1991,6 +2026,9 @@ function rebuildDiurnalCircle(){
       label.material.opacity = 0.8;
       label.position.copy(tangentP.clone().multiplyScalar(1.12)); // just outside the horizon ring, same convention as the rise/set labels below
       diurnalGroup.add(label);
+      // promote to module scope (Task 1: label declutter needs a persistent
+      // reference across frames, since this whole group is disposed+rebuilt here)
+      if(def.text === "circumpolar above") diurnalAboveLabel = label; else diurnalBelowLabel = label;
     });
   }
 
@@ -2127,28 +2165,339 @@ function wireCameraControls(){
   });
 }
 
-/* On the "Two grids" tab's default view (camera phi 38deg), the NCP label
-   (which moves with phi/lst -- it's a child of the re-oriented
-   equatorialGroup) can land right next to the always-fixed "Z" zenith
-   label. Recomputed every frame (idempotent -- always resets to the base
-   offset first, so it never compounds) rather than special-cased to one
-   tab/camera, so it self-corrects at ANY phi/lst/camera combination where
-   the two happen to coincide on screen. */
-const NCP_ZENITH_MIN_PX = 44;
-const NCP_LABEL_BASE_Y = 1.117, NCP_LABEL_PUSH_Y = 1.117 + 0.12;
-const _ncpWorldScratch = new THREE.Vector3();
-const _zenWorldScratch = new THREE.Vector3(0, 1.117, 0); // Z's label position is fixed in world space (see buildStaticScene)
-const _ncpProjScratch = new THREE.Vector3();
-const _zenProjScratch = new THREE.Vector3();
-function avoidNcpZenithOverlap(){
-  if(!ncpLabel || !camera || !state.mainW || !state.mainH) return;
-  ncpLabel.position.y = NCP_LABEL_BASE_Y; // reset before measuring -- never compounds
-  ncpLabel.getWorldPosition(_ncpWorldScratch);
-  _ncpProjScratch.copy(_ncpWorldScratch).project(camera);
-  _zenProjScratch.copy(_zenWorldScratch).project(camera);
-  const sxN = (_ncpProjScratch.x*0.5+0.5)*state.mainW, syN = (1-(_ncpProjScratch.y*0.5+0.5))*state.mainH;
-  const sxZ = (_zenProjScratch.x*0.5+0.5)*state.mainW, syZ = (1-(_zenProjScratch.y*0.5+0.5))*state.mainH;
-  if(Math.hypot(sxN-sxZ, syN-syZ) < NCP_ZENITH_MIN_PX) ncpLabel.position.y = NCP_LABEL_PUSH_Y;
+/* =========================================================================
+   TASK 1 -- DOME LABEL DECLUTTER. A single per-frame, screen-space,
+   priority-ordered collision pass over every dome label sprite, run from
+   renderThree() once the camera for this frame is in place (mirrors
+   kepler_laws.html's layoutHarmonicLabels() -- see that function's own
+   comment for the general technique: naive placement at each item's own
+   existing offset, then a priority-ordered outward-then-tangential push
+   against already-placed boxes, temporal smoothing with a per-frame step
+   cap, and a leader line once the push carries a label far from its anchor).
+
+   Supersedes the old single-purpose avoidNcpZenithOverlap() special case:
+   NCP vs Z is now just two of the many entries competing in the same
+   generic list (both at the "Z/NCP/SCP/equinox" priority tier below).
+
+   Every label here keeps using the SAME "natural" (anchor + fixed radial
+   lift) position formula the surrounding code always used for it -- that
+   math is untouched. This pass only ever (a) accepts that natural position,
+   (b) nudges it away from a higher-priority label's box, or (c), as a last
+   resort, hides the sprite for the frame; the final, smoothed result is
+   written back into the sprite's own parent-local .position.
+
+   Scope note: only the labels named in the brief's priority list are
+   managed here (star name, the five coordinate-arc symbols, Z/NCP/SCP/
+   equinox, N/E/S/W, meridian/celestial-equator/diurnal-circle/rises/sets,
+   and the two circumpolar-limit labels). The in-wedge sector labels and the
+   h-alpha-LST/triangle tabs' own labels keep their pre-existing ad-hoc
+   placement -- they sit far enough from this set in practice and are
+   outside what the brief's priority list covers. */
+const DOME_LABEL_SMOOTH = 0.35;       // fraction of the remaining gap closed per frame
+const DOME_LABEL_MAX_STEP_PX = 5;     // per-frame movement cap (px)
+const DOME_LABEL_HYSTERESIS = 3;      // px -- an overlap must exceed this to trigger a push
+const DOME_LABEL_PAD = 3;             // px padding added to each side of a measured label box
+const DOME_LABEL_LEADER_MIN_PX = 22;  // draw a leader line once the label is pushed this far from its anchor
+const DOME_LABEL_MAX_TRIES = 5;       // collision-avoidance attempts before a label is hidden
+const DOME_LABEL_EDGE_MARGIN = 4;     // px kept clear of the panel edge (part e -- viewport clamp)
+
+// Priority tiers (brief 1a) -- higher wins a contested position.
+const DOME_PRI_ARCSTAR = 5; // star name + Az/El/delta/alpha/h coordinate-arc symbols
+const DOME_PRI_POLE    = 4; // Z, NCP, SCP, vernal-equinox glyph
+const DOME_PRI_COMPASS = 3; // N/E/S/W
+const DOME_PRI_REFLINE = 2; // meridian, celestial equator, diurnal circle, rises/sets
+const DOME_PRI_LIMIT   = 1; // circumpolar above / never rises below
+
+// sprite -> { x,y (smoothed CSS px), hidden (bool), clearStreak (int) },
+// persisted across frames; entries are dropped (collectDomeLabelItems() simply
+// omits them, and the sweep at the end of layoutDomeLabels() prunes the rest)
+// the moment a label's own toggle turns it off, or disposeSprite() destroys
+// it, so a later re-appearance always starts fresh rather than lerping in
+// from a stale, possibly far-away position.
+const domeLabelState = new Map();
+
+function domeLabelWantsShown(sprite){
+  let o = sprite;
+  while(o){ if(!o.visible) return false; o = o.parent; }
+  return true;
+}
+
+const _domeOriginWorld = new THREE.Vector3(0,0,0); // the dome's own centre -- the observer, world origin
+const _domeProjScratch = new THREE.Vector3();
+function domeToPx(worldVec, w, h){
+  _domeProjScratch.copy(worldVec).project(camera);
+  const ok = isFinite(_domeProjScratch.x) && isFinite(_domeProjScratch.y) && isFinite(_domeProjScratch.z);
+  return {
+    x: (_domeProjScratch.x*0.5+0.5)*w,
+    y: (1-(_domeProjScratch.y*0.5+0.5))*h,
+    ndcZ: _domeProjScratch.z,
+    ok: ok
+  };
+}
+
+/* Builds this frame's declutter candidate list: {sprite,anchorWorld,
+   naturalWorld,priority,color}. anchorWorld is the actual point being
+   labeled; naturalWorld is that label's own existing (pre-decluttering)
+   offset position -- the phase-1 candidate, computed fresh from the same
+   formulas the rest of the file already uses for it (never read back from
+   sprite.position, which THIS function's caller overwrites every frame --
+   see layoutDomeLabels()). Skips anything its OWN existing visibility logic
+   (including every ancestor's .visible) has already turned off this frame. */
+function collectDomeLabelItems(){
+  const items = [];
+  function add(sprite, anchorWorld, naturalWorld, priority, colorHex){
+    if(!sprite || !domeLabelWantsShown(sprite)) return;
+    items.push({ sprite:sprite, anchorWorld:anchorWorld, naturalWorld:naturalWorld, priority:priority, color:colorHex });
+  }
+
+  if(equatorialGroup) equatorialGroup.updateWorldMatrix(true, true); // fresh matrixWorld for this frame's phi/lst, propagated to every child sprite
+  const eqM = equatorialGroup ? equatorialGroup.matrixWorld : null;
+  const d = state.derived;
+
+  // ---- tier 5 (highest): star name + coordinate-arc symbols ----
+  if(eqM && starLabel){
+    const anchor = nativePointFromRA(state.ra*15, state.dec).applyMatrix4(eqM);
+    const poleSign = state.phi >= 0 ? 1 : -1;
+    const distFromElevatedPole = 90 - poleSign*state.dec;
+    const mul = (distFromElevatedPole <= 3) ? 0.831 : 1.169; // mirrors updateStarInGroup()'s own NCP/SCP-avoidance offset
+    const natural = nativePointFromRA(state.ra*15, state.dec).multiplyScalar(mul).applyMatrix4(eqM);
+    add(starLabel, anchor, natural, DOME_PRI_ARCSTAR, COLORS.amber);
+  }
+  if(d){
+    if(labelAObj){
+      const mid = liftedThree(hzToVec(0.5*d.A_deg, 0));
+      add(labelAObj, mid, mid.clone().multiplyScalar(1 + 0.117/mid.length()), DOME_PRI_ARCSTAR, COLORS.cyan);
+    }
+    if(labelAltObj){
+      const mid = liftedThree(hzToVec(d.A_deg, 0.5*d.a_deg));
+      add(labelAltObj, mid, mid.clone().multiplyScalar(1 + 0.117/mid.length()), DOME_PRI_ARCSTAR, COLORS.cyan);
+    }
+    if(labelDecObj){
+      const mid = liftedThree(eqToVec(d.H_deg, 0.5*state.dec, state.phi));
+      add(labelDecObj, mid, mid.clone().multiplyScalar(1 + 0.117/mid.length()), DOME_PRI_ARCSTAR, COLORS.amber);
+    }
+    if(labelHObj){
+      const mid = liftedThreeAt(eqToVec(0.5*d.H_deg, -4, state.phi), ARC_LIFT_H);
+      add(labelHObj, mid, mid.clone().multiplyScalar(1 + 0.117/mid.length()), DOME_PRI_ARCSTAR, COLORS.magenta);
+    }
+    if(labelRAObj){
+      const alphaDeg = state.ra*15, lstDeg = state.lst*15;
+      const mid = liftedThree(eqToVec(lstDeg - 0.5*alphaDeg, 0, state.phi));
+      add(labelRAObj, mid, mid.clone().multiplyScalar(1 + 0.117/mid.length()), DOME_PRI_ARCSTAR, COLORS.amber);
+    }
+  }
+
+  // ---- tier 4: Z / NCP / SCP / vernal equinox ----
+  add(zenLabel, new THREE.Vector3(0,1,0), new THREE.Vector3(0,1.117,0), DOME_PRI_POLE, COLORS.text);
+  if(eqM){
+    add(ncpLabel, new THREE.Vector3(0,1,0).applyMatrix4(eqM), new THREE.Vector3(0,1.117,0).applyMatrix4(eqM), DOME_PRI_POLE, COLORS.magenta);
+    add(scpLabel, new THREE.Vector3(0,-1,0).applyMatrix4(eqM), new THREE.Vector3(0,-1.117,0).applyMatrix4(eqM), DOME_PRI_POLE, COLORS.magenta);
+    const eq0 = nativePointFromRA(0,0);
+    add(equinoxLabel, eq0.clone().applyMatrix4(eqM), eq0.clone().multiplyScalar(1.13).applyMatrix4(eqM), DOME_PRI_POLE, COLORS.amber);
+  }
+
+  // ---- tier 3: N / E / S / W ----
+  compassLabels.forEach(function(c){
+    const anchor = toThreeVec3(hzToVec(c.angDeg, 0));
+    const natural = anchor.clone().multiplyScalar(1.19); natural.y = 0.015;
+    add(c.sprite, anchor, natural, DOME_PRI_COMPASS, COLORS.muted);
+  });
+
+  // ---- tier 2: meridian / celestial equator / diurnal circle / rises,sets ----
+  if(meridianLabel){
+    const th = 165*RAD, n = hzToVec(0,0);
+    const mp = toThreeVec3({ x:Math.cos(th)*n.x, y:Math.cos(th)*n.y, z:Math.cos(th)*n.z + Math.sin(th) });
+    add(meridianLabel, mp, mp.clone().multiplyScalar(1.15), DOME_PRI_REFLINE, COLORS.purple);
+  }
+  if(eqM && celestialEquatorLabel){
+    const p = nativePointFromRA(90,0);
+    add(celestialEquatorLabel, p.clone().applyMatrix4(eqM), p.clone().multiplyScalar(1.06).applyMatrix4(eqM), DOME_PRI_REFLINE, COLORS.amber);
+  }
+  if(diurnalCircleLabel){
+    const transitV = toThreeVec3(eqToVec(0, state.dec, state.phi));
+    const starH = hourAngleDeg(state.lst, state.ra);
+    const starV = toThreeVec3(eqToVec(starH, state.dec, state.phi));
+    const sepDeg = Math.acos(clamp(transitV.dot(starV), -1, 1))*DEG;
+    const labelHd = (sepDeg <= 6) ? (starH >= 0 ? -25 : 25) : 0;
+    const labelV = toThreeVec3(eqToVec(labelHd, state.dec, state.phi));
+    add(diurnalCircleLabel, labelV, labelV.clone().multiplyScalar(1.12), DOME_PRI_REFLINE, COLORS.text);
+  }
+  const rs = riseSetInfo(state.phi, state.dec);
+  if(!rs.circumpolar && !rs.neverRises && rs.H0deg != null){
+    if(diurnalRiseLabel){
+      const p = toThreeVec3(eqToVec(-rs.H0deg, state.dec, state.phi));
+      add(diurnalRiseLabel, p, p.clone().multiplyScalar(1.13), DOME_PRI_REFLINE, COLORS.text);
+    }
+    if(diurnalSetLabel){
+      const p = toThreeVec3(eqToVec(rs.H0deg, state.dec, state.phi));
+      add(diurnalSetLabel, p, p.clone().multiplyScalar(1.13), DOME_PRI_REFLINE, COLORS.text);
+    }
+  }
+
+  // ---- tier 1 (lowest): circumpolar above / never rises below ----
+  {
+    const lim = declLimits(state.phi);
+    const poleSign = state.phi >= 0 ? 1 : -1;
+    if(diurnalAboveLabel){
+      const p = toThreeVec3(eqToVec(180, poleSign*lim.up, state.phi));
+      add(diurnalAboveLabel, p, p.clone().multiplyScalar(1.12), DOME_PRI_LIMIT, COLORS.text);
+    }
+    if(diurnalBelowLabel){
+      const p = toThreeVec3(eqToVec(0, -poleSign*lim.up, state.phi));
+      add(diurnalBelowLabel, p, p.clone().multiplyScalar(1.12), DOME_PRI_LIMIT, COLORS.text);
+    }
+  }
+
+  return items;
+}
+
+// Small preallocated pool of leader lines (part d) -- thin, non-fat, always-
+// on-top UI hint lines, reused across frames and simply hidden (drawRange 0,
+// visible=false) rather than removed/recreated. Endpoints are plain 3D world
+// points (the anchor, and the label's own final world position), so these
+// draw as ordinary scene geometry -- no separate screen-space overlay needed.
+const DOME_LEADER_POOL_SIZE = 24;
+const domeLeaderPool = [];
+function ensureDomeLeaderPool(){
+  while(domeLeaderPool.length < DOME_LEADER_POOL_SIZE){
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(6);
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setDrawRange(0, 2);
+    const mat = new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:0.5, depthWrite:false, depthTest:false });
+    const line = new THREE.Line(geo, mat);
+    line.frustumCulled = false;
+    line.visible = false;
+    line.renderOrder = 5; // explicit render-order scheme (see buildDynamicArcsGroup()'s comment) -- above the arcs (0), below label sprites (10)
+    scene.add(line);
+    domeLeaderPool.push({ line:line, geo:geo, mat:mat, positions:positions });
+  }
+}
+const _domeLeaderEnd = new THREE.Vector3();
+function updateDomeLeaderLines(valid){
+  ensureDomeLeaderPool();
+  let used = 0;
+  for(let i=0;i<valid.length;i++){
+    const it = valid[i];
+    if(it.rejected || used >= domeLeaderPool.length) continue;
+    const sprite = it.sprite;
+    const st = domeLabelState.get(sprite);
+    if(!st || st.hidden) continue;
+    const dist = Math.hypot(st.x-it.anc.x, st.y-it.anc.y);
+    if(dist <= DOME_LABEL_LEADER_MIN_PX) continue;
+    const slot = domeLeaderPool[used++];
+    const arr = slot.positions;
+    arr[0]=it.anchorWorld.x; arr[1]=it.anchorWorld.y; arr[2]=it.anchorWorld.z;
+    if(sprite.parent){ _domeLeaderEnd.copy(sprite.position).applyMatrix4(sprite.parent.matrixWorld); }
+    else { _domeLeaderEnd.copy(sprite.position); }
+    arr[3]=_domeLeaderEnd.x; arr[4]=_domeLeaderEnd.y; arr[5]=_domeLeaderEnd.z;
+    slot.geo.attributes.position.needsUpdate = true;
+    slot.geo.computeBoundingSphere();
+    slot.mat.color.set(it.color || "#ffffff");
+    slot.line.visible = true;
+  }
+  for(let i=used;i<domeLeaderPool.length;i++) domeLeaderPool[i].line.visible = false;
+}
+
+const _domeUnprojectScratch = new THREE.Vector3();
+function layoutDomeLabels(w, h){
+  if(!camera || !w || !h) return;
+  camera.updateMatrixWorld(); // fresh camera transform for THIS frame's project()/unproject() -- applyCameraFromState() only touched position/quaternion, it never forces this itself
+  const items = collectDomeLabelItems();
+
+  const centerPx = domeToPx(_domeOriginWorld, w, h); // "the sphere centre in screen space"
+  items.forEach(function(it){
+    it.natPx = domeToPx(it.naturalWorld, w, h);
+    it.anc = domeToPx(it.anchorWorld, w, h);
+    const ph = it.sprite.userData.pixelHeight || 12, asp = it.sprite.userData.aspect || 1;
+    it.boxW = ph*asp + DOME_LABEL_PAD*2;
+    it.boxH = ph + DOME_LABEL_PAD*2;
+  });
+  const valid = centerPx.ok ? items.filter(function(it){ return it.natPx.ok && it.anc.ok; }) : [];
+  valid.sort(function(a,b){ return b.priority - a.priority; }); // higher priority placed first
+
+  const placedBoxes = [];
+  const sideSigns = [1,-1,1,-1,1];
+  function boxAt(x,y,bw,bh){ return { l:x-bw/2, r:x+bw/2, t:y-bh/2, b:y+bh/2 }; }
+  function overlaps(box, ob){
+    const ox = Math.min(box.r,ob.r) - Math.max(box.l,ob.l);
+    const oy = Math.min(box.b,ob.b) - Math.max(box.t,ob.t);
+    return ox > DOME_LABEL_HYSTERESIS && oy > DOME_LABEL_HYSTERESIS;
+  }
+
+  valid.forEach(function(it){
+    const dx0 = it.natPx.x - centerPx.x, dy0 = it.natPx.y - centerPx.y;
+    const len0 = Math.hypot(dx0,dy0) || 1;
+    const dirx = dx0/len0, diry = dy0/len0, tanx = -diry, tany = dirx;
+
+    let x = it.natPx.x, y = it.natPx.y;
+    let box = boxAt(x,y,it.boxW,it.boxH);
+    let tries = 0;
+    let collides = placedBoxes.some(function(ob){ return overlaps(box, ob); });
+    while(collides && tries < DOME_LABEL_MAX_TRIES){
+      const step = Math.floor(tries/2) + 1;
+      const radial = it.boxH*0.8*step, tangential = sideSigns[tries % sideSigns.length]*it.boxW*0.6*step;
+      x = it.natPx.x + dirx*radial + tanx*tangential;
+      y = it.natPx.y + diry*radial + tany*tangential;
+      box = boxAt(x,y,it.boxW,it.boxH);
+      tries++;
+      collides = placedBoxes.some(function(ob){ return overlaps(box, ob); });
+    }
+    it.rejected = collides;
+    if(!it.rejected){
+      // part (e): keep the whole box inside the panel
+      const halfW = Math.min(it.boxW/2 + DOME_LABEL_EDGE_MARGIN, w/2), halfH = Math.min(it.boxH/2 + DOME_LABEL_EDGE_MARGIN, h/2);
+      x = clamp(x, halfW, w-halfW);
+      y = clamp(y, halfH, h-halfH);
+      placedBoxes.push(boxAt(x,y,it.boxW,it.boxH));
+    }
+    it.targetX = x; it.targetY = y;
+  });
+
+  const activeSprites = new Set();
+  valid.forEach(function(it){
+    const sprite = it.sprite;
+    activeSprites.add(sprite);
+    let st = domeLabelState.get(sprite);
+    if(!st){ st = { x:it.targetX, y:it.targetY, hidden:false, clearStreak:0 }; domeLabelState.set(sprite, st); }
+
+    if(it.rejected){
+      st.hidden = true; st.clearStreak = 0;
+      sprite.visible = false;
+      return;
+    }
+
+    let dx = (it.targetX - st.x) * DOME_LABEL_SMOOTH, dy = (it.targetY - st.y) * DOME_LABEL_SMOOTH;
+    const stepLen = Math.hypot(dx,dy);
+    if(stepLen > DOME_LABEL_MAX_STEP_PX){ const k = DOME_LABEL_MAX_STEP_PX/stepLen; dx*=k; dy*=k; }
+    st.x += dx; st.y += dy;
+
+    if(st.hidden){
+      st.clearStreak++;
+      if(st.clearStreak < 2){ sprite.visible = false; return; }
+      st.hidden = false;
+    } else {
+      st.clearStreak = 0;
+    }
+    sprite.visible = true;
+
+    // write the final screen position back to world space at the anchor's own
+    // depth, then into the sprite's own parent-local space
+    const ndcX = (st.x/w)*2 - 1, ndcY = -((st.y/h)*2 - 1);
+    _domeUnprojectScratch.set(ndcX, ndcY, it.anc.ndcZ).unproject(camera);
+    if(sprite.parent) sprite.parent.worldToLocal(_domeUnprojectScratch);
+    sprite.position.copy(_domeUnprojectScratch);
+  });
+
+  updateDomeLeaderLines(valid);
+
+  // a label whose own toggle turned it off this frame never contested a slot
+  // above (collectDomeLabelItems() already skipped it) -- drop any leftover
+  // state now so a later re-appearance starts fresh, not mid-lerp from stale px
+  domeLabelState.forEach(function(_st, sprite){
+    if(!activeSprites.has(sprite)) domeLabelState.delete(sprite);
+  });
+
 }
 
 function renderThree(){
@@ -2173,7 +2522,7 @@ function renderThree(){
   renderer.setScissorTest(false);
   const _rect = glCanvas.getBoundingClientRect();
   renderer.setViewport(0, 0, Math.max(1, Math.round(_rect.width)), Math.max(1, Math.round(_rect.height)));
-  avoidNcpZenithOverlap();
+  layoutDomeLabels(state.mainW, state.mainH);
   renderer.render(scene, camera);
 }
 
@@ -2191,6 +2540,10 @@ function renderThree(){
       change — never from the per-frame path.)
    ========================================================================= */
 let arcAz, arcAlt, arcDec, arcH, arcRA;
+// below-horizon companions (Task 2): same colour/width as their above-horizon
+// counterpart, dashed + dim, drawn from the horizon crossing down -- see
+// splitArcByHorizon()/updateArcHorizonSplit()
+let arcAzBelow, arcAltBelow, arcDecBelow, arcHBelow, arcRABelow;
 let arrowAz, arrowAlt, arrowDec, arrowH, arrowRA;
 let labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj;
 let sectorAz, sectorEl, sectorDec, sectorAlpha; // coordinate-sector fans (Task 3)
@@ -2294,6 +2647,55 @@ function liftedThree(v){ return toThreeVec3(v).multiplyScalar(ARC_LIFT); }
 const ARC_LIFT_H = 1.006;
 function liftedThreeAt(v, k){ return toThreeVec3(v).multiplyScalar(k); }
 
+/* =========================================================================
+   TASK 2 -- coordinate-arc horizon split. A lifted arc's own point already
+   carries the "up" component in its (three.js-space) y -- toThreeVec3() maps
+   model z (=Up) straight onto three.js y, and ARC_LIFT/ARC_LIFT_H are
+   positive scalars, so a point's sign of .y IS the sign of its elevation; no
+   separate az/el lookup is needed. Splits an OPEN sampled path (not a closed
+   loop -- no wraparound merge, unlike rebuildDiurnalCircle()'s version of
+   this same idea) into the two point lists a solid "above" line and a dashed
+   "below" line should each get, inserting the exact z=0 crossing (lerp) into
+   BOTH lists so the two halves visibly meet at the horizon. Every one of
+   these five teaching arcs is a t in [0,1] sweep of at most ~180 degrees in
+   one spherical coordinate (Az fixed at the horizon; El linear in altitude,
+   so provably monotonic; delta/H/alpha bounded to a single sinusoidal hump
+   over that range) -- in every configuration this page can produce, that
+   crosses the horizon at most once. A pathological sweep with more than one
+   crossing would still render correctly for its first crossing; any further
+   run of the same polarity is simply concatenated onto the matching list, so
+   it would draw one extra short (and here, never-actually-occurring)
+   bridging segment rather than misbehave outright. */
+function splitArcByHorizon(pts){
+  const abovePts = [], belowPts = [];
+  let curAbove = pts[0].y >= 0;
+  (curAbove ? abovePts : belowPts).push(pts[0]);
+  for(let i=1;i<pts.length;i++){
+    const nowAbove = pts[i].y >= 0;
+    if(nowAbove !== curAbove){
+      const p0 = pts[i-1], p1 = pts[i];
+      const t = p0.y / (p0.y - p1.y);
+      const cross = p0.clone().lerp(p1, t);
+      abovePts.push(cross); belowPts.push(cross);
+      curAbove = nowAbove;
+    }
+    (curAbove ? abovePts : belowPts).push(pts[i]);
+  }
+  return { abovePts:abovePts, belowPts:belowPts };
+}
+// Feeds an arc's freshly-sampled `pts` into its above/below preallocated fat-
+// line pair, or hides both when the arc itself is off (`visible` false) --
+// same preallocated-buffer setLinePoints() every other dynamic arc already
+// uses each frame, just called twice (once per horizon side) instead of once.
+function updateArcHorizonSplit(aboveObj, belowObj, pts, visible){
+  if(!visible){ aboveObj.line.visible = false; belowObj.line.visible = false; return; }
+  const split = splitArcByHorizon(pts);
+  setLinePoints(aboveObj, split.abovePts);
+  aboveObj.line.visible = split.abovePts.length >= 2;
+  setLinePoints(belowObj, split.belowPts);
+  belowObj.line.visible = split.belowPts.length >= 2;
+}
+
 /* Coordinate-sector fans (Task 3): translucent triangle fans from the observer
    (world origin) out to the same sampled arc points the fat lines use — a
    preallocated position buffer (capacity ARC_N triangles = ARC_N*9 floats),
@@ -2307,7 +2709,7 @@ function makeSectorFan(colorInt, opacity){
   const mat = new THREE.MeshBasicMaterial({ color:colorInt, transparent:true, opacity:opacity, side:THREE.DoubleSide, depthWrite:false });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
-  mesh.renderOrder = -1; // draw below the coordinate-arc lines (renderOrder 0)
+  mesh.renderOrder = -5; // explicit render-order scheme (see buildDynamicArcsGroup()'s comment) -- below the arcs (0), above the grid/diurnal tier (-10)
   scene.add(mesh);
   return { mesh:mesh, geo:geo, positions:positions, capacity:cap, material:mat, baseOpacity:opacity };
 }
@@ -2350,17 +2752,61 @@ function updateWedgeLabel(sprite, pts, visible){
   sprite.visible = visible;
 }
 
+// Task 2: each coordinate arc's sample count (ARC_N+1) plus headroom for the
+// (at most a couple of) interpolated horizon-crossing points splitArcByHorizon()
+// inserts -- preallocated once here, never resized per frame.
+const ARC_CAP = ARC_N + 4;
+
+/* =========================================================================
+   EXPLICIT RENDER-ORDER SCHEME. The dome is built almost entirely of
+   transparent, depth-write:false surfaces (the didactic layers need to be
+   see-through and stack over one another), so THREE's default same-material
+   back-to-front DEPTH sort is what decides paint order among them -- and
+   that sort is only as stable as the objects' actual depth values. The Az
+   arc (drawn in the horizon plane, y=0) is exactly coplanar with the ground
+   plane (also y=0); two coplanar transparent objects at equal renderOrder
+   tie on depth, and WHICH one that tie resolves to can flip from frame to
+   frame as the camera or the arc geometry moves a fraction of a unit --
+   reading as the Az arc intermittently going dim (painted over by the 72%-
+   opaque ground). Fix: give every dome layer an EXPLICIT renderOrder so paint
+   order is deterministic and never falls back to a near-tied depth compare,
+   back to front:
+     -30  ground plane + its GridHelper
+     -20  sky dome (both passes) + horizon ring
+     -10  horizontal/equatorial grid lines, the star's hour circle, the
+          celestial equator, the meridian, the diurnal circle (incl. its
+          disk and the two declination-limit rings)
+      -5  coordinate-sector fans (Task 3)
+       0  the five coordinate arcs + their below-horizon dashed twins,
+          arrowheads, and other arc-adjacent markers
+       5  Task 1's leader lines
+      10  label sprites (set once, in makeTextSprite())
+   Every existing depthWrite/transparent flag is untouched -- only paint
+   order changes. ========================================================= */
 function buildDynamicArcsGroup(){
-  arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false);
-  arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false);
-  arcDec = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false);
-  arcH   = makeFatDynamicLine(COLORI.magenta, 1.0, 2.75, true);  // dashed hour-angle arc, on delta=-4
-  arcRA  = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false);   // solid right-ascension arc, on the equator
+  arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false, ARC_CAP);
+  arcAzBelow  = makeFatDynamicLine(COLORI.cyan, 0.3, 2.75, true, ARC_CAP);
+  arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false, ARC_CAP);
+  arcAltBelow = makeFatDynamicLine(COLORI.cyan, 0.3, 2.75, true, ARC_CAP);
+  arcDec = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false, ARC_CAP);
+  arcDecBelow = makeFatDynamicLine(COLORI.amber, 0.3, 2.75, true, ARC_CAP);
+  // h: solid above the horizon like the other four, now that "dashed" is how
+  // ANY of these arcs marks its below-horizon continuation (Task 2) -- was
+  // unconditionally dashed before, to read as "the hour-angle arc" at a
+  // glance; that distinction is dropped in favour of the shared, consistent
+  // above/below convention the brief asks for.
+  arcH   = makeFatDynamicLine(COLORI.magenta, 1.0, 2.75, false, ARC_CAP);
+  arcHBelow   = makeFatDynamicLine(COLORI.magenta, 0.3, 2.75, true, ARC_CAP);
+  arcRA  = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false, ARC_CAP);   // solid right-ascension arc, on the equator
+  arcRABelow  = makeFatDynamicLine(COLORI.amber, 0.3, 2.75, true, ARC_CAP);
+  [arcAz, arcAzBelow, arcAlt, arcAltBelow, arcDec, arcDecBelow, arcH, arcHBelow, arcRA, arcRABelow]
+    .forEach(function(o){ o.line.renderOrder = 0; }); // explicit -- see the render-order scheme above
   arrowAz  = makeArrowCone(COLORI.cyan);
   arrowAlt = makeArrowCone(COLORI.cyan);
   arrowDec = makeArrowCone(COLORI.amber);
   arrowH   = makeArrowCone(COLORI.magenta);
   arrowRA  = makeArrowCone(COLORI.amber);
+  [arrowAz, arrowAlt, arrowDec, arrowH, arrowRA].forEach(function(m){ m.renderOrder = 0; });
   labelAObj   = makeTextSprite("Az", COLORS.cyan, { math:true, upright:true, pixelHeight:18 });
   labelAltObj = makeTextSprite("El", COLORS.cyan, { math:true, upright:true, pixelHeight:18 });
   labelDecObj = makeTextSprite("δ", COLORS.amber, { math:true, pixelHeight:18 });
@@ -2427,7 +2873,8 @@ function updateDynamicArcs(){
   if(computeArcs){
     let pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec((i/ARC_N)*d.A_deg, 0)));
-    setLinePoints(arcAz, pts); arcAz.line.visible = showArcs; arrowAz.visible = showArcs;
+    updateArcHorizonSplit(arcAz, arcAzBelow, pts, showArcs);
+    arrowAz.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowAz, pts);
     labelAtMid(labelAObj, pts); labelAObj.visible = showArcs && showLabels;
     updateSectorFan(sectorAz, pts); sectorAz.mesh.visible = showSectorsAzEl;
@@ -2436,7 +2883,8 @@ function updateDynamicArcs(){
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec(d.A_deg, (i/ARC_N)*d.a_deg)));
-    setLinePoints(arcAlt, pts); arcAlt.line.visible = showArcs; arrowAlt.visible = showArcs;
+    updateArcHorizonSplit(arcAlt, arcAltBelow, pts, showArcs);
+    arrowAlt.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowAlt, pts);
     labelAtMid(labelAltObj, pts); labelAltObj.visible = showArcs && showLabels;
     updateSectorFan(sectorEl, pts); sectorEl.mesh.visible = showSectorsAzEl;
@@ -2445,21 +2893,23 @@ function updateDynamicArcs(){
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(eqToVec(d.H_deg, (i/ARC_N)*state.dec, state.phi)));
-    setLinePoints(arcDec, pts); arcDec.line.visible = showArcs; arrowDec.visible = showArcs;
+    updateArcHorizonSplit(arcDec, arcDecBelow, pts, showArcs);
+    arrowDec.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowDec, pts);
     labelAtMid(labelDecObj, pts); labelDecObj.visible = showArcs && showLabels;
     updateSectorFan(sectorDec, pts); sectorDec.mesh.visible = showSectorsRadec;
     updateSectorEdges(edgeDecStart, edgeDecEnd, pts, showSectorsRadec);
     updateWedgeLabel(wedgeLabelDec, pts, showSectorsRadec);
 
-    // h: dashed, on the small circle delta=-4 (a parallel just below the equator)
-    // so it never shares pixels with the alpha arc drawn ON the equator itself
+    // h: on the small circle delta=-4 (a parallel just below the equator) so
+    // it never shares pixels with the alpha arc drawn ON the equator itself
     pts = [];
     for(let i=0;i<=ARC_N;i++){
       const Hh = (i/ARC_N)*d.H_deg;
       pts.push(liftedThreeAt(eqToVec(Hh, -4, state.phi), ARC_LIFT_H));
     }
-    setLinePoints(arcH, pts); arcH.line.visible = showArcs; arrowH.visible = showArcs;
+    updateArcHorizonSplit(arcH, arcHBelow, pts, showArcs);
+    arrowH.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowH, pts);
     labelAtMid(labelHObj, pts); labelHObj.visible = showArcs && showLabels;
 
@@ -2470,7 +2920,8 @@ function updateDynamicArcs(){
       const Hh = lstDeg - (i/ARC_N)*alphaDeg;
       pts.push(liftedThree(eqToVec(Hh, 0, state.phi)));
     }
-    setLinePoints(arcRA, pts); arcRA.line.visible = showArcs; arrowRA.visible = showArcs;
+    updateArcHorizonSplit(arcRA, arcRABelow, pts, showArcs);
+    arrowRA.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowRA, pts);
     labelAtMid(labelRAObj, pts); labelRAObj.visible = showArcs && showLabels;
     updateSectorFan(sectorAlpha, pts); sectorAlpha.mesh.visible = showSectorsRadec;
@@ -2480,6 +2931,7 @@ function updateDynamicArcs(){
     starHourCircle.line.visible = showArcs;
   } else {
     hideAll([arcAz.line, arcAlt.line, arcDec.line, arcH.line, arcRA.line,
+             arcAzBelow.line, arcAltBelow.line, arcDecBelow.line, arcHBelow.line, arcRABelow.line,
              arrowAz, arrowAlt, arrowDec, arrowH, arrowRA,
              labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj,
              starHourCircle.line,
@@ -3283,13 +3735,20 @@ function drawRadecMap(ctx, w, h){
     ctx.font = "10px Inter, sans-serif";
     if(rs.circumpolar || rs.neverRises){
       const text = rs.circumpolar ? "circumpolar: never crosses the horizon" : "never rises: always below";
+      // default to the right end of the diurnal line, but flip to the left
+      // end when the star's own dot/name sits near the right edge (e.g.
+      // Polaris at RA~2.5h) -- otherwise the two amber labels collide
+      const starX = xOf(wrap24(state.ra));
+      const putLeft = starX > plotR - Math.max(90, plotW*0.12);
       const nearBottom = yStar > plotB - 24;
       const flipDown = (yStar - 12) < plotT + 4;
       ctx.fillStyle = COLORS.amber;
-      ctx.textAlign = "right";
+      ctx.textAlign = putLeft ? "left" : "right";
       ctx.textBaseline = flipDown ? "top" : "bottom";
       const ty = flipDown ? yStar+6 : (nearBottom ? yStar-16 : yStar-6);
-      ctx.fillText(text, plotR-4, ty);
+      // left anchor is nudged past the "NCP"/"SCP" corner labels (~20px wide)
+      // so the two never overlap when both land in the same corner
+      ctx.fillText(text, putLeft ? plotL+28 : plotR-4, ty);
     } else if(rs.H0deg != null){
       const riseAlpha = wrap24(lst + rs.H0deg/15);
       const setAlpha  = wrap24(lst - rs.H0deg/15);
@@ -5235,6 +5694,7 @@ function init(){
 
   const requestedTab = new URLSearchParams(location.search).get("tab");
   if(requestedTab && TAB_CONFIG[requestedTab]) switchTab(requestedTab);
+
 }
 
 if(document.readyState === "loading"){
