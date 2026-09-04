@@ -216,6 +216,19 @@
     .origin-timeline-month-label{ display:none; }
   }
 
+  /* ---------- hlst tab: step bar (Sidereal time) -- same absolutely-
+     positioned-overlay pattern as .origin-timeline above, one row lower than
+     the panel header, hidden except while the hlst tab is active. ---------- */
+  .lst-steps{
+    position:absolute; left:0; right:0; top:34px; height:40px; z-index:5;
+    display:flex; align-items:center; gap:12px; padding:0 12px;
+    background:color-mix(in srgb, var(--panel) 85%, transparent);
+    border-bottom:1px solid var(--border);
+  }
+  .lst-steps-caption{ font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .lst-steps-segmented button{ min-height:26px; font-size:11.5px; }
+  body.embed .lst-steps{ display:none; }
+
   .webgl-fallback{
     position:absolute; inset:0; display:none; align-items:center; justify-content:center;
     text-align:center; color:var(--muted); font-size:12px; padding:20px; z-index:4;
@@ -427,7 +440,7 @@
         <button type="button" data-tab="grids" role="tab" aria-selected="false">Two grids</button>
         <button type="button" data-tab="latitude" role="tab" aria-selected="false">Latitude</button>
         <button type="button" data-tab="diurnal" role="tab" aria-selected="false">Diurnal motion</button>
-        <button type="button" data-tab="hlst" role="tab" aria-selected="false">h &middot; &alpha; &middot; LST</button>
+        <button type="button" data-tab="hlst" role="tab" aria-selected="false">Sidereal time</button>
         <button type="button" data-tab="triangle" role="tab" aria-selected="false">Astronomical triangle</button>
       </div>
     </div>
@@ -632,10 +645,7 @@
               <span id="riseBadge" class="pill pill-rises">RISES &amp; SETS</span>
             </span>
           </div>
-          <div class="panel-readouts" id="readoutsHlst" style="display:none">
-            <span>LST = h + <span class="math" data-latex="\alpha">&alpha;</span> &rarr; <b id="hlstLST" class="tabular">&mdash;</b>h = <b id="hlstH" class="tabular">&mdash;</b>h + <b id="hlstAlpha" class="tabular">&mdash;</b>h</span>
-            <span class="unit" id="hlstCulminateNote">culminates when LST = &alpha;</span>
-          </div>
+          <div class="panel-readouts" id="readoutsHlst" style="display:none"></div>
           <div class="panel-readouts" id="readoutsOrigin" style="display:none">
             <span><b id="originDateLabel" class="tabular">&mdash;</b> (day <b id="originDayNum" class="tabular">&mdash;</b>)</span>
             <span>&middot;</span>
@@ -663,13 +673,21 @@
             <div class="origin-timeline-ticks" id="timelineTicks" aria-hidden="true"></div>
           </div>
         </div>
+        <div class="lst-steps" id="lstSteps" style="display:none">
+          <div class="segmented lst-steps-segmented" id="lstStepControl" role="tablist" aria-label="Sidereal time steps">
+            <button type="button" data-step="clock" class="active" role="tab" aria-selected="true">1 &middot; What LST is</button>
+            <button type="button" data-step="twoclocks" role="tab" aria-selected="false">2 &middot; Star clock vs Sun clock</button>
+            <button type="button" data-step="sum" role="tab" aria-selected="false">3 &middot; h = LST &minus; <span class="math" data-latex="\alpha">&alpha;</span></button>
+          </div>
+          <div class="lst-steps-caption" id="lstStepCaption"></div>
+        </div>
         <div class="panel-body">
           <div class="canvas-stack">
             <canvas id="glCanvas"></canvas>
             <canvas id="overlayCanvas"></canvas>
             <div id="dialHoverZone" class="dial-hover-zone" aria-hidden="true"></div>
           </div>
-          <div class="drag-hint">Drag to rotate &middot; Scroll to zoom &middot; &#8962; reset</div>
+          <div class="drag-hint" id="dragHint">Drag to rotate &middot; Scroll to zoom &middot; &#8962; reset</div>
           <div class="webgl-fallback" id="webglFallback" hidden>WebGL is required for the 3D dome. Try a modern desktop browser (Chrome, Firefox, Edge, Safari).</div>
         </div>
       </div>
@@ -682,6 +700,7 @@
           <div class="panel-readouts" id="stripLegend">
             <span id="legendRadec"><i class="swatch" style="background:var(--cyan)"></i>horizon (now) &nbsp; <i class="swatch" style="background:var(--amber)"></i>star's diurnal path &nbsp; <i class="swatch" style="background:var(--muted)"></i>Z = zenith &nbsp; <i class="swatch" style="background:var(--cyan)"></i>N E S W = compass points of the horizon</span>
             <span id="legendOrigin" style="display:none"><i class="swatch" style="background:var(--coral)"></i>ecliptic &nbsp; <i class="swatch" style="background:var(--amber)"></i>Sun</span>
+            <span id="legendSidereal" style="display:none"><i class="swatch" style="background:var(--cyan)"></i>LST at local noon (solid) / at midnight (dashed) &nbsp; <i class="swatch" style="background:var(--amber)"></i>star's &alpha;</span>
           </div>
         </div>
         <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
@@ -896,6 +915,24 @@ function toThreeVec3(v){ return new THREE.Vector3(v.x, v.z, -v.y); }
 function hourAngleDeg(lst_h, ra_h){ return wrap180((lst_h - ra_h)*15); }
 function hourAngleHours(lst_h, ra_h){ return wrap12(lst_h - ra_h); }
 
+/* hlst tab, step "sum": h = LST - alpha holds exactly only after a possible
+   24h correction, since h is confined to (-12,12] while LST-alpha (raw, not
+   wrapped) can run outside that band. Shared by the header readout, the
+   dial's own caption, and the formulas card. */
+function hlstSumWrapInfo(lst_h, ra_h){
+  const raw = lst_h - ra_h; // NOT wrapped into (-12,12]
+  const h_h = wrap12(raw);
+  let hSuffix = "", sSuffix = "", hSuffixLatex = "", sSuffixLatex = "", wrapped = false;
+  if(raw < -12){
+    hSuffix = " + 24h"; sSuffix = " − 24h"; wrapped = true;
+    hSuffixLatex = " + 24^{\\text{h}}"; sSuffixLatex = " - 24^{\\text{h}}";
+  } else if(raw > 12){
+    hSuffix = " − 24h"; sSuffix = " + 24h"; wrapped = true;
+    hSuffixLatex = " - 24^{\\text{h}}"; sSuffixLatex = " + 24^{\\text{h}}";
+  }
+  return { h_h:h_h, hSuffix:hSuffix, sSuffix:sSuffix, hSuffixLatex:hSuffixLatex, sSuffixLatex:sSuffixLatex, wrapped:wrapped };
+}
+
 function altAzFromEq(phi_deg, delta_deg, H_deg){
   const phi=phi_deg*RAD, delta=delta_deg*RAD, H=H_deg*RAD;
   const sinA_ = Math.sin(phi)*Math.sin(delta) + Math.cos(phi)*Math.cos(delta)*Math.cos(H);
@@ -1070,18 +1107,64 @@ const TAB_CONFIG = {
       '<p>The dividing lines are the two diurnal circles that just touch the horizon: at declination 90&deg; &minus; <span class="math" data-latex="\\varphi">&phi;</span> on the pole\'s side and <span class="math" data-latex="\\varphi">&phi;</span> &minus; 90&deg; on the other. Drag the declination slider — it snaps to them — to watch a star turn circumpolar or vanish for good.</p>'
   },
   hlst: {
-    label: "h · α · LST",
+    label: "Sidereal time",
     tint: "green",
-    phi: 40.7, lst: 21.0, star: "vega",
-    playing: false, speed: 0.5,
+    // top-level fields are seeded by switchTab() BEFORE setLstStep(state.lstStep)
+    // runs (see switchTab()'s own tail call) -- they match the "clock" step's
+    // own config below so a fresh page load never flashes mismatched state
+    // between the two; setLstStep() is what actually owns per-step behavior.
+    phi: 40.7, lst: 4.5, star: "betelgeuse",
+    playing: true, speed: 0.5,
     display: { hGrid:false, eGrid:true, meridian:true, diurnal:false, arcs:false, triangle:false, labels:true, allskyInset:true },
     sectorPair: "none",
-    gridAlpha: { h:1, e:0.5 },
-    badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:true, formulasExpanded:false,
-    aboutTitle: "Hour angle, right ascension, sidereal time",
+    gridAlpha: { h:1, e:0.7 },
+    badge: "none", poleReadout:false, locationHighlight:false, hlstReadout:true, formulasExpanded:true,
+    aboutTitle: "Local sidereal time: the sky's own clock",
     aboutHTML:
-      '<p>Three angles live on the celestial equator. Right ascension <span class="math" data-latex="\\alpha">&alpha;</span> belongs to the star: measured eastward from the vernal equinox &#9800; to the star\'s hour circle, it never changes. The hour angle h belongs to you: measured westward from your meridian to that same hour circle, it grows steadily as the sky turns — it is the star\'s time since culmination (negative before it). Local sidereal time LST is the hour angle of &#9800; itself — equivalently, the right ascension that is on your meridian right now. Lay the arcs end to end and the bookkeeping is LST = h + <span class="math" data-latex="\\alpha">&alpha;</span>. So a star culminates when LST = <span class="math" data-latex="\\alpha">&alpha;</span>, and knowing the sidereal time tells you at once which stars are up: those with <span class="math" data-latex="\\alpha">&alpha;</span> within a few hours of LST.</p>' +
-      '<p>The dial at the lower right is the same bookkeeping seen from above the north celestial pole: the meridian is pinned at the top, the right-ascension ticks turn with the sky, and the arcs <span class="math" data-latex="h">h</span> (meridian to star) and then <span class="math" data-latex="\\alpha">&alpha;</span> (star to &#9800;) add up to LST.</p>'
+      '<p>Watch the equatorial grid slide past your meridian. The right-ascension label crossing the meridian right now is the local sidereal time: LST is the <span class="math" data-latex="\\alpha">&alpha;</span> on the meridian. The sky turns 15&deg; per hour, so LST is a time — it runs 0h to 24h once per turn of the sky — but it is read from the stars, not from the Sun. Equivalently, LST is the hour angle of &#9800;: how far the zero point of right ascension has turned west of your meridian (the cyan arc). Both readings say the same thing.</p>' +
+      '<p>Why you want it: a catalogue gives a star\'s <span class="math" data-latex="\\alpha">&alpha;</span>, <span class="math" data-latex="\\delta">&delta;</span>, which never change; your telescope needs <span class="math-upright" data-latex="\\text{Az}">Az</span>, <span class="math-upright" data-latex="\\text{El}">El</span>, which change minute by minute. The one number linking them is how far the sky has turned, and that is LST. A star with right ascension <span class="math" data-latex="\\alpha">&alpha;</span> is on the meridian, at its highest, exactly when LST = <span class="math" data-latex="\\alpha">&alpha;</span>, and it is well placed while LST is within a few hours of <span class="math" data-latex="\\alpha">&alpha;</span>. The dial shows the same thing from above the north celestial pole: the meridian is the fixed pointer, the RA ring turns with the sky, and LST is the number under the pointer. "Local" because the meridian is yours: an observer 15&deg; of longitude to the west reads an LST one hour smaller.</p>',
+
+    // Three guided steps, selected by the step bar (#lstStepControl) under the
+    // main-panel header -- see setLstStep(). Only fields that DIFFER from a
+    // sensible baseline need to be given; setLstStep() falls back to this
+    // (top-level) cfg's own display/gridAlpha when a step omits them, and
+    // never touches state.phi (kept whatever the observer already has).
+    steps: {
+      clock: {
+        star: "betelgeuse", lst: 4.5, playing: true, speed: 0.5,
+        display: { hGrid:false, eGrid:true, meridian:true, diurnal:false, arcs:false, triangle:false, labels:true, allskyInset:true },
+        sectorPair: "none", gridAlpha: { h:1, e:0.7 },
+        camera: { thetaDeg:-11, phiDeg:38 }, formulasExpanded:true,
+        caption: "The RA on your meridian right now — read it off the ring as the sky turns.",
+        aboutTitle: "Local sidereal time: the sky's own clock",
+        aboutHTML:
+          '<p>Watch the equatorial grid slide past your meridian. The right-ascension label crossing the meridian right now is the local sidereal time: LST is the <span class="math" data-latex="\\alpha">&alpha;</span> on the meridian. The sky turns 15&deg; per hour, so LST is a time — it runs 0h to 24h once per turn of the sky — but it is read from the stars, not from the Sun. Equivalently, LST is the hour angle of &#9800;: how far the zero point of right ascension has turned west of your meridian (the cyan arc). Both readings say the same thing.</p>' +
+          '<p>Why you want it: a catalogue gives a star\'s <span class="math" data-latex="\\alpha">&alpha;</span>, <span class="math" data-latex="\\delta">&delta;</span>, which never change; your telescope needs <span class="math-upright" data-latex="\\text{Az}">Az</span>, <span class="math-upright" data-latex="\\text{El}">El</span>, which change minute by minute. The one number linking them is how far the sky has turned, and that is LST. A star with right ascension <span class="math" data-latex="\\alpha">&alpha;</span> is on the meridian, at its highest, exactly when LST = <span class="math" data-latex="\\alpha">&alpha;</span>, and it is well placed while LST is within a few hours of <span class="math" data-latex="\\alpha">&alpha;</span>. The dial shows the same thing from above the north celestial pole: the meridian is the fixed pointer, the RA ring turns with the sky, and LST is the number under the pointer. "Local" because the meridian is yours: an observer 15&deg; of longitude to the west reads an LST one hour smaller.</p>'
+      },
+      twoclocks: {
+        // no dome -- the sidereal stage module owns the main canvas and strip;
+        // star/phi are left as whatever they already are (the Star card stays
+        // visible so its selection still feeds the strip chart)
+        playing: true, speed: 4, formulasExpanded: true,
+        caption: "The stars return every 23 h 56 m 04 s, the Sun every 24 h: a sidereal clock gains 3 m 56 s a day.",
+        aboutTitle: "Why not just use the Sun's clock?",
+        aboutHTML:
+          '<p>Ordinary clocks follow the Sun: 24 h from noon to noon. But the stars come back to your meridian a little sooner — every 23 h 56 m 04 s, the sidereal day, which is Earth\'s true rotation period. The reason is Earth\'s orbit: in one day Earth also moves about 1&deg; around the Sun, so after one full turn with respect to the stars the Sun is not quite back on the meridian; Earth must turn an extra 1&deg;, about 3 m 56 s, to face it again.</p>' +
+          '<p>So a sidereal clock gains 3 m 56 s on a solar clock every day: 2 h a month, a full 24 h a year (a year holds 365.25 solar days but 366.25 sidereal days). At noon the sidereal clock reads the Sun\'s own right ascension, LST = <span class="math" data-latex="\\alpha">&alpha;</span>&#9737;, which is 0h on March 20 and grows through the year. That is why the same star crosses the meridian 4 minutes earlier each night, why the constellations march with the seasons — and why a Sun clock cannot tell you which stars are up without also knowing the date. LST folds both into one number.</p>' +
+          '<p>Play: starting at noon on March 20, when the Sun sits at &#9800; on your meridian, the pointer turns with Earth. It reaches &#9800; first — one sidereal day — and needs a little more to reach the Sun, one solar day; step forward a few days and the extra turn grows. The chart below tracks the two clocks through the year and marks when the chosen star crosses the meridian at midnight.</p>'
+      },
+      sum: {
+        star: "betelgeuse", lst: 8.0, playing: false, speed: 0.5,
+        display: { hGrid:false, eGrid:true, meridian:true, diurnal:false, arcs:false, triangle:false, labels:true, allskyInset:true },
+        sectorPair: "none", gridAlpha: { h:1, e:0.5 },
+        camera: { thetaDeg:-11, phiDeg:38 }, formulasExpanded:true,
+        caption: "The pointer reads two things: ♈ sits at LST, the star at h. They ride the ring α apart, so h = LST − α.",
+        aboutTitle: "Two readings on one dial: h = LST − α",
+        aboutHTML:
+          '<p>Two things ride the celestial equator with the sky: the vernal equinox &#9800; and the star\'s hour circle. They are locked together, <span class="math" data-latex="\\alpha">&alpha;</span> apart — right ascension is exactly the star\'s fixed distance east of &#9800;. Your meridian is the fixed pointer. Read &#9800; against it and you get the hour angle of &#9800;, which is LST; read the star against it and you get the star\'s hour angle h. Both are hour angles, measured the same way — westward from the meridian — and both grow at 15&deg; per hour.</p>' +
+          '<p>Because the two ride together, the two readings always differ by the same fixed amount: h = LST &minus; <span class="math" data-latex="\\alpha">&alpha;</span>. That is the working form. A clock gives LST, the catalogue gives <span class="math" data-latex="\\alpha">&alpha;</span>, and the subtraction places the star in your sky: h &lt; 0 still east of the meridian and rising, h = 0 on the meridian (LST = <span class="math" data-latex="\\alpha">&alpha;</span>, culmination), h &gt; 0 west and sinking. Rearranged it reads LST = h + <span class="math" data-latex="\\alpha">&alpha;</span> — the arcs h and <span class="math" data-latex="\\alpha">&alpha;</span> laid end to end make LST. On the dial the <span class="math" data-latex="\\alpha">&alpha;</span> arc runs from &#9800; to the star in its own eastward sense; when the star is east of the meridian it reaches past the pointer, and h comes out negative.</p>'
+      }
+    }
   },
   triangle: {
     label: "Astronomical triangle",
@@ -1112,6 +1195,7 @@ const TAB_CONFIG = {
    ========================================================================= */
 const state = {
   tab: "origin",
+  lstStep: "clock",         // hlst tab only: "clock" | "twoclocks" | "sum" -- see TAB_CONFIG.hlst.steps
   phi: 40.7, locationKey: "newark",
   lst: 6,                    // hours, continuous display value
   starKey: "vega", ra: 18.615, dec: 38.78,
@@ -1176,6 +1260,9 @@ function recomputeDerived(){
 let renderer, scene, camera, glCanvas;
 /* height of the Origin tab's timeline strip, reserved above the stage's viewport captions */
 function originHudInsetPx(){ return document.body.classList.contains("embed") ? 0 : 46; }
+/* height of the hlst tab's step bar (#lstSteps), reserved above the dome/
+   sidereal-stage viewport captions -- mirrors originHudInsetPx() above */
+function lstHudInsetPx(){ return document.body.classList.contains("embed") ? 0 : 40; }
 let originStage = null; // lazily constructed on first activation of the "origin" tab -- see ensureOriginStage()
 let hGridGroup, meridianGroup, equatorialGroup, diurnalGroup;
 let meridianUpper, meridianLower; // {line,material,baseOpacity,baseLinewidth} wrappers, for applyHighlight()
@@ -1195,6 +1282,8 @@ let zenLabel; // the "Z" zenith text sprite (child of scene, fixed)
 let ncpLabel, scpLabel; // "NCP"/"SCP" text sprites (children of polarAxisPart)
 let equinoxLabel; // the vernal-equinox glyph text sprite (child of equinoxPart)
 let celestialEquatorLabel; // the "celestial equator" text sprite (child of eGridPart)
+let eqHourLabels = []; // [{sprite,raH}] -- hlst tab (steps clock/sum) RA hour labels "2h".."22h" on the equator (child of eGridPart)
+let meridianEquatorMarker; // small cyan sphere at H=0,delta=0 -- the meridian/equator crossing (hlst tab, steps clock/sum)
 let compassLabels = []; // [{sprite,angDeg}] for the N/E/S/W text sprites (children of hGridGroup)
 let starSphere, starGlow, starLabel, starLabelText = null;
 let starHourCircle; // the star's own hour circle (great circle through both poles at native RA = alpha) — Task B
@@ -1235,6 +1324,15 @@ function applyDisplayVisibility(){
   // at that tab's default camera vantage -- hide just the label there; the
   // meridian line itself (also in meridianGroup) stays, per the line above
   if(meridianLabel) meridianLabel.visible = state.tab !== "triangle";
+
+  // hlst tab (steps clock/sum only): RA hour labels on the equator, gated by
+  // the eGrid group's own visibility (above) AND the Labels toggle here --
+  // hidden on every other tab/step (grids/latitude/diurnal/triangle, and the
+  // hlst "twoclocks" step, which has no dome at all)
+  const showHlstEquatorExtras = state.tab === "hlst" && (state.lstStep === "clock" || state.lstStep === "sum");
+  const eqHourVisible = showHlstEquatorExtras && (!!state.display.labels || hk === "labels");
+  eqHourLabels.forEach(function(item){ item.sprite.visible = eqHourVisible; });
+
   requestRender();
 }
 
@@ -1615,6 +1713,28 @@ function ensureOriginStage(){
   originStage.resize(Math.round(rect.width), Math.round(rect.height), originHudInsetPx());
 }
 
+/* =========================================================================
+   SIDEREAL STAGE (hlst tab, step "twoclocks") -- a separate ES module
+   (altaz_sidereal_stage.js, Canvas 2D, no three.js) loaded lazily via a
+   dynamic import so the page never depends on that file at load time. While
+   it is absent/still loading, drawOverlay()/drawStrip() fall back to a plain
+   "module not loaded" message -- see those functions below. */
+let siderealStage = null, siderealStagePromise = null;
+function ensureSiderealStage(){
+  if(siderealStage) return Promise.resolve(siderealStage);
+  if(!siderealStagePromise){
+    siderealStagePromise = import('./altaz_sidereal_stage.js').then(function(m){
+      siderealStage = m.createSiderealStage({ COLORS:COLORS, hexAlpha:hexAlpha });
+      return siderealStage;
+    }).catch(function(err){
+      console.error("sidereal stage failed to load", err);
+      siderealStagePromise = null;
+      return null;
+    });
+  }
+  return siderealStagePromise;
+}
+
 function buildStaticScene(){
   // ground
   const groundGeo = new THREE.PlaneGeometry(6,6);
@@ -1749,7 +1869,7 @@ function buildEquatorialGroup(){
     r.line.renderOrder = -10;
     eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base:0.45 });
     celestialEquatorLabel = makeTextSprite("celestial equator", COLORS.amber, { pixelHeight:12 });
-    celestialEquatorLabel.position.copy(nativePointFromRA(90,0).multiplyScalar(1.06)); // near the east end of the equator
+    celestialEquatorLabel.position.copy(nativePointFromRA(105,0).multiplyScalar(1.06)); // near the east end of the equator, clear of the "6h" RA label at RA 90
     eGridPart.add(celestialEquatorLabel);
   }
   // declination circles +-30, +-60
@@ -1765,6 +1885,21 @@ function buildEquatorialGroup(){
     const r = makeLineLoop(nativeHourCirclePoints(raH*15), COLORI.amber, bright ? 0.32 : 0.14);
     r.line.renderOrder = -10;
     eGridPart.add(r.line); matRefs.eGrid.push({ material:r.material, base: bright ? 0.32 : 0.14 });
+  }
+  // RA hour labels "2h".."22h" around the celestial equator -- hlst tab only
+  // (steps clock/sum; see applyDisplayVisibility()'s eqHourLabels gating),
+  // upright amber text so they read like a clock face's numerals. No "0h":
+  // the equinoxLabel's own "♈" glyph already marks that point.
+  {
+    const list = [];
+    for(let rH=2; rH<=22; rH+=2){
+      const lbl = makeTextSprite(rH + "h", COLORS.amber, { pixelHeight:11, upright:true });
+      lbl.position.copy(nativePointFromRA(rH*15, 0).multiplyScalar(1.045));
+      lbl.visible = false; // gated on (per applyDisplayVisibility()); default hidden until an hlst step turns it on
+      eGridPart.add(lbl);
+      list.push({ sprite:lbl, raH:rH });
+    }
+    eqHourLabels = list;
   }
 
   // polar axis (dashed magenta line through the group) + NCP/SCP markers
@@ -2326,8 +2461,14 @@ function collectDomeLabelItems(){
     add(meridianLabel, mp, mp.clone().multiplyScalar(1.15), DOME_PRI_REFLINE, COLORS.purple);
   }
   if(eqM && celestialEquatorLabel){
-    const p = nativePointFromRA(90,0);
+    const p = nativePointFromRA(105,0);
     add(celestialEquatorLabel, p.clone().applyMatrix4(eqM), p.clone().multiplyScalar(1.06).applyMatrix4(eqM), DOME_PRI_REFLINE, COLORS.amber);
+  }
+  if(eqM && eqHourLabels.length){
+    eqHourLabels.forEach(function(item){
+      const p = nativePointFromRA(item.raH*15, 0);
+      add(item.sprite, p.clone().applyMatrix4(eqM), p.clone().multiplyScalar(1.045).applyMatrix4(eqM), DOME_PRI_REFLINE, COLORS.amber);
+    });
   }
   if(diurnalCircleLabel){
     const transitV = toThreeVec3(eqToVec(0, state.dec, state.phi));
@@ -2519,6 +2660,7 @@ function layoutDomeLabels(w, h){
 function renderThree(){
   if(!state.webglOK || !renderer) return;
   if(state.tab === "origin"){ if(originStage) originStage.render(); return; }
+  if(state.tab === "hlst" && state.lstStep === "twoclocks") return; // dome hidden this step; the sidereal stage owns the main canvas
   // The origin stage's own render() leaves the SHARED renderer's scissor
   // test enabled and its viewport/scissor rect set to one of its own two
   // sub-viewports (it never restores full-canvas state when done, since it
@@ -2858,6 +3000,14 @@ function buildDynamicArcsGroup(){
   hlstHLabel     = makeTextSprite("h", COLORS.magenta, { math:true, pixelHeight:18 });
   hlstLstLabel   = makeTextSprite("LST", COLORS.cyan, { pixelHeight:18 });
   scene.add(hlstAlphaLabel, hlstHLabel, hlstLstLabel);
+
+  // meridian∩equator marker (hlst tab, steps clock/sum): the point H=0,delta=0
+  // -- the RA currently on the meridian, i.e. LST -- repositioned every frame
+  // in updateDynamicArcs() since it depends on state.phi.
+  meridianEquatorMarker = new THREE.Mesh(new THREE.SphereGeometry(0.016,12,8), new THREE.MeshBasicMaterial({ color:COLORI.cyan }));
+  meridianEquatorMarker.renderOrder = 0;
+  meridianEquatorMarker.visible = false;
+  scene.add(meridianEquatorMarker);
 }
 
 function updateDynamicArcs(){
@@ -2946,30 +3096,63 @@ function updateDynamicArcs(){
   }
 
   if(showHlst){
+    const step = state.lstStep;
     const alphaDeg = state.ra*15, lstDeg = state.lst*15;
     const hDeg = wrap180(lstDeg - alphaDeg);
 
-    let pts = [];
-    for(let i=0;i<=ARC_N;i++){ const Hh = lstDeg - (i/ARC_N)*alphaDeg; pts.push(liftedThree(eqToVec(Hh,-4,state.phi))); }
-    setLinePoints(hlstAlpha, pts); hlstAlpha.line.visible = true;
-    placeArrowAtEnd(hlstAlphaArrow, pts);
-    labelAtMid(hlstAlphaLabel, pts); hlstAlphaLabel.visible = showLabels;
+    // meridian/equator marker (H=0, delta=0): the point whose RA is LST --
+    // shown in steps clock/sum, hidden in twoclocks (no dome that step)
+    meridianEquatorMarker.position.copy(liftedThree(eqToVec(0,0,state.phi)));
+    meridianEquatorMarker.visible = (step === "clock" || step === "sum");
 
-    pts = [];
-    for(let i=0;i<=ARC_N;i++){ const Hh = (i/ARC_N)*hDeg; pts.push(liftedThree(eqToVec(Hh,-8,state.phi))); }
-    setLinePoints(hlstH, pts); hlstH.line.visible = true;
-    placeArrowAtEnd(hlstHArrow, pts);
-    labelAtMid(hlstHLabel, pts); hlstHLabel.visible = showLabels;
+    // "Two readings on one dial": h and LST are both hour angles measured
+    // the SAME way -- westward from the meridian -- so both start at the
+    // pointer. h runs meridian->star (westward/arrow-forward when h>0,
+    // eastward when h<0). LST runs meridian->equinox, always westward. alpha
+    // keeps its own textbook definition, EASTWARD from the equinox to the
+    // star (equinox->star, the opposite sense from h/LST) -- so h = LST-alpha
+    // (equivalently LST = h+alpha) even though the three arrows do not chain
+    // head-to-tail on screen; see the "sum" step's About text.
+    if(step === "sum"){
+      let pts = [];
+      for(let i=0;i<=ARC_N;i++){ const Hh = (i/ARC_N)*hDeg; pts.push(liftedThree(eqToVec(Hh,-8,state.phi))); }
+      setLinePoints(hlstH, pts); hlstH.line.visible = true;
+      placeArrowAtEnd(hlstHArrow, pts);
+      labelAtMid(hlstHLabel, pts); hlstHLabel.visible = showLabels;
 
-    pts = [];
-    for(let i=0;i<=ARC_N;i++){ const Hh = lstDeg - (i/ARC_N)*lstDeg; pts.push(liftedThree(eqToVec(Hh,0,state.phi))); }
-    setLinePoints(hlstLst, pts); hlstLst.line.visible = true;
-    placeArrowAtEnd(hlstLstArrow, pts);
-    labelAtMid(hlstLstLabel, pts); hlstLstLabel.visible = showLabels;
+      pts = [];
+      for(let i=0;i<=ARC_N;i++){ const Hh = lstDeg - (i/ARC_N)*alphaDeg; pts.push(liftedThree(eqToVec(Hh,-4,state.phi))); }
+      setLinePoints(hlstAlpha, pts); hlstAlpha.line.visible = true;
+      placeArrowAtEnd(hlstAlphaArrow, pts);
+      labelAtMid(hlstAlphaLabel, pts); hlstAlphaLabel.visible = showLabels;
+
+      pts = [];
+      for(let i=0;i<=ARC_N;i++){ const Hh = (i/ARC_N)*lstDeg; pts.push(liftedThree(eqToVec(Hh,0,state.phi))); }
+      setLinePoints(hlstLst, pts); hlstLst.line.visible = true;
+      placeArrowAtEnd(hlstLstArrow, pts);
+      labelAtMid(hlstLstLabel, pts); hlstLstLabel.visible = showLabels;
+
+      starHourCircle.line.visible = true;
+    } else if(step === "clock"){
+      const pts = [];
+      for(let i=0;i<=ARC_N;i++){ const Hh = (i/ARC_N)*lstDeg; pts.push(liftedThree(eqToVec(Hh,0,state.phi))); }
+      setLinePoints(hlstLst, pts); hlstLst.line.visible = true;
+      placeArrowAtEnd(hlstLstArrow, pts);
+      labelAtMid(hlstLstLabel, pts); hlstLstLabel.visible = showLabels;
+
+      hideAll([hlstAlpha.line, hlstH.line, hlstAlphaArrow, hlstHArrow, hlstAlphaLabel, hlstHLabel]);
+      starHourCircle.line.visible = true;
+    } else { // twoclocks -- no dome content at all this step
+      hideAll([hlstAlpha.line, hlstH.line, hlstLst.line,
+               hlstAlphaArrow, hlstHArrow, hlstLstArrow,
+               hlstAlphaLabel, hlstHLabel, hlstLstLabel]);
+      starHourCircle.line.visible = false;
+    }
   } else {
     hideAll([hlstAlpha.line, hlstH.line, hlstLst.line,
              hlstAlphaArrow, hlstHArrow, hlstLstArrow,
              hlstAlphaLabel, hlstHLabel, hlstLstLabel]);
+    if(meridianEquatorMarker) meridianEquatorMarker.visible = false;
   }
 
   updateTriangle();
@@ -3137,7 +3320,7 @@ function updateTriangle(){
       h + alpha = LST by construction — verified in the report (check #9/#10).
    ========================================================================= */
 function dialGeometry(w, h){
-  const R = 0.16*Math.min(w,h);
+  const R = clamp(0.19*Math.min(w,h), 110, 240);
   const margin = 16;
   return { R:R, cx: w-R-margin, cy: h-R-margin };
 }
@@ -3170,7 +3353,17 @@ function drawOverlay(){
     if(state.originDisplay.analemmaInset) drawAnalemmaInset(ctx, w, h);
     return;
   }
-  if(state.display.allskyInset && state.derived) drawAllskyInset(ctx, w, h);
+  if(state.tab === "hlst" && state.lstStep === "twoclocks"){
+    setDialHoverZone(null);
+    if(siderealStage){
+      siderealStage.draw(ctx, w, h, { topInsetPx: lstHudInsetPx(), starName: currentStarName(), starRA: state.ra });
+    } else {
+      drawSiderealStagePlaceholder(ctx, w, h);
+    }
+    return;
+  }
+  const topOffset = (state.tab === "hlst") ? lstHudInsetPx() : 0;
+  if(state.display.allskyInset && state.derived) drawAllskyInset(ctx, w, h, topOffset);
   if(state.tab === "hlst"){
     const geom = dialGeometry(w, h);
     drawHlstDial(ctx, w, h, geom);
@@ -3180,9 +3373,53 @@ function drawOverlay(){
   }
 }
 
+/* Plain centered fallback shown on the main canvas while
+   altaz_sidereal_stage.js hasn't loaded yet (or failed to load) -- see
+   ensureSiderealStage(). Must never throw; paints an opaque background like
+   the real module's own draw() would. */
+function drawSiderealStagePlaceholder(ctx, w, h){
+  ctx.save();
+  ctx.fillStyle = COLORS.canvas;
+  ctx.fillRect(0,0,w,h);
+  ctx.font = "13px Inter, sans-serif";
+  ctx.fillStyle = COLORS.muted;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("Star clock vs Sun clock — module not loaded", w/2, h/2);
+  ctx.restore();
+}
+
 function drawHlstDial(ctx, w, h, geom){
   const R = geom.R, cx = geom.cx, cy = geom.cy;
+  const mode = (state.lstStep === "clock") ? "clock" : "sum"; // dial is only drawn in steps clock/sum -- see drawOverlay()
   function pt(theta, r){ return { x: cx + r*Math.sin(theta), y: cy - r*Math.cos(theta) }; }
+  // filled arrowhead tangent to the circle of radius r at angle theta; cw=true
+  // draws it pointing in the direction of INCREASING theta (clockwise, i.e.
+  // westward on this dial), cw=false points the opposite way (eastward)
+  function arrowheadAt(theta, r, cw, colorHex){
+    const p = pt(theta, r);
+    let tx = Math.cos(theta), ty = Math.sin(theta);
+    if(!cw){ tx = -tx; ty = -ty; }
+    const nx = -ty, ny = tx;
+    const len = 7, halfW = 2.6;
+    const bx = p.x - tx*len, by = p.y - ty*len;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(bx + nx*halfW, by + ny*halfW);
+    ctx.lineTo(bx - nx*halfW, by - ny*halfW);
+    ctx.closePath();
+    ctx.fillStyle = colorHex;
+    ctx.fill();
+  }
+
+  // value label with a translucent panel-deep backing box, so it stays
+  // legible where it crosses a tick or a neighbouring arc
+  function boxedLabel(text, x, y, colorHex){
+    const tw = ctx.measureText(text).width;
+    ctx.fillStyle = hexAlpha(COLORS["panel-deep"], 0.78);
+    ctx.fillRect(x - tw/2 - 3, y - 7, tw + 6, 14);
+    ctx.fillStyle = colorHex;
+    ctx.fillText(text, x, y);
+  }
 
   ctx.save();
   ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU);
@@ -3204,6 +3441,22 @@ function drawHlstDial(ctx, w, h, geom){
     ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
   }
 
+  // hour numbers at each 2h tick, and the ♈ glyph at 0h in its place
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for(let r=0;r<24;r+=2){
+    const th = wrap24(lst-r)*15*RAD;
+    const p = pt(th, R*0.78);
+    if(r === 0){
+      ctx.font = "13px serif"; ctx.fillStyle = COLORS.amber;
+      ctx.fillText("♈", p.x, p.y);
+    } else {
+      const strong = (r===6 || r===12 || r===18);
+      ctx.font = "9px Inter, sans-serif";
+      ctx.fillStyle = hexAlpha(COLORS.muted, strong ? 0.9 : 0.55);
+      ctx.fillText(r+"h", p.x, p.y);
+    }
+  }
+
   // meridian tick, fixed at top
   ctx.strokeStyle = COLORS.text; ctx.lineWidth = 1.4;
   const m1 = pt(0, R*0.80), m2 = pt(0, R*1.0);
@@ -3219,7 +3472,7 @@ function drawHlstDial(ctx, w, h, geom){
   const titleY2 = meridianLabelY - 12, titleY1 = titleY2 - 13;
   ctx.font = "600 12px Inter, sans-serif";
   ctx.fillStyle = COLORS.text;
-  ctx.fillText("LST dial", cx, titleY1);
+  ctx.fillText(mode === "clock" ? "Sidereal clock" : "LST dial", cx, titleY1);
   ctx.font = "10px Inter, sans-serif";
   ctx.fillStyle = COLORS.muted;
   ctx.fillText("seen from above NCP", cx, titleY2);
@@ -3236,33 +3489,93 @@ function drawHlstDial(ctx, w, h, geom){
   }
   // Three nested radii -- LST outermost, h middle, alpha innermost -- so all
   // three stay visible at once instead of h/alpha sharing a radius and one
-  // masking the other. All still measured clockwise from the meridian mark
-  // at the top, as before: h sweeps top -> star (signed); alpha continues
-  // clockwise from star -> equinox (theta_equinox - theta_star == alpha*15
-  // exactly, always positive, regardless of h's sign); LST sweeps top -> equinox.
+  // masking the other. "Two readings on one dial": h and LST are both hour
+  // angles, measured the SAME way -- westward from the meridian -- so both
+  // START at the pointer: LST sweeps meridian -> equinox (always clockwise);
+  // h sweeps meridian -> star (clockwise when h>0, counter-clockwise when
+  // h<0). alpha keeps its own textbook definition, equinox -> star EASTWARD
+  // (counter-clockwise), the opposite sense from h/LST -- so h = LST-alpha
+  // even though the arrows don't chain head-to-tail on screen.
   const R_LST = R*0.92, R_H = R*0.72, R_ALPHA = R*0.54;
-  ctx.setLineDash([]);
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = COLORS.cyan;    arcPath(0, thetaEquinox, R_LST);
 
-  ctx.lineWidth = 3;
-  ctx.setLineDash([6,4]);
-  ctx.strokeStyle = COLORS.magenta; arcPath(0, thetaStar, R_H);
-  ctx.setLineDash([]);
+  if(mode === "clock"){
+    ctx.setLineDash([]);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = COLORS.cyan; arcPath(0, thetaEquinox, R_LST);
+    arrowheadAt(thetaEquinox, R_LST, true, COLORS.cyan);
 
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = COLORS.amber;   arcPath(thetaStar, thetaStar + norm360((thetaEquinox-thetaStar)*DEG)*RAD, R_ALPHA);
+    if(thetaEquinox*DEG >= 12){
+      const midTh = thetaEquinox/2;
+      const p = pt(midTh, R_LST - 13);
+      ctx.font = "600 10px Inter, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      boxedLabel("LST", p.x, p.y, COLORS.cyan);
+    }
 
-  const starP = pt(thetaStar, R_H);
-  const eqP = pt(thetaEquinox, R_ALPHA);
-  ctx.fillStyle = COLORS.amber;
-  ctx.beginPath(); ctx.arc(starP.x,starP.y,3.2,0,TAU); ctx.fill();
-  ctx.font = "10px Inter, sans-serif";
-  ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  ctx.fillText(currentStarName(), starP.x+6, starP.y);
-  ctx.font = "13px serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("♈", eqP.x, eqP.y);
+    const starP = pt(thetaStar, R_LST);
+    ctx.fillStyle = COLORS.amber;
+    ctx.beginPath(); ctx.arc(starP.x,starP.y,3.2,0,TAU); ctx.fill();
+    ctx.font = "10px Inter, sans-serif";
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(currentStarName(), starP.x+6, starP.y);
+  } else {
+    ctx.setLineDash([]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = COLORS.cyan;    arcPath(0, thetaEquinox, R_LST);
+    arrowheadAt(thetaEquinox, R_LST, true, COLORS.cyan);
+
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6,4]);
+    ctx.strokeStyle = COLORS.magenta; arcPath(0, thetaStar, R_H);
+    ctx.setLineDash([]);
+    arrowheadAt(thetaStar, R_H, thetaStar >= 0, COLORS.magenta);
+
+    // alpha: drawn from the equinox counter-clockwise (eastward) to the star
+    // -- its own textbook definition -- with the arrowhead at the star
+    const alphaSpanRad = norm360((thetaEquinox-thetaStar)*DEG)*RAD;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = COLORS.amber;   arcPath(thetaEquinox, thetaEquinox - alphaSpanRad, R_ALPHA);
+    arrowheadAt(thetaStar, R_ALPHA, false, COLORS.amber);
+
+    // "two readings on one dial": a thin amber SPOKE for each of the two
+    // things riding the ring -- the equinox (its glyph already sits on the
+    // ring at 0h, so its spoke leaves a gap there) and the star (dot + name
+    // on the ring, like clock mode) -- so the arcs visibly end on the spokes
+    // and the pointer reads each spoke's angle: LST for the equinox, h for
+    // the star
+    ctx.lineWidth = 1; ctx.strokeStyle = hexAlpha(COLORS.amber, 0.55);
+    [[0.50,0.72],[0.84,0.98]].forEach(function(seg){
+      const a = pt(thetaEquinox, R*seg[0]), b = pt(thetaEquinox, R*seg[1]);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    });
+    { const a = pt(thetaStar, R*0.50), b = pt(thetaStar, R*0.98);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
+    const starP = pt(thetaStar, R_LST);
+    ctx.fillStyle = COLORS.amber;
+    ctx.beginPath(); ctx.arc(starP.x,starP.y,3.2,0,TAU); ctx.fill();
+    ctx.font = "10px Inter, sans-serif";
+    ctx.textAlign = (starP.x >= cx) ? "left" : "right"; ctx.textBaseline = "middle";
+    ctx.fillText(currentStarName(), starP.x + (starP.x >= cx ? 6 : -6), starP.y);
+
+    // value labels at each arc's own midpoint -- skipped when that arc spans
+    // less than 12 deg (too short to hold readable text)
+    ctx.font = "600 10px Inter, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const hSpanDeg = Math.abs(thetaStar*DEG);
+    if(hSpanDeg >= 12){
+      const p = pt(thetaStar/2, R_H - 13);
+      boxedLabel("h = " + fmtSigned(hHours,2) + "h", p.x, p.y, COLORS.magenta);
+    }
+    const alphaSpanDeg = alphaSpanRad*DEG;
+    if(alphaSpanDeg >= 12){
+      const p = pt(thetaStar + alphaSpanRad/2, R_ALPHA - 13);
+      boxedLabel("α = " + ra.toFixed(2) + "h", p.x, p.y, COLORS.amber);
+    }
+    if(thetaEquinox*DEG >= 12){
+      const p = pt(thetaEquinox/2, R_LST - 13);
+      boxedLabel("LST = " + lst.toFixed(2) + "h", p.x, p.y, COLORS.cyan);
+    }
+  }
   ctx.restore();
 
   ctx.save();
@@ -3270,10 +3583,24 @@ function drawHlstDial(ctx, w, h, geom){
   ctx.textAlign = "center"; ctx.textBaseline = "top";
   ctx.fillStyle = COLORS.muted;
   const eqY = Math.min(h-24, cy+R+8);
-  const line = "LST = h + α  →  " + lst.toFixed(2) + "h = " + hHours.toFixed(2) + "h + " + ra.toFixed(2) + "h";
-  ctx.fillText(line, cx, eqY);
-  ctx.font = "10px Inter, sans-serif";
-  ctx.fillText("meridian at top · sky turns clockwise", cx, eqY + 13);
+  if(mode === "clock"){
+    ctx.fillText("LST = " + lst.toFixed(2) + "h — the RA under the pointer", cx, eqY);
+    ctx.font = "10px Inter, sans-serif";
+    ctx.fillText("= hour angle of ♈ · sky turns clockwise", cx, eqY + 13);
+  } else {
+    const wi = hlstSumWrapInfo(lst, ra);
+    const line = "h = LST − α  →  " + fmtSigned(wi.h_h,2) + "h = " + lst.toFixed(2) + "h − " + ra.toFixed(2) + "h" + wi.hSuffix;
+    ctx.fillText(line, cx, eqY);
+    ctx.font = "10px Inter, sans-serif";
+    let line2 = "meridian at top · sky turns clockwise";
+    if(wi.h_h < 0) line2 += " · star east of meridian";
+    ctx.fillText(line2, cx, eqY + 13);
+    if(wi.wrapped){
+      ctx.font = "9px Inter, sans-serif";
+      ctx.fillStyle = hexAlpha(COLORS.muted, 0.8);
+      ctx.fillText("the arcs go once round: subtract 24 h", cx, eqY + 25);
+    }
+  }
   ctx.restore();
 }
 
@@ -3295,6 +3622,14 @@ function drawStrip(){
   if(w<=0 || h<=0) return; // defensive
   if(state.tab === "origin"){
     drawOriginMap(ctx,w,h); // ecliptic map -- no observer/horizon
+    return;
+  }
+  if(state.tab === "hlst" && state.lstStep === "twoclocks"){
+    if(siderealStage){
+      siderealStage.drawStrip(ctx, w, h, { starName: currentStarName(), starRA: state.ra });
+    } else {
+      drawSiderealStagePlaceholder(ctx, w, h);
+    }
     return;
   }
   if(!state.derived) return; // defensive: derived quantities not yet computed
@@ -3436,9 +3771,9 @@ function drawAllSky(ctx, w, h, padOverride, showCaption){
    tab). Redrawn every drawOverlay() call under the same dirty conditions the
    rest of that function uses (state.needsRender/requestRender()).
    ========================================================================= */
-function drawAllskyInset(ctx, panelW, panelH){
+function drawAllskyInset(ctx, panelW, panelH, topOffset){
   const S = clamp(0.26*Math.min(panelW,panelH), 180, 300);
-  const x = 12, y = 12;
+  const x = 12, y = 12 + (topOffset || 0); // topOffset: hlst tab only, clears its step bar (#lstSteps) -- see lstHudInsetPx()
   const TOP_RESERVE = 16, BOTTOM_RESERVE = 14; // room for the title / caption bands
   ctx.save();
   roundedRectPath(ctx, x, y, S, S, 4);
@@ -3680,6 +4015,69 @@ function drawRadecMap(ctx, w, h){
   ctx.beginPath(); ctx.moveTo(mx,plotT); ctx.lineTo(mx,plotB); ctx.stroke();
   ctx.restore();
 
+  // hlst tab (steps clock/sum): label the meridian line itself, and (step
+  // sum only) three horizontal bracket arrows along the equator row showing
+  // LST = h + alpha as a literal sum of spans on this unrolled chart.
+  if(state.tab === "hlst"){
+    ctx.font = "9px Inter, sans-serif";
+    const meridLabel = "meridian · α = LST";
+    const meridLabelW = ctx.measureText(meridLabel).width;
+    let meridAlign = "left", meridX = mx + 4;
+    if(mx + 4 + meridLabelW > plotR){ meridAlign = "right"; meridX = mx - 4; }
+    ctx.fillStyle = hexAlpha(COLORS.cyan, 0.9);
+    ctx.textAlign = meridAlign; ctx.textBaseline = "top";
+    ctx.fillText(meridLabel, meridX, plotT + 2);
+
+    {
+      const yEqRow = yEq;
+      const lstX = mx;
+
+      function hlstBracket(x0, x1, y, colorHex, dashed){
+        ctx.save();
+        ctx.strokeStyle = colorHex; ctx.lineWidth = 2;
+        if(dashed) ctx.setLineDash([5,3]);
+        ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.stroke();
+        ctx.setLineDash([]);
+        const dir = x1 >= x0 ? 1 : -1;
+        const ah = 5;
+        ctx.beginPath();
+        ctx.moveTo(x1, y);
+        ctx.lineTo(x1 - dir*ah, y - ah*0.7);
+        ctx.lineTo(x1 - dir*ah, y + ah*0.7);
+        ctx.closePath();
+        ctx.fillStyle = colorHex; ctx.fill();
+        ctx.restore();
+      }
+      function hlstBracketLabel(x0, x1, y, colorHex, text, above){
+        if(Math.abs(x1-x0) < 30) return;
+        ctx.font = "9px Inter, sans-serif";
+        ctx.fillStyle = colorHex;
+        ctx.textAlign = "center"; ctx.textBaseline = above ? "bottom" : "top";
+        ctx.fillText(text, (x0+x1)/2, y + (above ? -3 : 3));
+      }
+
+      // LST: meridian -> right edge (alpha=0, i.e. the equinox), arrow right
+      // -- shown in BOTH steps clock and sum
+      hlstBracket(lstX, plotR, yEqRow-7, COLORS.cyan, false);
+      hlstBracketLabel(lstX, plotR, yEqRow-7, COLORS.cyan, "LST " + lst.toFixed(2) + "h", true);
+
+      if(state.lstStep === "sum"){
+        const raX = xOf(wrap24(state.ra));
+        const hHoursNow = wrap12(lst - state.ra);
+
+        // h: meridian -> star's RA, dashed, arrow right when h>0 / left when h<0
+        hlstBracket(lstX, raX, yEqRow+7, COLORS.magenta, true);
+        hlstBracketLabel(lstX, raX, yEqRow+7, COLORS.magenta, "h " + fmtSigned(hHoursNow,2) + "h", false);
+
+        // alpha: right edge (equinox) -> star's RA, arrow left -- its own
+        // eastward-from-equinox definition; h and alpha tile the LST span
+        // exactly when h>0
+        hlstBracket(plotR, raX, yEqRow+7, COLORS.amber, false);
+        hlstBracketLabel(plotR, raX, yEqRow+7, COLORS.amber, "α " + state.ra.toFixed(2) + "h", false);
+      }
+    }
+  }
+
   // NCP / SCP rows
   ctx.font="9px Inter, sans-serif"; ctx.fillStyle=hexAlpha(COLORS.magenta,0.85);
   ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillText("NCP", plotL+3, plotT+2);
@@ -3779,7 +4177,7 @@ function drawRadecMap(ctx, w, h){
   // clamp with a near-pole star like the Latitude tab's default Polaris,
   // both can otherwise land right on top of each other -- the star name
   // wins since it is what ties the chart back to the sphere).
-  {
+  if(state.tab !== "hlst"){ // hlst tab draws its own meridian/LST labels right at the equator's right edge (plotR) -- see above -- which this label would otherwise sit on top of
     ctx.font = "9px Inter, sans-serif";
     const eqText = "celestial equator", eqW = ctx.measureText(eqText).width;
     const eqBox = { l: plotR-3-eqW, r: plotR-3, t: yEq-2-9, b: yEq-2 };
@@ -4321,15 +4719,15 @@ function cacheEls(){
    "dateCard","doyRange","doyNum","doyCalendarReadout","doyTicks","cardinalControl",
    "originClockRange","originClockNum","originPhiRange","originPhiNum",
    "originTimeline","btnTimelinePlay","timelineRange","timelineBubble","timelineTicks",
-   "displayTogglesNormal","displayTogglesOrigin",
+   "displayCard","displayTogglesNormal","displayTogglesOrigin",
    "mainPanelTitle","readoutsDefault","readoutsHlst","readoutsOrigin",
    "readoutA","readoutAlt","readoutRA","readoutDec","readoutH",
    "poleReadout","readoutPoleAlt","badgeWrap","riseBadge","diurnalExtra","readoutTransitEl","readoutH0",
-   "hlstLST","hlstH","hlstAlpha","hlstCulminateNote",
    "originDateLabel","originDayNum","originLambda","originAlpha","originDelta","originSeasonN","originSeasonS",
    "originEot","originNoonEl",
    "aboutCard","aboutTitle","aboutBody","formulasCard","formulasHead","formulasBody",
-   "stripPanelTitle","legendRadec","legendOrigin","dialHoverZone"
+   "stripPanelTitle","legendRadec","legendOrigin","legendSidereal","dialHoverZone",
+   "lstSteps","lstStepControl","lstStepCaption","dragHint","btnResetView"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
 }
 
@@ -4419,12 +4817,23 @@ function togglePlayback(){
   if(state.playing) startLoop(); else stopLoop();
 }
 
+function isTwoClocksStep(){ return state.tab === "hlst" && state.lstStep === "twoclocks"; }
+
 function wirePlayback(){
   els.btnStepBack.addEventListener("click", function(){
     if(state.tab === "origin"){
       state.day = wrapYear(state.day - 1);
       setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
       onOriginDateChanged();
+      return;
+    }
+    if(isTwoClocksStep()){
+      if(siderealStage){
+        const day = siderealStage.getState().day;
+        siderealStage.setDay(clamp(Math.floor(day) - 1, 0, 365));
+        updateReadouts(); updateFormulas();
+        state.stripDirty = true; requestRender();
+      }
       return;
     }
     state.lst = wrap24(state.lst - 1/6); // 10 minutes
@@ -4438,6 +4847,15 @@ function wirePlayback(){
       onOriginDateChanged();
       return;
     }
+    if(isTwoClocksStep()){
+      if(siderealStage){
+        const day = siderealStage.getState().day;
+        siderealStage.setDay(clamp(Math.floor(day) + 1, 0, 365));
+        updateReadouts(); updateFormulas();
+        state.stripDirty = true; requestRender();
+      }
+      return;
+    }
     state.lst = wrap24(state.lst + 1/6);
     setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
     fullUpdate();
@@ -4449,18 +4867,27 @@ function wirePlayback(){
       onOriginDateChanged();
       return;
     }
+    if(isTwoClocksStep()){
+      if(siderealStage){
+        siderealStage.reset();
+        updateReadouts(); updateFormulas();
+        state.stripDirty = true; requestRender();
+      }
+      return;
+    }
     state.lst = TAB_CONFIG[state.tab].lst;
     setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
     fullUpdate();
   });
   els.btnPlay.addEventListener("click", togglePlayback);
   // Speed control: bounds/step/bound-field all depend on the active tab (h/s
-  // 0.1-6 for the LST-based tabs vs days/s 1-60 for the Origin tab) -- see
-  // wireSliderNumber()'s function-valued min/max/step support above.
+  // 0.1-6 for the LST-based tabs vs days/s 1-60 for the Origin tab), plus the
+  // hlst tab's own "twoclocks" step (h/s 0.5-6 step 0.5, faster clock-hours
+  // playback) -- see wireSliderNumber()'s function-valued min/max/step support.
   wireSliderNumber(els.speedRange, els.speedNum, {
-    min:function(){ return state.tab === "origin" ? 1 : 0.1; },
+    min:function(){ return state.tab === "origin" ? 1 : (isTwoClocksStep() ? 0.5 : 0.1); },
     max:function(){ return state.tab === "origin" ? 60 : 6; },
-    step:function(){ return state.tab === "origin" ? 1 : 0.1; },
+    step:function(){ return state.tab === "origin" ? 1 : (isTwoClocksStep() ? 0.5 : 0.1); },
     fallback:function(){ return state.tab === "origin" ? state.speedDays : state.speed; },
     onCommit:function(v){ if(state.tab === "origin") state.speedDays = v; else state.speed = v; }
   });
@@ -4977,7 +5404,8 @@ function wireDisplayToggles(){
    same way the Display-card toggles' tips are (positionTip()'s "stacked"
    variant: appears below-left, arrow up) since the dial sits at the bottom
    corner of the panel where there is no room to the right. */
-const DIAL_TIP_TEXT = 'The same bookkeeping seen from above the north celestial pole: the meridian is pinned at the top, right-ascension ticks turn with the sky, and the arcs <span class="math">h</span> (meridian &rarr; star) then <span class="math">&alpha;</span> (star &rarr; &#9800;) add up to LST.';
+const DIAL_TIP_TEXT_CLOCK = 'A clock face read from the stars: the RA ring turns with the sky, the meridian is the fixed pointer, and the number under the pointer is LST — equivalently the hour angle of &#9800; (cyan arc).';
+const DIAL_TIP_TEXT_SUM = 'The same bookkeeping seen from above the north celestial pole: the meridian is pinned at the top, right-ascension ticks turn with the sky, and the arcs <span class="math">h</span> (meridian &rarr; star) then <span class="math">&alpha;</span> (star &rarr; &#9800;) add up to LST.';
 function wireDialTooltip(){
   const zone = els.dialHoverZone;
   const tip = document.getElementById("sharedTip");
@@ -4990,7 +5418,7 @@ function wireDialTooltip(){
     zone.removeAttribute("aria-describedby");
   }
   function show(){
-    tip.innerHTML = DIAL_TIP_TEXT;
+    tip.innerHTML = (state.lstStep === "clock") ? DIAL_TIP_TEXT_CLOCK : DIAL_TIP_TEXT_SUM;
     tip.hidden = false;
     tip.classList.add("tip-below");
     const r = zone.getBoundingClientRect();
@@ -5122,12 +5550,23 @@ function switchTab(tabId){
   els.displayTogglesNormal.style.display = isOrigin ? "none" : "";
   els.displayTogglesOrigin.style.display = isOrigin ? "" : "none";
 
+  // hlst step bar: shown only on this tab. Everything below undoes anything
+  // the hlst "twoclocks" step may have changed on a PREVIOUS visit -- baseline
+  // reset here, re-applied by setLstStep() at the very end of this function
+  // when tabId is "hlst" (see the tail of this function).
+  els.lstSteps.style.display = (tabId === "hlst") ? "" : "none";
+  els.displayCard.style.display = "";
+  if(glCanvas) glCanvas.style.visibility = "";
+  if(els.dragHint) els.dragHint.style.display = "";
+  if(els.btnResetView) els.btnResetView.style.display = "";
+
   // Strip panel: the Origin tab always shows the ecliptic map, every other
   // tab always shows the RA/Dec map -- no mode toggle any more (Task 1/2:
   // the all-sky view and the analemma moved to overlay-canvas insets).
   els.stripPanelTitle.textContent = isOrigin ? "Ecliptic map · the Sun's RA/Dec through the year" : "RA/Dec map";
   els.legendRadec.style.display = isOrigin ? "none" : "";
   els.legendOrigin.style.display = isOrigin ? "" : "none";
+  if(els.legendSidereal) els.legendSidereal.style.display = "none";
 
   updatePlayButton();
   if(state.playing) startLoop(); else stopLoop();
@@ -5159,6 +5598,160 @@ function switchTab(tabId){
   // throttling when the tab/page isn't the foreground-visible one) — a tab
   // switch must never leave the previous tab's stale frame on screen
   render();
+
+  // hlst tab: layer the three-step guided stage on top of everything this
+  // function just seeded from TAB_CONFIG.hlst's own (top-level) defaults --
+  // setLstStep() re-seeds LST/star/display/camera/etc from the CURRENT
+  // step's own config (state.lstStep, "clock" unless a `?step=` deep link
+  // already set it -- see init()) and re-renders once more itself.
+  if(tabId === "hlst") setLstStep(state.lstStep);
+}
+
+/* =========================================================================
+   11b. HLST TAB -- "Sidereal time" three-step guided stage. setLstStep()
+   seeds LST/star/display/camera/rail-cards/transport/speed-bounds/strip
+   chrome from TAB_CONFIG.hlst.steps[step], toggles the step buttons/caption,
+   and (only for "twoclocks") lazily loads altaz_sidereal_stage.js. Called
+   both by switchTab("hlst") (tail call above) and by the step-bar buttons
+   themselves (wireLstSteps()).
+   ========================================================================= */
+function setLstStep(step){
+  state.lstStep = step;
+  const cfg = TAB_CONFIG.hlst;
+  const sc = cfg.steps[step];
+  const isTwo = step === "twoclocks";
+
+  if(sc.star){
+    state.starKey = sc.star;
+    const st = STARS[sc.star];
+    state.ra = st.ra; state.dec = st.dec;
+    els.starSelect.value = state.starKey;
+    setSliderNumber(els.raRange, els.raNum, state.ra, 0.01);
+    setSliderNumber(els.decRange, els.decNum, state.dec, 0.1);
+  }
+  if(sc.lst != null){
+    state.lst = sc.lst;
+    setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
+  }
+  state.playing = sc.playing;
+  state.display = Object.assign({}, sc.display || cfg.display);
+  state.sectorPair = sc.sectorPair || "none";
+  state.gridAlpha = Object.assign({}, sc.gridAlpha || cfg.gridAlpha);
+
+  document.querySelectorAll("#displayTogglesNormal .toggle").forEach(function(btn){
+    const key = btn.dataset.key;
+    btn.setAttribute("aria-pressed", state.display[key] ? "true" : "false");
+  });
+  document.querySelectorAll("#sectorsControl button").forEach(function(b){
+    const active = b.dataset.pair === state.sectorPair;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+  });
+
+  // camera: re-homed like resetCameraView(), but from this STEP's own
+  // override (steps carry no camera at all while the dome is hidden --
+  // "twoclocks" -- so this simply leaves whatever the dome last had)
+  if(sc.camera){
+    state.cam.theta = sc.camera.thetaDeg*RAD;
+    state.cam.phiAngle = sc.camera.phiDeg*RAD;
+    state.cam.radius = computeDefaultRadius();
+    state.cam.target = { x:CAM_DEFAULT.target.x, y:CAM_DEFAULT.target.y, z:CAM_DEFAULT.target.z };
+    state.cam.isDefault = true;
+    applyCameraFromState();
+  }
+
+  // step buttons + caption
+  els.lstStepControl.querySelectorAll("button").forEach(function(b){
+    const active = b.dataset.step === step;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  els.lstStepCaption.textContent = sc.caption || "";
+
+  // main-panel title
+  els.mainPanelTitle.textContent = isTwo ? "Sidereal time — star clock vs Sun clock" : "Celestial sphere — Sidereal time";
+
+  // About card
+  els.aboutTitle.textContent = sc.aboutTitle;
+  els.aboutBody.innerHTML = sc.aboutHTML;
+  renderMathSpans(els.aboutBody);
+
+  // Formulas card
+  els.formulasCard.classList.toggle("collapsed", !sc.formulasExpanded);
+  buildFormulasSkeleton();
+
+  // Rail cards: "twoclocks" has no dome, so Observer (phi/LST) and Display
+  // (dome-layer toggles) are meaningless there and hidden; the Star card
+  // stays (its selection still feeds the strip chart / header readout).
+  els.observerCard.style.display = isTwo ? "none" : "";
+  els.displayCard.style.display = isTwo ? "none" : "";
+  els.starCard.style.display = "";
+
+  // GL canvas / drag hint / reset-view button: hidden only for "twoclocks"
+  // (the sidereal stage owns the main canvas that step -- see renderThree()/
+  // drawOverlay()); switchTab()'s own baseline reset (above) restores these
+  // when leaving the hlst tab entirely.
+  if(glCanvas) glCanvas.style.visibility = isTwo ? "hidden" : "";
+  if(els.dragHint) els.dragHint.style.display = isTwo ? "none" : "";
+  if(els.btnResetView) els.btnResetView.style.display = isTwo ? "none" : "";
+
+  // Transport labels + speed bounds: "twoclocks" steps by whole days at a
+  // faster clock-hours-per-second default, like the Origin tab but scoped to
+  // just this step (see wirePlayback()'s isTwoClocksStep()-aware bounds).
+  if(isTwo){
+    els.btnStepBack.innerHTML = "&lang; &minus;1 day"; els.btnStepBack.title = "Back 1 day";
+    els.btnStepFwd.innerHTML = "+1 day &rang;"; els.btnStepFwd.title = "Forward 1 day";
+    els.btnReset.title = "Reset to noon, Mar 20";
+    els.speedRange.min = "0.5"; els.speedRange.max = "6"; els.speedRange.step = "0.5";
+    els.speedNum.min = "0.5"; els.speedNum.max = "6"; els.speedNum.step = "0.5";
+    state.speed = sc.speed;
+    setSliderNumber(els.speedRange, els.speedNum, state.speed, 0.5);
+  } else {
+    els.btnStepBack.innerHTML = "&lang; &minus;10m"; els.btnStepBack.title = "Step back 10 minutes";
+    els.btnStepFwd.innerHTML = "+10m &rang;"; els.btnStepFwd.title = "Step forward 10 minutes";
+    els.btnReset.title = "Reset LST to this stage's default";
+    els.speedRange.min = "0.1"; els.speedRange.max = "6"; els.speedRange.step = "0.1";
+    els.speedNum.min = "0.1"; els.speedNum.max = "6"; els.speedNum.step = "0.1";
+    state.speed = sc.speed;
+    setSliderNumber(els.speedRange, els.speedNum, state.speed, 0.1);
+  }
+  els.speedUnit.textContent = "h/s";
+
+  // Strip panel chrome
+  els.stripPanelTitle.textContent = isTwo ? "Sidereal clock vs solar clock through the year" : "RA/Dec map";
+  els.legendRadec.style.display = isTwo ? "none" : "";
+  if(els.legendSidereal) els.legendSidereal.style.display = isTwo ? "" : "none";
+
+  // Header readouts (#readoutsHlst): rebuilt per step -- see the function's
+  // own comment for why (avoids duplicate DOM ids across the three variants).
+  buildHlstReadoutsSkeleton(step);
+
+  updatePlayButton();
+  if(state.playing) startLoop(); else stopLoop();
+
+  if(isTwo){
+    ensureSiderealStage().then(function(stage){
+      if(stage && state.tab === "hlst" && state.lstStep === "twoclocks"){
+        stage.reset();
+        updateReadouts();
+        updateFormulas();
+        state.stripDirty = true;
+        requestRender();
+      }
+    });
+  }
+
+  onObserverOrStarChanged();
+  applyDisplayVisibility();
+  applyGridAlpha();
+  applyHighlight();
+  render();
+}
+
+function wireLstSteps(){
+  els.lstStepControl.querySelectorAll("button").forEach(function(btn){
+    btn.addEventListener("click", function(){ setLstStep(btn.dataset.step); });
+  });
 }
 
 /* =========================================================================
@@ -5178,8 +5771,84 @@ function updateOriginReadouts(){
   els.originNoonEl.textContent = fmtSigned(transitAltitudeDeg(state.phi, s.decDeg), 1);
 }
 
+/* =========================================================================
+   hlst tab header readouts (#readoutsHlst). The three steps show unrelated
+   content (a plain LST readout; a two-clock date/time readout; the h=LST-α
+   equation), so rather than pre-declaring all three in the HTML with
+   duplicate ids (only one visible at a time -- getElementById would always
+   resolve to whichever copy comes first in document order, not necessarily
+   the visible one), the markup is rebuilt fresh per step -- same pattern
+   this file already uses for the About card and the Formulas skeleton. */
+let hlstReadoutEls = null;
+function buildHlstReadoutsSkeleton(step){
+  let html;
+  if(step === "clock"){
+    html = 'LST = <b id="hlstLST" class="tabular">&mdash;</b>h &nbsp;=&nbsp; <span class="math" data-latex="\\alpha">&alpha;</span> on the meridian &nbsp;=&nbsp; hour angle of &#9800; &nbsp;&middot;&nbsp; <span class="unit" id="hlstCulminateNote">culminates when LST = &alpha;</span>';
+  } else if(step === "twoclocks"){
+    html = '<b id="sidDateLabel" class="tabular">Mar 20</b> + <b id="sidDayNum" class="tabular">0</b> d &nbsp;&middot;&nbsp; mean time <b id="sidLMT" class="tabular">12:00:00</b> &nbsp;&middot;&nbsp; LST <b id="sidLST" class="tabular">00:00:00</b> &nbsp;&middot;&nbsp; <span class="unit">LST has gained <b id="sidGain">0 m 00 s</b> since noon Mar 20</span>';
+  } else { // sum -- "h = LST - alpha", two readings on one dial (Addendum 4)
+    html = 'h = LST &minus; <span class="math" data-latex="\\alpha">&alpha;</span> &rarr; <b id="hlstH" class="tabular">&mdash;</b>h = <b id="hlstLST" class="tabular">&mdash;</b>h &minus; <b id="hlstAlpha" class="tabular">&mdash;</b>h<span id="hlstSumWrapNote"></span> &nbsp;&middot;&nbsp; <span class="unit" id="hlstCulminateNote">culminates when LST = &alpha;</span>';
+  }
+  els.readoutsHlst.innerHTML = html;
+  renderMathSpans(els.readoutsHlst);
+  hlstReadoutEls = {
+    lst: document.getElementById("hlstLST"),
+    h: document.getElementById("hlstH"),
+    alpha: document.getElementById("hlstAlpha"),
+    culminate: document.getElementById("hlstCulminateNote"),
+    sumWrapNote: document.getElementById("hlstSumWrapNote"),
+    sidDateLabel: document.getElementById("sidDateLabel"),
+    sidDayNum: document.getElementById("sidDayNum"),
+    sidLMT: document.getElementById("sidLMT"),
+    sidLST: document.getElementById("sidLST"),
+    sidGain: document.getElementById("sidGain")
+  };
+}
+function mod24(x){ return ((x%24)+24)%24; }
+function fmtHMS(totalHours){
+  const t = mod24(totalHours);
+  let totalSec = Math.round(t*3600);
+  if(totalSec >= 24*3600) totalSec -= 24*3600; // guard the round-up-to-24:00:00 edge case
+  const hh = Math.floor(totalSec/3600); totalSec -= hh*3600;
+  const mm = Math.floor(totalSec/60); const ss = totalSec - mm*60;
+  function pad(n){ return String(n).padStart(2,"0"); }
+  return pad(hh)+":"+pad(mm)+":"+pad(ss);
+}
+function updateHlstReadouts(){
+  if(!hlstReadoutEls) return;
+  const step = state.lstStep;
+  const lst = wrap24(state.lst), ra = state.ra;
+  if(step === "clock"){
+    hlstReadoutEls.lst.textContent = lst.toFixed(2);
+    hlstReadoutEls.culminate.textContent = currentStarName() + " culminates when LST = α = " + ra.toFixed(2) + " h";
+  } else if(step === "sum"){
+    const wi = hlstSumWrapInfo(lst, ra);
+    hlstReadoutEls.h.textContent = fmtSigned(wi.h_h,2);
+    hlstReadoutEls.lst.textContent = lst.toFixed(2);
+    hlstReadoutEls.alpha.textContent = ra.toFixed(2);
+    if(hlstReadoutEls.sumWrapNote) hlstReadoutEls.sumWrapNote.textContent = wi.hSuffix;
+    hlstReadoutEls.culminate.textContent = "culminates when LST = α = " + ra.toFixed(2) + " h";
+  } else if(step === "twoclocks"){
+    const st = (siderealStage && siderealStage.getState) ? siderealStage.getState() : null;
+    if(st){
+      hlstReadoutEls.sidDateLabel.textContent = st.calendarLabel;
+      hlstReadoutEls.sidDayNum.textContent = Math.floor(st.day);
+      hlstReadoutEls.sidLMT.textContent = fmtHMS(st.lmtHours);
+      hlstReadoutEls.sidLST.textContent = fmtHMS(st.lstHours);
+      // gain = (LST - (LMT - 12h)) mod 24h -- how far the sidereal clock has
+      // pulled ahead of the solar clock since noon on the current calendar day
+      const gainH = mod24(st.lstHours - mod24(st.lmtHours - 12));
+      let gsec = Math.round(gainH*3600);
+      const gh = Math.floor(gsec/3600); gsec -= gh*3600;
+      const gm = Math.floor(gsec/60); const gs = gsec - gm*60;
+      hlstReadoutEls.sidGain.textContent = (gh>0 ? gh+"h "+gm+"m "+String(gs).padStart(2,"0")+"s" : gm+"m "+String(gs).padStart(2,"0")+"s");
+    }
+  }
+}
+
 function updateReadouts(){
   if(state.tab === "origin"){ updateOriginReadouts(); return; }
+  if(state.tab === "hlst"){ updateHlstReadouts(); return; }
   const d = state.derived;
   els.readoutA.textContent   = isNaN(d.A_deg) ? "—" : d.A_deg.toFixed(1);
   els.readoutAlt.textContent = d.a_deg.toFixed(1);
@@ -5196,13 +5865,6 @@ function updateReadouts(){
     els.riseBadge.textContent = badge==="circumpolar" ? "CIRCUMPOLAR" : badge==="never" ? "NEVER RISES" : "RISES & SETS";
     els.readoutTransitEl.textContent = d.transitAlt.toFixed(1);
     els.readoutH0.textContent = (d.riseSet.H0deg == null) ? "—" : (d.riseSet.H0deg/15).toFixed(2);
-  }
-  if(els.readoutsHlst.style.display !== "none"){
-    const lst = wrap24(state.lst), hH = wrap12(lst - state.ra);
-    els.hlstLST.textContent = lst.toFixed(2);
-    els.hlstH.textContent = hH.toFixed(2);
-    els.hlstAlpha.textContent = state.ra.toFixed(2);
-    els.hlstCulminateNote.textContent = "culminates when LST = α = " + state.ra.toFixed(2) + " h";
   }
 }
 
@@ -5290,8 +5952,85 @@ function updateOriginFormulas(){
   fillFormulaLine(fEls.fB, defPlainB, defLatexB, "", subPlainB, subLatexB, "");
 }
 
+/* hlst tab's own three-step formulas -- see updateFormulas()'s dispatch below.
+   "sum" step follows Addendum 4's final framing, h = LST - alpha ("two
+   readings on one dial"), with the same +-24h wrap correction as the header
+   readout and the dial's own caption (hlstSumWrapInfo()). */
+function updateHlstFormulas(){
+  if(!fEls) return;
+  const step = state.lstStep;
+  const lst = wrap24(state.lst), ra = state.ra;
+
+  if(step === "clock"){
+    fillFormulaLine(fEls.fA,
+      'LST = <span class="math" data-latex="\\alpha">&alpha;</span> on the meridian = hour angle of &#9800;',
+      String.raw`\text{LST} = \alpha_{\text{meridian}} = h_{\Upsilon}`,
+      "",
+      'LST = ' + lst.toFixed(2) + ' h = ' + (lst*15).toFixed(1) + '&deg;',
+      String.raw`\text{LST} = \mathbf{${lst.toFixed(2)}\text{h}} = \mathbf{${(lst*15).toFixed(1)}^\circ}`,
+      "(1h = 15&deg;)"
+    );
+    const hH = wrap12(lst - ra);
+    fillFormulaLine(fEls.fB,
+      'h = LST &minus; <span class="math" data-latex="\\alpha">&alpha;</span>',
+      String.raw`h = \text{LST} - \alpha`,
+      "",
+      'h = ' + lst.toFixed(2) + 'h &minus; ' + ra.toFixed(2) + 'h = <b>' + fmtSigned(hH,2) + ' h</b>',
+      String.raw`h = ${lst.toFixed(2)}\text{h} - ${ra.toFixed(2)}\text{h} = \mathbf{${fmtSigned(hH,2)}\text{h}}`,
+      "(transit when h = 0)"
+    );
+    return;
+  }
+
+  if(step === "twoclocks"){
+    const st = (siderealStage && siderealStage.getState) ? siderealStage.getState() : null;
+    const n = st ? Math.floor(st.day) : 0;
+    const gainMinTotal = n * (3 + 56.6/60); // minutes
+    const gh = Math.floor(gainMinTotal/60);
+    const gm = Math.round(gainMinTotal - gh*60);
+    const gainStr = (gh>0 ? gh + "h " + gm + "m" : gm + "m");
+    fillFormulaLine(fEls.fA,
+      'T<sub>sid</sub> = 23 h 56 m 04 s &nbsp;;&nbsp; T<sub>sol</sub> = 24 h',
+      String.raw`T_{\text{sid}} = 23^{\text{h}}56^{\text{m}}04^{\text{s}} \; ; \; T_{\text{sol}} = 24^{\text{h}}`,
+      "",
+      'LST gains 24 h / 365.24 = <b>3 m 56.6 s</b> per solar day',
+      String.raw`\text{LST gains } \dfrac{24\text{h}}{365.24} = \mathbf{3^{\text{m}}56.6^{\text{s}}}\text{ per solar day}`,
+      ""
+    );
+    fillFormulaLine(fEls.fB,
+      'LST(noon) = <span class="math" data-latex="\\alpha">&alpha;</span>&#9737; &asymp; (days since Mar 20) &times; 3 m 56.6 s',
+      String.raw`\begin{aligned}&\text{LST(noon)} = \alpha_\odot\\&\approx (\text{days since Mar 20})\times 3^{\text{m}}56.6^{\text{s}}\end{aligned}`,
+      "",
+      n + ' &times; 3 m 56.6 s = <b>' + gainStr + '</b> (day ' + n + ')',
+      String.raw`${n} \times 3^{\text{m}}56.6^{\text{s}} = \mathbf{${gainStr}}`,
+      ""
+    );
+    return;
+  }
+
+  // step === "sum": h = LST - alpha, rearranged as LST = h + alpha
+  const wi = hlstSumWrapInfo(lst, ra);
+  fillFormulaLine(fEls.fA,
+    'h = LST &minus; <span class="math" data-latex="\\alpha">&alpha;</span>',
+    String.raw`h = \text{LST} - \alpha`,
+    "",
+    fmtSigned(wi.h_h,2) + ' h = ' + lst.toFixed(2) + ' h &minus; ' + ra.toFixed(2) + ' h' + wi.hSuffix,
+    String.raw`\mathbf{${fmtSigned(wi.h_h,2)}\text{h}} = ${lst.toFixed(2)}\text{h} - ${ra.toFixed(2)}\text{h}${wi.hSuffixLatex}`,
+    "h = 0 &hArr; LST = &alpha; (transit)"
+  );
+  fillFormulaLine(fEls.fB,
+    'LST = h + <span class="math" data-latex="\\alpha">&alpha;</span> (rearranged)',
+    String.raw`\text{LST} = h + \alpha \;\text{(rearranged)}`,
+    "",
+    lst.toFixed(2) + ' h = ' + fmtSigned(wi.h_h,2) + ' h + ' + ra.toFixed(2) + ' h' + wi.sSuffix,
+    String.raw`${lst.toFixed(2)}\text{h} = \mathbf{${fmtSigned(wi.h_h,2)}\text{h}} + ${ra.toFixed(2)}\text{h}${wi.sSuffixLatex}`,
+    ""
+  );
+}
+
 function updateFormulas(){
   if(state.tab === "origin"){ updateOriginFormulas(); return; }
+  if(state.tab === "hlst"){ updateHlstFormulas(); return; }
   if(!fEls) return;
   const d = state.derived;
   const phi = state.phi, dec = state.dec, hDeg = d.H_deg;
@@ -5633,6 +6372,13 @@ function loop(ts){
       state.day = wrapYear(state.day + state.speedDays*dtSec);
       setSliderNumber(els.doyRange, els.doyNum, state.day, 0.5);
       onOriginDateChanged(); // marks state.stripDirty/requestRender(); requestRender() no-ops while playing
+    } else if(isTwoClocksStep()){
+      if(siderealStage){
+        siderealStage.advance(dtSec, state.speed);
+        updateReadouts();
+        updateFormulas();
+        state.stripDirty = true;
+      }
     } else {
       state.lst = wrap24(state.lst + state.speed*dtSec);
       setSliderNumber(els.lstRange, els.lstNum, state.lst, 0.05);
@@ -5677,6 +6423,7 @@ function init(){
   wireOriginAnalemmaControls();
   wireObserver();
   wireStar();
+  wireLstSteps();
   wireFormulasCollapse();
   wireSplitters();
 
@@ -5697,6 +6444,13 @@ function init(){
   switchTab(state.tab); // seeds all controls/about/formulas and renders once
 
   const requestedTab = new URLSearchParams(location.search).get("tab");
+  const requestedStep = new URLSearchParams(location.search).get("step");
+  // set state.lstStep BEFORE switchTab(requestedTab) runs -- switchTab("hlst")
+  // ends with setLstStep(state.lstStep), so this makes a `?tab=hlst&step=sum`
+  // deep link land directly on step 3 instead of flashing step 1 first
+  if(requestedTab === "hlst" && requestedStep && TAB_CONFIG.hlst.steps[requestedStep]){
+    state.lstStep = requestedStep;
+  }
   if(requestedTab && TAB_CONFIG[requestedTab]) switchTab(requestedTab);
 
 }

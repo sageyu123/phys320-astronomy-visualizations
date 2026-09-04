@@ -6,7 +6,7 @@ Interactive teaching visualizations for PHYS 320 (Astronomy) at NJIT, Fall 2026 
 - Live site: <https://sageyu123.github.io/phys320-astronomy-visualizations/>
 - `index.html` opens the landing page.
 - `html/ptolemy_model.html` — Ptolemy's model: eccentric, epicycle, equant, the full Almagest construction, and a geocentric ⇄ heliocentric comparison.
-- `html/altaz_radec.html` — Sky coordinates: alt-az versus RA/Dec on a rotatable celestial sphere, with all-sky and RA/Dec chart views, plus the origin of the vernal equinox (Earth's orbit and tilted axis).
+- `html/altaz_radec.html` — Sky coordinates: alt-az versus RA/Dec on a rotatable celestial sphere, with all-sky and RA/Dec chart views, the origin of the vernal equinox (Earth's orbit and tilted axis), and sidereal time: what LST is, why a star clock beats a Sun clock (the sidereal vs the solar day), and h = LST − α.
 - `html/kepler_laws.html` — Kepler's three laws, with Ptolemy's equant compared to the ellipse.
 - `html/two_body.html` — Two-body orbits: center of mass, the CM reference frame, and the reduced mass, with the barycenter drawn to scale against the primary.
 - `html/newtons_cannon.html` — Newton's cannon: from the falling apple and the falling Moon to circular, elliptical, parabolic, and hyperbolic paths, with orbital energy, escape speed, and the vis-viva equation.
