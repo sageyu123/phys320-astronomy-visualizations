@@ -138,6 +138,11 @@
   .panel-title{ font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .panel-readouts{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); white-space:nowrap; flex:0 0 auto; }
   .panel-readouts b{ color:var(--text); font-weight:600; }
+  /* Each readout ("v0 = 7.35 km/s", "e = 0.001", ...) must be ONE flex item -- .panel-readouts's
+     own gap lands between every direct child (including bare text runs and a <sub>), so without
+     this wrapper a variable and its subscript get the same 10px gap as two whole readouts,
+     printing e.g. "v 0" instead of "v" with a tight subscript "0". */
+  .panel-readouts .rd-item{ display:inline; }
   .panel-header-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; margin-left:auto; }
   .icon-btn{ min-width:28px; padding:0 8px; font-size:13px; line-height:1; }
   .panel-caption{
@@ -377,20 +382,20 @@
         <div class="panel-header">
           <div class="panel-title" id="mainPanelTitle">Cannon stage</div>
           <div class="panel-readouts" id="rdCannon">
-            <span class="math">v</span><sub>0</sub> = <b id="vCanV0" class="tabular">0.00</b> km/s &nbsp;
-            <span class="math">v</span><sub>0</sub>/<span class="math">v</span><sub>c</sub> = <b id="vCanRatio" class="tabular">0.00</b> &nbsp;
-            <span class="math">e</span> = <b id="vCanE" class="tabular">0.000</b> &nbsp;
-            type = <b id="vCanType" class="tabular">circle</b> &nbsp;
-            <span class="math">P</span> = <b id="vCanPeriod" class="tabular">&mdash;</b>
+            <span class="rd-item"><span class="math">v</span><sub>0</sub> = <b id="vCanV0" class="tabular">0.00</b> km/s</span>
+            <span class="rd-item"><span class="math">v</span><sub>0</sub>/<span class="math">v</span><sub>c</sub> = <b id="vCanRatio" class="tabular">0.00</b></span>
+            <span class="rd-item"><span class="math">e</span> = <b id="vCanE" class="tabular">0.000</b></span>
+            <span class="rd-item">type = <b id="vCanType" class="tabular">circle</b></span>
+            <span class="rd-item"><span class="math">P</span> = <b id="vCanPeriod" class="tabular">&mdash;</b></span>
           </div>
           <div class="panel-readouts" id="rdMoon" style="display:none">
-            &Delta;<span class="math">t</span> = <b id="vMoonDt" class="tabular">0.00</b> s
+            <span class="rd-item">&Delta;<span class="math">t</span> = <b id="vMoonDt" class="tabular">0.00</b> s</span>
           </div>
           <div class="panel-readouts" id="rdEnergy" style="display:none">
-            <span id="vEnPresetWrap">preset = <b id="vEnPreset" class="tabular">Mercury</b> &nbsp;</span>
-            <span class="math">t</span> = <b id="vEnT" class="tabular">0</b> d &nbsp;
-            <span class="math">r</span> = <b id="vEnR" class="tabular">0.000</b> AU &nbsp;
-            <span class="math">v</span> = <b id="vEnV" class="tabular">0.00</b> km/s
+            <span class="rd-item" id="vEnPresetWrap">preset = <b id="vEnPreset" class="tabular">Mercury</b></span>
+            <span class="rd-item"><span class="math">t</span> = <b id="vEnT" class="tabular">0</b> d</span>
+            <span class="rd-item"><span class="math">r</span> = <b id="vEnR" class="tabular">0.000</b> AU</span>
+            <span class="rd-item"><span class="math">v</span> = <b id="vEnV" class="tabular">0.00</b> km/s</span>
           </div>
           <div class="panel-header-right">
             <button type="button" class="btn icon-btn" id="btnResetView" title="Reset zoom/pan">&#8962;</button>
@@ -760,11 +765,11 @@ const FAMILY_MULTS = [
   {m:1.2, label:"1.2", af:1.15}, {m:Math.SQRT2, label:"√2", af:1.30}, {m:1.6, label:"1.6", af:1.45}
 ];
 const CANNON_CHIPS = [
-  { kind:"vc",   mult:0.6,  text:"0.6&nbsp;v<sub>c</sub>",  title:"0.6 × circular speed — falls back to the surface" },
-  { kind:"vc",   mult:1.0,  text:"v<sub>c</sub>",           title:"Circular speed — a circle" },
-  { kind:"vc",   mult:1.2,  text:"1.2&nbsp;v<sub>c</sub>",  title:"1.2 × circular speed — an ellipse" },
-  { kind:"vesc", mult:1.0,  text:"v<sub>esc</sub>",         title:"Escape speed — a parabola" },
-  { kind:"vesc", mult:1.25, text:"1.25&nbsp;v<sub>esc</sub>", title:"1.25 × escape speed — a hyperbola" }
+  { kind:"vc",   mult:0.6,  text:"0.6&nbsp;"+mathVar("v","c"),   title:"0.6 × circular speed — falls back to the surface" },
+  { kind:"vc",   mult:1.0,  text:mathVar("v","c"),               title:"Circular speed — a circle" },
+  { kind:"vc",   mult:1.2,  text:"1.2&nbsp;"+mathVar("v","c"),   title:"1.2 × circular speed — an ellipse" },
+  { kind:"vesc", mult:1.0,  text:mathVar("v","esc"),             title:"Escape speed — a parabola" },
+  { kind:"vesc", mult:1.25, text:"1.25&nbsp;"+mathVar("v","esc"), title:"1.25 × escape speed — a hyperbola" }
 ];
 const CANNON_TOGGLES = [
   { key:"family",  label:"Show the family", def:true },
@@ -902,6 +907,13 @@ function buildPresetSelect(container, presets, opts){
   return select;
 }
 
+// Builds '<span class="math">v</span><sub>c</sub>'-style HTML for a math variable with an
+// optional real subscript -- the DOM counterpart of the canvas drawMathText helper. A bare
+// symbol renders italic in the page's math-serif stack (the .math class); a subscript is a REAL
+// <sub> element, never a literal underscore or a hand-spaced span.
+function mathVar(sym, sub){
+  return '<span class="math">'+sym+'</span>' + (sub!=null ? '<sub>'+sub+'</sub>' : '');
+}
 function buildChipRow(container, chips, onPick){
   const field = document.createElement("div");
   field.className = "field";
@@ -912,7 +924,10 @@ function buildChipRow(container, chips, onPick){
     const b = document.createElement("button");
     b.type = "button"; b.className = "btn";
     b.style.flex = "1 1 30%"; b.style.minWidth = "64px"; b.style.fontSize = "11px"; b.style.padding = "0 4px";
-    b.innerHTML = chip.text;
+    // .btn is display:inline-flex with its own gap (for icon+label buttons); wrapping the whole
+    // label in ONE span keeps it a single flex item, so that gap can't land between a variable
+    // and its own subscript (e.g. "v" and "c" in v_c) the way it would with loose child nodes.
+    b.innerHTML = "<span>"+chip.text+"</span>";
     if(chip.title) b.title = chip.title;
     b.addEventListener("click", function(){ onPick(chip); });
     row.appendChild(b);
@@ -1003,7 +1018,7 @@ function buildCannonParams(c){
   cannonWidgets.v0 = v0Field;
   const ticks = document.createElement("div");
   ticks.className = "slider-ticks";
-  ticks.innerHTML = '<span class="tick tick-vc" id="tickVc">v<sub>c</sub></span><span class="tick tick-vesc" id="tickVesc">v<sub>esc</sub></span>';
+  ticks.innerHTML = '<span class="tick tick-vc" id="tickVc">'+mathVar("v","c")+'</span><span class="tick tick-vesc" id="tickVesc">'+mathVar("v","esc")+'</span>';
   v0Field.field.appendChild(ticks);
   cannonWidgets.tickVc = ticks.querySelector("#tickVc");
   cannonWidgets.tickVesc = ticks.querySelector("#tickVesc");
@@ -1699,6 +1714,75 @@ function drawDimLineV(ctx, ya, yb, x, colorHex, alpha){
   ctx.restore();
 }
 
+// Math-style canvas text: draws a run of {t, style} segments left-to-right so labels read as
+// math (italic variables, real sub/superscripts) instead of plain UI-sans text with literal
+// underscores or Unicode sub/sup characters. style is one of:
+//   "var" -- a variable (r, R, t, theta, omega, Delta t, ...): italic, the page's own math-serif
+//            stack (matches the .math CSS class).
+//   "num" -- digits, words, units, punctuation: upright, the existing sans (Inter).
+//   "op"  -- a named operator (cos, sin, ...): upright, math-serif (distinguished from "num" the
+//            way it would be in typeset math, but never italic like the variables around it).
+//   "sub" / "sup" -- a subscript/superscript: smaller and baseline-shifted (down/up), drawn in
+//            the same italic math-serif face as "var" (subscripts here are always on a variable,
+//            e.g. the E in R_E).
+// measureMathText/drawMathText are used together so the EXISTING alignment, clamping and
+// collision-avoidance code (which measures a label's width to keep it on-panel or apart from its
+// neighbours) keeps working unchanged -- callers just measure/draw the runs array instead of a
+// plain string.
+const MATH_FONT_STACK = '"STIX Two Math","Cambria Math","Times New Roman",serif';
+function mathRunFont(style, size){
+  const subSize = Math.max(7, Math.round(size*0.72));
+  switch(style){
+    case "var": return "italic "+size+"px "+MATH_FONT_STACK;
+    case "op":  return size+"px "+MATH_FONT_STACK;
+    case "sub": return "italic "+subSize+"px "+MATH_FONT_STACK;
+    case "sup": return "italic "+subSize+"px "+MATH_FONT_STACK;
+    case "num": default: return size+"px Inter, sans-serif";
+  }
+}
+function mathRunDy(style, size){
+  if(style==="sub") return size*0.28;
+  if(style==="sup") return -size*0.34;
+  return 0;
+}
+// Sums each run's own measured width (each run is measured in ITS OWN font/size, so a "sub" run
+// contributes its smaller width, not the base size's) -- the total is the same footprint
+// drawMathText will occupy, for clamping/collision math that needs a label's width up front.
+function measureMathText(ctx, runs, size){
+  const savedFont = ctx.font;
+  let w = 0;
+  for(let i=0;i<runs.length;i++){ ctx.font = mathRunFont(runs[i].style, size); w += ctx.measureText(runs[i].t).width; }
+  ctx.font = savedFont;
+  return w;
+}
+// Draws a runs array -- e.g. [{t:"r",style:"var"}, {t:" = 60.3 ",style:"num"}, {t:"R",style:"var"},
+// {t:"E",style:"sub"}] -- as one continuous label anchored at (x,y). opts.align ("left"|"center"|
+// "right", default "left") positions the run's total measured width against x exactly the way
+// ctx.textAlign would against a plain fillText call, so a clamp helper that computed an anchor x
+// from a measured width keeps producing the same on-screen box. opts.size (default 9.5),
+// opts.color (fillStyle for every run, unless a run has its own .color) and opts.baseline
+// (ctx.textBaseline, default "alphabetic") round out the options.
+function drawMathText(ctx, x, y, runs, opts){
+  opts = opts || {};
+  const size = opts.size || 9.5;
+  const align = opts.align || "left";
+  const savedFont = ctx.font, savedAlign = ctx.textAlign, savedBaseline = ctx.textBaseline, savedFill = ctx.fillStyle;
+  ctx.textBaseline = opts.baseline || "alphabetic";
+  const total = measureMathText(ctx, runs, size);
+  let cx = x;
+  if(align==="center") cx = x - total/2;
+  else if(align==="right") cx = x - total;
+  ctx.textAlign = "left";
+  for(let i=0;i<runs.length;i++){
+    const run = runs[i];
+    ctx.font = mathRunFont(run.style, size);
+    ctx.fillStyle = run.color || opts.color || savedFill;
+    ctx.fillText(run.t, cx, y+mathRunDy(run.style, size));
+    cx += ctx.measureText(run.t).width;
+  }
+  ctx.font = savedFont; ctx.textAlign = savedAlign; ctx.textBaseline = savedBaseline; ctx.fillStyle = savedFill;
+}
+
 /* =========================================================================
    14. VIEW TRANSFORM (pan/zoom -- active on Cannon and Orbital-energy tabs)
    ========================================================================= */
@@ -1953,8 +2037,14 @@ function drawWellSubplot(ctx, x0,y0,ww,hh, opt){
   }
   function yOf(v){ const vv=clamp(v,yLo,yHi); return y0p + h2*(1-(vv-yLo)/(yHi-yLo)); }
   ctx.save();
-  ctx.font="10px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="left";
-  ctx.fillText(opt.title || ("Gravity well U(r), r in "+opt.rUnitLabel), x0p, y0+11);
+  ctx.fillStyle=COLORS.muted;
+  const wellTitle = opt.title || ("Gravity well U(r), r in "+opt.rUnitLabel);
+  if(Array.isArray(wellTitle)){
+    drawMathText(ctx, x0p, y0+11, wellTitle, {align:"left", size:10});
+  } else {
+    ctx.font="10px Inter"; ctx.textAlign="left";
+    ctx.fillText(wellTitle, x0p, y0+11);
+  }
   if(opt.shadeUnderR){
     ctx.fillStyle = hexAlpha(COLORS.coral,0.10);
     ctx.fillRect(x0p, y0p, clamp(xOf(opt.shadeUnderR)-x0p,0,w2), h2);
@@ -2006,8 +2096,13 @@ function drawWellSubplot(ctx, x0,y0,ww,hh, opt){
       ctx.strokeStyle = hexAlpha(COLORS.muted,0.4); ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(tx,y0p+h2); ctx.lineTo(tx,y0p+h2+3); ctx.stroke();
       ctx.fillStyle = t.color || COLORS.muted;
-      ctx.textAlign = (tx<x0p+14) ? "left" : ((tx>x0p+w2-14) ? "right" : "center");
-      ctx.fillText(t.label, tx, y0p+h2+13);
+      const tickAlign = (tx<x0p+14) ? "left" : ((tx>x0p+w2-14) ? "right" : "center");
+      if(Array.isArray(t.label)){
+        drawMathText(ctx, tx, y0p+h2+13, t.label, {align:tickAlign, size:9, color:t.color||COLORS.muted});
+      } else {
+        ctx.textAlign = tickAlign;
+        ctx.fillText(t.label, tx, y0p+h2+13);
+      }
     });
   } else {
     // Anchored inward (left/right) rather than centered on the axis endpoints so a wide number
@@ -2027,7 +2122,9 @@ function drawCannonStrip(ctx,w,h){
   ctx.strokeStyle = hexAlpha(COLORS.border,0.8); ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(halfW,4); ctx.lineTo(halfW,h-4); ctx.stroke();
   drawWellSubplot(ctx, halfW,0, w-halfW,h, {
-    rMin:0.8*R_E, rMax:8*R_E, title:"Gravity well U(r), r (R_E)",
+    rMin:0.8*R_E, rMax:8*R_E, title:[
+      {t:"Gravity well U(r), r (", style:"num"}, {t:"R", style:"var"}, {t:"E", style:"sub"}, {t:")", style:"num"}
+    ],
     Ufunc:function(r){ return -GM_E/r; }, E:E, currentR:pos.r,
     shadeUnderR:R_E, twoA: d.bound ? 2*d.a : null, orbitRange:null,
     xTicks:[1,2,4,8].map(function(n){ return { v:n*R_E, label:String(n) }; })
@@ -2050,8 +2147,11 @@ function drawMoonMain(ctx,w,h){
 function drawApplePanel(ctx,x0,y0,ww,hh){
   ctx.save();
   ctx.beginPath(); ctx.rect(x0,y0,ww,hh); ctx.clip();
-  ctx.font="10.5px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="center";
-  ctx.fillText("Apple at r = R_E", x0+ww/2, y0+16);
+  ctx.fillStyle=COLORS.muted;
+  drawMathText(ctx, x0+ww/2, y0+16, [
+    {t:"Apple at ", style:"num"}, {t:"r", style:"var"}, {t:" = ", style:"num"},
+    {t:"R", style:"var"}, {t:"E", style:"sub"}
+  ], {align:"center", size:10.5});
   // padTop matches the Falling-Moon panel's own tangent-line height (A.y, now ~30% of the
   // shared panel height hh, see drawMoonPanel) so the "release" tick here and the tangent line
   // there sit at similar heights -- the two falls read as the same picture, one straight down,
@@ -2072,8 +2172,11 @@ function drawApplePanel(ctx,x0,y0,ww,hh){
   ctx.beginPath(); ctx.moveTo(cxp-40,yStart); ctx.lineTo(cxp-40,yNow); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cxp-44,yStart); ctx.lineTo(cxp-36,yStart); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cxp-44,yNow); ctx.lineTo(cxp-36,yNow); ctx.stroke();
-  ctx.fillStyle=COLORS.amber; ctx.font="9.5px Inter"; ctx.textAlign="right";
-  ctx.fillText("d = ½gΔt²", cxp-48, (yStart+yNow)/2-7);
+  ctx.fillStyle=COLORS.amber;
+  drawMathText(ctx, cxp-48, (yStart+yNow)/2-7, [
+    {t:"d", style:"var"}, {t:" = ½", style:"num"}, {t:"g", style:"var"},
+    {t:"Δt", style:"var"}, {t:"2", style:"sup"}
+  ], {align:"right", size:9.5});
   ctx.fillStyle=COLORS.text; ctx.font="11px Inter"; ctx.textAlign="right";
   ctx.fillText(fmtLenSI(dShown), cxp-48, (yStart+yNow)/2+7);
   ctx.beginPath(); ctx.arc(cxp,yNow,7,0,TAU); ctx.fillStyle=COLORS.coral; ctx.fill();
@@ -2085,28 +2188,35 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   ctx.save();
   ctx.beginPath(); ctx.rect(x0,y0,ww,hh); ctx.clip();
 
-  ctx.font="10.5px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
-  ctx.fillText("The Moon's fall in Δt", x0+ww/2, y0+16);
+  ctx.fillStyle=COLORS.muted; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+  drawMathText(ctx, x0+ww/2, y0+16, [
+    {t:"The Moon's fall in ", style:"num"}, {t:"Δt", style:"var"}
+  ], {align:"center", size:10.5});
 
   // Local clamp helpers -- keep every label inside the panel rect regardless of panel
-  // aspect ratio.
-  function clampCenterX(text, xPref, pad){
+  // aspect ratio. Each accepts either a plain string (measured with the current ctx.font, as
+  // before) or a math runs array (measured with measureMathText at the given size) so the same
+  // clamping keeps working unchanged for labels converted to drawMathText.
+  function textW(textOrRuns, size){
+    return Array.isArray(textOrRuns) ? measureMathText(ctx, textOrRuns, size||9.5) : ctx.measureText(textOrRuns).width;
+  }
+  function clampCenterX(textOrRuns, xPref, pad, size){
     pad = (pad==null) ? 6 : pad;
-    const w = ctx.measureText(text).width;
+    const w = textW(textOrRuns, size);
     return clamp(xPref, x0+pad+w/2, x0+ww-pad-w/2);
   }
-  function clampLeftX(text, xPref, pad){
+  function clampLeftX(textOrRuns, xPref, pad, size){
     pad = (pad==null) ? 6 : pad;
-    const w = ctx.measureText(text).width;
+    const w = textW(textOrRuns, size);
     return clamp(xPref, x0+pad, x0+ww-pad-w);
   }
   function clampY(yPref, pad){
     pad = (pad==null) ? 20 : pad;
     return clamp(yPref, y0+pad, y0+hh-pad);
   }
-  function clampRightAlignX(text, xPref, pad){
+  function clampRightAlignX(textOrRuns, xPref, pad, size){
     pad = (pad==null) ? 6 : pad;
-    const w = ctx.measureText(text).width;
+    const w = textW(textOrRuns, size);
     return clamp(xPref, x0+pad+w, x0+ww-pad);
   }
 
@@ -2114,50 +2224,51 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   const m = moonMetrics(dtShown);
   const thTrueRad = m.theta;              // OMEGA_MOON*dtShown, radians -- the real angle swept
 
-  // Exaggeration and layout are fixed from the TARGET time (state.p.dt), not the shown/animating
-  // time -- otherwise, during playback, dtShown sweeping 0..target either pins the drawn angle at
-  // its floor or reopens/rescales the figure every frame. Fixing thDispTargetDeg/R/A from the
-  // target keeps the picture's scale and framing constant through the sweep; only the Moon's
-  // position along that fixed arc (thNow, below) advances as dtShown grows.
+  // dt_target is the elapsed-time SLIDER's own value (state.p.dt) -- the figure now genuinely
+  // responds to it: a single FIXED exaggeration N is applied to the true angle at dt_target, so a
+  // bigger dt_target draws a visibly bigger swept angle (linear reach, quadratic drop), instead of
+  // every dt drawing the same ~constant schematic shape.
   const dtTarget = Math.max(state.p.dt || 1, 1e-9);
-  const thTrueTargetDeg = moonMetrics(dtTarget).theta*DEG;
+  const thTrueTargetRad = moonMetrics(dtTarget).theta;   // OMEGA_MOON*dtTarget, radians
 
   const TOP_BAND = 24, TANGENT_LABEL_ROOM = 32;
   const BOTTOM_BAND = 20, BOTTOM_LABEL_ROOM = 50;
   const padX = 0.12*ww;
   const usableWidth = ww - padX;   // horizontal room the arc's own reach (R*sin theta) must fill
 
-  // Drawn angle: a CONSTANT 5deg for every dt -- independent of dt, unlike the earlier log ramp,
-  // because no fixed on-screen angle can track a fall that spans ~7 orders of magnitude over the
-  // 1-3600s range without either drifting meaninglessly or blowing the frame. 5deg keeps the
-  // drawn drop-to-reach ratio (tan(theta/2)) around 4.4%, close to the true physical ratio's
-  // *sense* (small) without visually exaggerating the SHAPE the way a large angle would (a fixed
-  // Earth-radius fit at 20deg made the Moon look like it sinks ~18% of the distance travelled,
-  // when the true fraction is under 1%). Floor: on a panel narrow enough that 5deg would draw a
-  // drop under 16px, raise the angle just enough to reach 16px, capped at 12deg. Falls back to
-  // the true angle at the target if that ever exceeds the drawn one (never happens in-range).
-  let thDispTargetDeg = 5;
-  const dropAt5 = usableWidth*Math.tan(thDispTargetDeg*RAD/2);
-  if(dropAt5 < 16){
-    thDispTargetDeg = Math.min(12, 2*Math.atan(16/usableWidth)*DEG);
-  }
-  if(thTrueTargetDeg > thDispTargetDeg) thDispTargetDeg = thTrueTargetDeg;
-  const thDispTargetRad = thDispTargetDeg*RAD;
-  // Exaggeration factor -- varies with dt (the drawn angle no longer does) -- fixed for the whole
-  // sweep (computed once, at the target) so the caption's claim holds throughout play.
-  const N = thDispTargetDeg/Math.max(thTrueTargetDeg, 1e-12);
+  // R and N are both fixed constants (for a given panel width), set once from the REFERENCE case
+  // at the top of the elapsed-time slider (dt=3600s): the drawn angle there is pinned at 16deg,
+  // so the arc's reach exactly fills usableWidth, and N is whatever exaggeration that 16deg
+  // implies on the true angle at 3600s. Every other dt reuses this SAME R and this SAME N -- the
+  // drawn angle at dt_target is just N*trueAngle(dt_target), so it grows with dt_target (reach
+  // linearly, drop quadratically) instead of the panel being re-fit to a constant angle every time.
+  const DT_REF = 3600, REF_ANGLE_RAD = 16*RAD;
+  const thTrueRefRad = moonMetrics(DT_REF).theta;
+  const N = REF_ANGLE_RAD/Math.max(thTrueRefRad, 1e-15);
+  const R = usableWidth/Math.sin(REF_ANGLE_RAD);
 
-  // R scaled from the panel WIDTH, not a drawn Earth radius: the arc's horizontal reach
-  // (R*sin thDispTarget) exactly fills usableWidth. Keeping Earth at its true drawn radius forced
-  // a height-bound fit (R capped by the panel's vertical room), which in turn forced a large
-  // angle to keep the drop visible -- exactly the "18% sink" distortion this fixes. Earth is no
-  // longer drawn at this true radius at all; it is compressed onto a broken line below.
-  const R = usableWidth/Math.sin(thDispTargetRad);
+  // Legibility floor: below this drawn angle the drop reads as under 10px. Since R is fixed, this
+  // is a single fixed angle (thFloorRad); the dt at which N*trueAngle(dt) first reaches it is
+  // computed the same way (dtFloorThreshold, reported alongside the render for verification).
+  // Below that dt, thDrawn holds at thFloorRad instead of continuing to shrink -- the EFFECTIVE
+  // exaggeration factor (Neff, used only in the caption) rises above N to compensate.
+  const DROP_FLOOR_PX = 10;
+  const thFloorRad = Math.acos(clamp(1-DROP_FLOOR_PX/R, -1, 1));
+  const dtFloorThreshold = thFloorRad/(N*OMEGA_MOON);
+  const thDrawnUnclampedRad = N*thTrueTargetRad;
+  const isFloored = thDrawnUnclampedRad < thFloorRad;
+  const thDrawnRad = isFloored ? thFloorRad : thDrawnUnclampedRad;
+  const thDrawnDeg = thDrawnRad*DEG;
+  // Effective factor for the caption when floored -- how much bigger than true this dt's angle is
+  // being drawn, now that it's pinned at the floor rather than at N times true.
+  const Neff = thDrawnRad/Math.max(thTrueTargetRad, 1e-15);
 
-  // A pinned near the TOP of the panel (tangent line "in the upper part," per the layout guide),
-  // horizontally centred using the same box-width convention as before (usableWidth+24, the
-  // tangent's own 24px extension). Fixed from the TARGET angle, so it does not move in playback.
-  const boxWidth = R*Math.sin(thDispTargetRad) + 24; // == usableWidth+24
+  // A pinned near the TOP of the panel and horizontally FIXED: box width comes from the panel's
+  // own usableWidth (the reach at the REFERENCE dt=3600s, which by construction fills it exactly),
+  // not from the current dt's own (generally smaller) reach -- so "Moon at t=0" and the tangent
+  // line sit at the same point for every dt_target; only the Moon's drawn position (C, below)
+  // moves with dt_target.
+  const boxWidth = usableWidth + 24;
   const availLeft = x0+padX/2, availRight = x0+ww-padX/2;
   // A sits at ~30% of the panel height (not hard against the top) and Earth at ~80%, so the
   // long stretch between them reads as the compressed radius line rather than as unused space --
@@ -2174,7 +2285,7 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
 
   // Instantaneous drawn angle: linear in dtShown/dtTarget, keeping thNow = N*trueAngle(dtShown)
   // at every instant, so the exaggeration factor stays exactly N throughout the sweep.
-  const thNowDeg = clamp(thDispTargetDeg*(dtShown/dtTarget), 0, thDispTargetDeg);
+  const thNowDeg = clamp(thDrawnDeg*(dtShown/dtTarget), 0, thDrawnDeg);
   const thNowRad = thNowDeg*RAD;
   // Guard the degenerate start: below ~1deg, C and T sit on top of A, so the fall dimension, its
   // labels, and the "Moon after dt" label would all collapse onto the "Moon at t=0" marker.
@@ -2187,11 +2298,11 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   const C = moonPt(thNowRad);                                      // Moon's current position
   const T = { x:C.x, y:A.y };                                      // no-gravity point (on the tangent, above C)
 
-  // 1. orbit arc only, muted, -10deg to thDispTarget+10deg -- fixed from the TARGET angle (not
+  // 1. orbit arc only, muted, -10deg to thDrawn+10deg -- fixed from the TARGET angle (not
   // thNow), so the arc's span, and the whole figure's framing, does not resize frame-by-frame
   // during playback; only the actually-travelled part (cyan, below) grows along it.
   const NARC=48;
-  const arcLoDeg = -10, arcHiDeg = thDispTargetDeg+10;
+  const arcLoDeg = -10, arcHiDeg = thDrawnDeg+10;
   ctx.beginPath();
   for(let i=0;i<=NARC;i++){
     const phi = (arcLoDeg + (arcHiDeg-arcLoDeg)*i/NARC)*RAD;
@@ -2209,42 +2320,54 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   }
   ctx.strokeStyle = COLORS.cyan; ctx.lineWidth=2; ctx.stroke();
 
-  // The arc's own EXACT travelled length, r*thTrue (thTrue in radians -- the true arc length;
-  // the picture is exaggerated, but this number is not), and the true-angle number (the amber
-  // WEDGE at Earth is gone -- no longer geometrically consistent once the radius is compressed --
-  // but the number itself stays, "placed near the arc" per spec). Both track thNow (a FIXED
-  // fraction of the CURRENT sweep, 50% and 68% of the way from A to the current C) rather than a
-  // point fixed at the target: fixing them at the target position let the T-tied cluster below
-  // (the no-gravity/fall/after-dt labels, all genuinely tied to the CURRENT C) sweep past and
-  // collide with them mid-playback. Tracking thNow instead keeps them at a constant fraction
-  // of the CURRENT T, so they can never cross paths with it. A stricter guard (not just
-  // showMotion's 1deg) delays them slightly longer, past the point right after the marker
-  // threshold where every dynamic label is still bunched close to A with no room to separate.
-  // Both track thNow (a small, FIXED fraction of the CURRENT sweep -- 15% and 30% of the way
-  // from A to the current C) so they can never cross paths with the T-tied cluster below (the
-  // no-gravity/fall/after-dt labels, genuinely tied to the CURRENT C, which sweeps the full
-  // width during playback): staying close to A keeps them well clear of that cluster's own
-  // horizontal reach at every instant, not just at the two endpoints. Delayed past showMotion's
-  // usual 1deg to 90% of the target angle: this compressed, wide-but-shallow shape simply has
-  // too many distinct labels wanting room near A during the early sweep for these two "extra"
-  // numbers (already visible continuously in the readouts panel) to fit in cleanly as well --
-  // they appear once the sweep is essentially done and the T-cluster has moved well out of the
-  // way.
-  const showTravelTheta = thNowDeg >= thDispTargetDeg*0.90;
-  if(showTravelTheta){
-    const travelDist_m = R_MOON*1000*thTrueRad;
-    const travelLabel = fmtLenSI(travelDist_m) + " travelled";
-    const travelPt = moonPt(thNowRad*0.15);
-    const travelAnchor = { x:travelPt.x, y:travelPt.y-14 };
-    ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.cyan; ctx.textAlign="center"; ctx.textBaseline="bottom";
-    ctx.fillText(travelLabel, clampCenterX(travelLabel, travelAnchor.x), clampY(travelAnchor.y, 24));
-  }
-  if(showTravelTheta){
-    const thetaLabel = "θ = ωΔt = "+fmtSciSuper(thTrueRad,3)+" rad";
-    const angPt = moonPt(thNowRad*0.30);
-    const angAnchor = { x:angPt.x, y:angPt.y+16 };
-    ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.amber; ctx.textAlign="center"; ctx.textBaseline="top";
-    ctx.fillText(thetaLabel, clampCenterX(thetaLabel, angAnchor.x), clampY(angAnchor.y, 24));
+  // Quarter/half/three-quarter marks along the FINAL (target) arc -- fixed reference points, not
+  // tied to the animating sweep, so they read as "mile markers" on the path itself. Because
+  // thDrawn is linear in dt_target (N is fixed), a mark at a fraction f of thDrawn is also at
+  // fraction f of the elapsed time; because the drop is ~R*phi^2/2 for these small angles, their
+  // drops come out close to f^2 of the final drop (1/16, 1/4, 9/16) -- the quadratic law made
+  // visible on the figure itself. Dots always show; the thin vertical drop guide to each (down
+  // from the tangent line) only shows once the FINAL drop is at least 40px, below which they
+  // would be too small to read as anything but clutter.
+  const finalDropPx = R*(1-Math.cos(thDrawnRad));
+  const showMarkDrops = finalDropPx >= 40;
+  [0.25, 0.5, 0.75].forEach(function(f){
+    const p = moonPt(thDrawnRad*f);
+    if(showMarkDrops){
+      ctx.strokeStyle = hexAlpha(COLORS.muted,0.3); ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(p.x,A.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(p.x,p.y,2.5,0,TAU); ctx.fillStyle=hexAlpha(COLORS.muted,0.8); ctx.fill();
+  });
+
+  // ---- Collision-avoidance bookkeeping for this panel's own labels --------------------------
+  // The tangent label, the T-point captions, "Moon at t=0", the fall dimension + its value, and
+  // "Moon after dt" are FIXED-priority: drawn unconditionally at their usual spot (unchanged
+  // below), with their box registered as soon as they're drawn. The two supplementary labels --
+  // travelled distance, then the angle -- are placed LAST, into an ordered list of candidate
+  // positions relative to the arc, taking the first that fits inside the panel and collides with
+  // no box already registered; if none of the four fit, that label is suppressed for the frame
+  // (see the bottom of this function), the way the sky page handles the same problem. This
+  // replaces the old fixed-fraction placement, which could put the angle label right on top of
+  // "Moon at t = 0" when the whole construction is small (dt near the low end of the slider).
+  const placedBoxes = [];
+  function boxesOverlap(a,b){ return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0; }
+  function collides(b){ return placedBoxes.some(function(o){ return boxesOverlap(b,o); }); }
+  function insidePanel(b){ const pad=6; return b.x0>=x0+pad && b.x1<=x0+ww-pad && b.y0>=y0+pad && b.y1<=y0+hh-pad; }
+  // Approximates the ink box a label occupies at anchor (ax,ay) under the given textAlign/
+  // textBaseline (mirroring how ctx itself would place it) -- canvas has no cheap per-run
+  // bounding box, so ascent/descent are estimated from font size, generous enough for this
+  // Latin/Greek mix including the odd descender.
+  function anchorBox(ax,ay,w,size,align,baseline){
+    const asc=size*0.80, desc=size*0.30, hgt=asc+desc;
+    let bx0,bx1,by0,by1;
+    if(align==="center"){ bx0=ax-w/2; bx1=ax+w/2; }
+    else if(align==="right"){ bx0=ax-w; bx1=ax; }
+    else { bx0=ax; bx1=ax+w; }
+    if(baseline==="top"){ by0=ay; by1=ay+hgt; }
+    else if(baseline==="bottom"){ by0=ay-hgt; by1=ay; }
+    else if(baseline==="middle"){ by0=ay-hgt/2; by1=ay+hgt/2; }
+    else { by0=ay-asc; by1=ay+desc; }
+    return {x0:bx0,y0:by0,x1:bx1,y1:by1};
   }
 
   // 3. Earth, compressed onto its fixed position near the bottom of the panel.
@@ -2274,9 +2397,13 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   // The label is long enough that, near A's own right-edge margin, it gets pulled well left of
   // the break mark by the panel-edge clamp -- offset it below the mark instead of level with it,
   // so the clamped text doesn't read as crossing directly through the zigzag.
-  const rLabel = "r = 60.3 R_E (length compressed)";
-  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="left"; ctx.textBaseline="top";
-  ctx.fillText(rLabel, clampLeftX(rLabel, A.x+12), clampY(breakY+12, 20));
+  const rRuns = [
+    {t:"r", style:"var"}, {t:" = 60.3 ", style:"num"}, {t:"R", style:"var"}, {t:"E", style:"sub"},
+    {t:" (length compressed)", style:"num"}
+  ];
+  ctx.fillStyle=COLORS.muted;
+  const rLabelX = clampLeftX(rRuns, A.x+12, 6, 9.5), rLabelY = clampY(breakY+12, 20);
+  drawMathText(ctx, rLabelX, rLabelY, rRuns, {align:"left", size:9.5, baseline:"top"});
 
   // 5. tangent: dashed green HORIZONTAL line at y = A.y, running LEFT from A -- 24px past the
   // Moon's current x. The line now spans nearly the full panel width (R is scaled from the panel
@@ -2295,7 +2422,9 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   // pushing this one higher, instead, clears it regardless of where T currently is.
   const tangentLabel = "tangent: no gravity";
   ctx.font="9px Inter"; ctx.fillStyle=hexAlpha(COLORS.green,0.9); ctx.textAlign="right"; ctx.textBaseline="bottom";
-  ctx.fillText(tangentLabel, clampRightAlignX(tangentLabel, A.x-40), clampY(A.y-34, 24));
+  const tangentX = clampRightAlignX(tangentLabel, A.x-40), tangentY = clampY(A.y-34, 24);
+  ctx.fillText(tangentLabel, tangentX, tangentY);
+  placedBoxes.push(anchorBox(tangentX, tangentY, ctx.measureText(tangentLabel).width, 9, "right", "bottom"));
 
   // 6. no-gravity point T -- hollow green circle, label ABOVE-RIGHT of it (two lines, both above
   // T so they can never collide with the fall label to the right of the dimension line below).
@@ -2306,8 +2435,12 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   if(showMotion){
     const tLine1="where it would be", tLine2="with no gravity";
     ctx.font="9px Inter"; ctx.fillStyle=COLORS.green; ctx.textAlign="left"; ctx.textBaseline="bottom";
-    ctx.fillText(tLine1, clampLeftX(tLine1, T.x+8), clampY(T.y-18, 12));
-    ctx.fillText(tLine2, clampLeftX(tLine2, T.x+8), clampY(T.y-7, 12));
+    const t1X = clampLeftX(tLine1, T.x+8), t1Y = clampY(T.y-18, 12);
+    const t2X = clampLeftX(tLine2, T.x+8), t2Y = clampY(T.y-7, 12);
+    ctx.fillText(tLine1, t1X, t1Y);
+    ctx.fillText(tLine2, t2X, t2Y);
+    placedBoxes.push(anchorBox(t1X, t1Y, ctx.measureText(tLine1).width, 9, "left", "bottom"));
+    placedBoxes.push(anchorBox(t2X, t2Y, ctx.measureText(tLine2).width, 9, "left", "bottom"));
   }
 
   // 7. the fall: amber double-headed dimension arrow, VERTICAL from T down to C, length =
@@ -2316,15 +2449,23 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   // "Moon at t = 0".
   if(showMotion){
     drawDimLineV(ctx, T.y, C.y, T.x, COLORS.amber, 0.9);
-    const dLine1 = "d = r(1 − cos θ)", dLine2 = fmtLenSI(m.d_moon_m);
+    const dLine1Runs = [
+      {t:"d", style:"var"}, {t:" = ", style:"num"}, {t:"r", style:"var"}, {t:"(1 − ", style:"num"},
+      {t:"cos", style:"op"}, {t:" ", style:"num"}, {t:"θ", style:"var"}, {t:")", style:"num"}
+    ];
+    const dLine2 = fmtLenSI(m.d_moon_m);
     // Centre on the T-C midpoint normally, but never closer than 20px below T.y=A.y: at a small
     // swept angle the T-C gap can be just a few px, and "Moon at t = 0" sits right at that same
     // height (T.y=A.y) -- without this floor the two would print on top of each other.
     const dimLabelY = Math.max((T.y+C.y)/2, T.y+20);
     const dimLabelX = T.x+10;
     ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.amber; ctx.textAlign="left"; ctx.textBaseline="middle";
-    ctx.fillText(dLine1, clampLeftX(dLine1, dimLabelX), clampY(dimLabelY-7, 20));
-    ctx.fillText(dLine2, clampLeftX(dLine2, dimLabelX), clampY(dimLabelY+7, 20));
+    const dLine1X = clampLeftX(dLine1Runs, dimLabelX, 6, 9.5), dLine1Y = clampY(dimLabelY-7, 20);
+    drawMathText(ctx, dLine1X, dLine1Y, dLine1Runs, {align:"left", size:9.5, baseline:"middle"});
+    placedBoxes.push(anchorBox(dLine1X, dLine1Y, measureMathText(ctx, dLine1Runs, 9.5), 9.5, "left", "middle"));
+    const dLine2X = clampLeftX(dLine2, dimLabelX), dLine2Y = clampY(dimLabelY+7, 20);
+    ctx.fillText(dLine2, dLine2X, dLine2Y);
+    placedBoxes.push(anchorBox(dLine2X, dLine2Y, ctx.measureText(dLine2).width, 9.5, "left", "middle"));
   }
 
   // 8. Moon markers at t=0 (hollow) and after dt (filled). "Moon at t = 0" goes to the right of
@@ -2334,9 +2475,11 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   // (R is scaled to fill the panel width, and the box is centred using that full width), so a
   // right-extending label gets edge-clamped back onto the marker itself. Below is clear -- the
   // broken radius line runs straight down from A, but text crossing that thin line is fine.
-  const aLabel = "Moon at t = 0";
-  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.cyan; ctx.textAlign="center"; ctx.textBaseline="top";
-  ctx.fillText(aLabel, clampCenterX(aLabel, A.x), clampY(A.y+10, 20));
+  const aLabelRuns = [{t:"Moon at ", style:"num"}, {t:"t", style:"var"}, {t:" = 0", style:"num"}];
+  ctx.fillStyle=COLORS.cyan;
+  const aLabelX = clampCenterX(aLabelRuns, A.x, 6, 9.5), aLabelY = clampY(A.y+10, 20);
+  drawMathText(ctx, aLabelX, aLabelY, aLabelRuns, {align:"center", size:9.5, baseline:"top"});
+  placedBoxes.push(anchorBox(aLabelX, aLabelY, measureMathText(ctx, aLabelRuns, 9.5), 9.5, "center", "top"));
 
   ctx.beginPath(); ctx.arc(C.x,C.y,5,0,TAU); ctx.fillStyle=COLORS.cyan; ctx.fill();
   // Label skipped below ~1deg (showMotion guard): C sits on top of A there, so "Moon after dt"
@@ -2347,21 +2490,90 @@ function drawMoonPanel(ctx,x0,y0,ww,hh){
   // centring means the worst case is a clamped shift, not a collision, and the larger vertical
   // offset (34px, vs the fall label's own ~13-27px band) clears that label regardless.
   if(showMotion){
-    const cLabel = "Moon after Δt";
-    ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.cyan; ctx.textAlign="center"; ctx.textBaseline="top";
-    ctx.fillText(cLabel, clampCenterX(cLabel, C.x), clampY(C.y+34, 20));
+    const cLabelRuns = [{t:"Moon after ", style:"num"}, {t:"Δt", style:"var"}];
+    ctx.fillStyle=COLORS.cyan;
+    const cLabelX = clampCenterX(cLabelRuns, C.x, 6, 9.5), cLabelY = clampY(C.y+34, 20);
+    drawMathText(ctx, cLabelX, cLabelY, cLabelRuns, {align:"center", size:9.5, baseline:"top"});
+    placedBoxes.push(anchorBox(cLabelX, cLabelY, measureMathText(ctx, cLabelRuns, 9.5), 9.5, "center", "top"));
   }
 
-  // Bottom caption: states the CONSEQUENCE of the fixed drawn angle, not a claim that the picture
-  // scales with dt (it deliberately does not). N varies with dt; the two-line wording is what
-  // stays true at every dt.
-  ctx.font="9px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
-  if(N>1.05){
-    ctx.fillText("schematic: angle exaggerated ×"+fmtSciSuper(N), x0+ww/2, y0+hh-18);
-    ctx.fillText("the fall is drawn that much larger relative to the distance travelled; labelled values are exact", x0+ww/2, y0+hh-8);
-  } else {
-    ctx.fillText("drawn to scale", x0+ww/2, y0+hh-8);
+  // 9. Two supplementary labels -- the travelled distance, then the angle -- placed LAST, after
+  // every fixed label above has staked its box. Each tries an ordered list of candidates relative
+  // to the CURRENT arc/drop: below the arc at its midpoint, above the arc at its midpoint, left of
+  // the drop, below the drop. The first candidate that both fits inside the panel and collides
+  // with nothing already placed wins; the travelled-distance label goes first (so it gets first
+  // pick of the four), then the angle tries the same list against the now-larger set of boxes --
+  // naturally landing on whichever spot the distance label didn't take. If none of the four fit
+  // (the construction can be very small at the low end of the elapsed-time slider), the label is
+  // suppressed for this frame entirely, rather than forced into a collision.
+  const showTravelTheta = thNowDeg >= thDrawnDeg*0.90;
+  if(showTravelTheta){
+    const midPt = moonPt(thNowRad*0.5);
+    const dropX = C.x, dropTopY = T.y, dropBotY = C.y;
+    const GAP = 10;
+    function candidatesFor(){
+      return [
+        { x:midPt.x, y:midPt.y+GAP, align:"center", baseline:"top" },     // below the arc at its midpoint
+        { x:midPt.x, y:midPt.y-GAP, align:"center", baseline:"bottom" },  // above the arc at its midpoint
+        { x:dropX-GAP, y:(dropTopY+dropBotY)/2, align:"right", baseline:"middle" }, // left of the drop
+        { x:dropX, y:dropBotY+GAP, align:"center", baseline:"top" }       // below the drop
+      ];
+    }
+    // Candidates are tested with a 4px margin against every already-placed box (the standing
+    // minimum-gap rule for this page's labels), so a candidate that merely avoids true overlap
+    // but sits a hair away is rejected in favour of the next one, or suppression -- not accepted
+    // as a razor-thin near-touch.
+    const MIN_GAP = 4;
+    function padBox(b, m){ return {x0:b.x0-m, y0:b.y0-m, x1:b.x1+m, y1:b.y1+m}; }
+    function placeCandidate(w, size){
+      const cands = candidatesFor();
+      for(let i=0;i<cands.length;i++){
+        const c = cands[i];
+        const box = anchorBox(c.x, c.y, w, size, c.align, c.baseline);
+        if(insidePanel(box) && !collides(padBox(box, MIN_GAP))) return {c:c, box:box};
+      }
+      return null;
+    }
+
+    const travelDist_m = R_MOON*1000*thTrueRad;
+    const travelLabel = fmtLenSI(travelDist_m) + " travelled";
+    ctx.font = "9.5px Inter";
+    const travelPlacement = placeCandidate(ctx.measureText(travelLabel).width, 9.5);
+    if(travelPlacement){
+      ctx.fillStyle=COLORS.cyan; ctx.textAlign=travelPlacement.c.align; ctx.textBaseline=travelPlacement.c.baseline;
+      ctx.fillText(travelLabel, travelPlacement.c.x, travelPlacement.c.y);
+      placedBoxes.push(travelPlacement.box);
+    }
+
+    const thetaRuns = [
+      {t:"θ", style:"var"}, {t:" = ", style:"num"}, {t:"ω", style:"var"}, {t:"Δt", style:"var"},
+      {t:" = "+fmtSciSuper(thTrueRad,3)+" rad", style:"num"}
+    ];
+    const thetaPlacement = placeCandidate(measureMathText(ctx, thetaRuns, 9.5), 9.5);
+    if(thetaPlacement){
+      ctx.fillStyle=COLORS.amber;
+      drawMathText(ctx, thetaPlacement.c.x, thetaPlacement.c.y, thetaRuns, {align:thetaPlacement.c.align, size:9.5, baseline:thetaPlacement.c.baseline});
+      placedBoxes.push(thetaPlacement.box);
+    }
   }
+
+  // Bottom caption: N is now a fixed constant (same at every dt), so line 1 says so and quotes
+  // it -- UNLESS the legibility floor is active for this dt, in which case the angle is no
+  // longer N times true (it's pinned at the floor), so line 1 instead quotes the larger EFFECTIVE
+  // factor for this dt and flags that the figure is at its minimum legible size. Line 2's wording
+  // (what the exaggeration means, and that labelled values stay exact) holds in both cases.
+  ctx.fillStyle=COLORS.muted; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+  if(isFloored){
+    drawMathText(ctx, x0+ww/2, y0+hh-18, [
+      {t:"schematic: angle exaggerated ×"+fmtSciSuper(Neff)+" for this ", style:"num"},
+      {t:"Δt", style:"var"}, {t:" (minimum legible size)", style:"num"}
+    ], {align:"center", size:9});
+  } else {
+    ctx.font="9px Inter";
+    ctx.fillText("schematic: angle exaggerated ×"+fmtSciSuper(N)+" (fixed)", x0+ww/2, y0+hh-18);
+  }
+  ctx.font="9px Inter";
+  ctx.fillText("the fall is drawn that much larger relative to the distance travelled; labelled values are exact", x0+ww/2, y0+hh-8);
 
   ctx.restore();
 }
@@ -2379,8 +2591,10 @@ function drawMoonStrip(ctx,w,h){
     return y1 - (y1-y0)*(lv-yLogMin)/(yLogMax-yLogMin);
   }
   ctx.save();
-  ctx.font="10px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="left";
-  ctx.fillText("Fall distance vs Δt (log-log)", x0, 10);
+  ctx.fillStyle=COLORS.muted;
+  drawMathText(ctx, x0, 10, [
+    {t:"Fall distance vs ", style:"num"}, {t:"Δt", style:"var"}, {t:" (log-log)", style:"num"}
+  ], {align:"left", size:10});
 
   const yTicks = [ {v:1e-4,label:"0.1 mm"}, {v:1e-3,label:"1 mm"}, {v:1,label:"1 m"}, {v:1e3,label:"1 km"}, {v:1e5,label:"100 km"} ];
   ctx.font="9px Inter";
@@ -2431,10 +2645,10 @@ function drawMoonStrip(ctx,w,h){
 
   const moonLabel = fmtLenSI(dMoon), appleLabel = fmtLenSI(dApple);
   const ratio = dApple/Math.max(1e-300,dMoon);
-  const bracketLabel = "×"+ratio.toFixed(0)+" ≈ 60.3²";
+  const bracketRuns = [{t:"×"+ratio.toFixed(0)+" ≈ 60.3", style:"num"}, {t:"2", style:"sup"}];
   ctx.font = "9.5px Inter";
   const moonW = ctx.measureText(moonLabel).width, appleW = ctx.measureText(appleLabel).width;
-  const bracketW = ctx.measureText(bracketLabel).width;
+  const bracketW = measureMathText(ctx, bracketRuns, 9.5);
   const labelGap = 7, bracketGap = 14;
   const neededToRight = labelGap + Math.max(moonW,appleW) + bracketGap + bracketW;
   const dir = (curX + neededToRight > x1 - 4) ? -1 : 1; // +1 grows right of the marker, -1 left
@@ -2466,8 +2680,8 @@ function drawMoonStrip(ctx,w,h){
   ctx.beginPath();
   ctx.moveTo(bx+tick,appleY); ctx.lineTo(bx,appleY); ctx.lineTo(bx,moonY); ctx.lineTo(bx+tick,moonY);
   ctx.stroke();
-  ctx.fillStyle=COLORS.amber; ctx.textAlign = dir>0 ? "left" : "right";
-  ctx.fillText(bracketLabel, bx-tick, clamp((appleY+moonY)/2+3, y0+9, y1-3));
+  ctx.fillStyle=COLORS.amber;
+  drawMathText(ctx, bx-tick, clamp((appleY+moonY)/2+3, y0+9, y1-3), bracketRuns, {align: dir>0 ? "left" : "right", size:9.5});
   ctx.restore();
 }
 
@@ -2568,8 +2782,8 @@ function drawEnergyStrip(ctx,w,h){
     return Math.abs(v-ap.rp_AU) > 0.08*span && Math.abs(v-ap.ra_AU) > 0.08*span;
   });
   const xTicks = [
-    { v:ap.rp_AU, label:"r_p", color:COLORS.amber },
-    { v:ap.ra_AU, label:"r_a", color:COLORS.amber }
+    { v:ap.rp_AU, label:[{t:"r",style:"var"},{t:"p",style:"sub"}], color:COLORS.amber },
+    { v:ap.ra_AU, label:[{t:"r",style:"var"},{t:"a",style:"sub"}], color:COLORS.amber }
   ].concat(niceTicks.map(function(v){ return { v:v, label:fmtAUTick(v) }; })).sort(function(a,b){ return a.v-b.v; });
   drawWellSubplot(ctx, halfW,0, w-halfW,h, {
     rMin:rMinAU, rMax:rMaxAU, title:"Gravity well U(r), r (AU)",
