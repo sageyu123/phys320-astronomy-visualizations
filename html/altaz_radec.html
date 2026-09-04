@@ -1029,7 +1029,7 @@ const TAB_CONFIG = {
     phi: 40.7, lst: 15.0, star: "vega", // El~49 deg, Az~74 deg (up in the east, all arcs short & clear)
     playing: false, speed: 1.0,
     display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true, allskyInset:true },
-    sectorPair: "radec",
+    sectorPair: "azel",
     // raised from CAM_DEFAULT's 28 deg elevation to 38 deg so the alpha wedge
     // (which lies in the equatorial plane) is not seen nearly edge-on -- keeps
     // the same theta=-11 deg (azimuth from the SE) as the global default
@@ -1120,7 +1120,7 @@ const state = {
   originDisplay: { ghosts:true, zodiac:true, sunArcs:true, eqGrid:true, labels:true, analemmaInset:true }, // Origin tab's own Display-card state
   originClockHr: 12.00,        // Origin tab: clock time (h) for the analemma's Az/El calc + readouts
   display: { hGrid:true, eGrid:true, meridian:true, diurnal:true, arcs:true, triangle:false, labels:true, allskyInset:true },
-  sectorPair: "radec",        // "none" | "azel" | "radec" -- which pair of coordinate-sector fans is shown
+  sectorPair: "azel",        // "none" | "azel" | "radec" -- which pair of coordinate-sector fans is shown
   gridAlpha: { h:1, e:1 },
   derived: null,              // computeDerived(...) result for the current instant
   // three.js orbit-camera state (spherical, around a fixed target)
@@ -1302,8 +1302,7 @@ function applyHighlight(){
     setHighlightedOpacity(o.material, o.baseOpacity, "meridian", hk, o.baseLinewidth);
   });
 
-  [arcAz, arcAlt, arcDec, arcH, arcRA, starHourCircle,
-   arcAzBelow, arcAltBelow, arcDecBelow, arcHBelow, arcRABelow].forEach(function(o){
+  [arcAz, arcAlt, arcDec, arcH, arcRA, starHourCircle].forEach(function(o){
     setHighlightedOpacity(o.material, o.baseOpacity, "arcs", hk, o.baseLinewidth);
   });
   [arrowAz, arrowAlt, arrowDec, arrowH, arrowRA].forEach(function(mesh){ setHighlightedOpacity(mesh.material, 1, "arcs", hk); });
@@ -1369,25 +1368,42 @@ function makeLineStrip(points, colorInt, opacity, dashed){
    trio without adding it to the scene (the caller places it, e.g. as a child
    of a group that gets re-oriented as a whole); the "Loop"/"Strip"/"Dynamic"
    wrappers mirror the thin-line helpers' own conventions. */
-function makeFatLineRaw(colorInt, opacity, linewidthPx, dashed, capacityPts){
+// `vertexColors` (optional): when true, allocates a parallel per-point colour
+// Float32Array (same capacity as `positions`, preallocated once here and never
+// reallocated per frame) and turns on the material's vertexColors flag. Each
+// colour is a MULTIPLIER on the material's own base colour -- LineMaterial's
+// fragment shader does `diffuseColor.rgb *= vColor` (see color_fragment in
+// LineMaterial.js) -- so (1,1,1) leaves the base colour unchanged and
+// (0.3,0.3,0.3) dims it to 30% brightness while preserving hue exactly. This
+// is how the five coordinate arcs (Az/El/delta/h/alpha) show their
+// below-horizon stretch dimmed WITHOUT a second polyline object -- see
+// setLinePoints() below and the per-vertex colours computed in
+// updateDynamicArcs().
+function makeFatLineRaw(colorInt, opacity, linewidthPx, dashed, capacityPts, vertexColors){
   const cap = capacityPts || (ARC_N+1);
   const positions = new Float32Array(cap*3);
   const geo = new LineGeometry();
   geo.setPositions(positions); // degenerate seed; real points arrive via setLinePoints() before first visible use
+  let colors = null;
+  if(vertexColors){
+    colors = new Float32Array(cap*3).fill(1); // seed "no dimming"; real per-vertex colours arrive via setLinePoints()
+    geo.setColors(colors);
+  }
   const mat = new LineMaterial({
     color: colorInt, linewidth: linewidthPx, transparent: true, opacity: opacity,
-    worldUnits: false, depthWrite: false, dashed: !!dashed, alphaToCoverage: true
+    worldUnits: false, depthWrite: false, dashed: !!dashed, alphaToCoverage: true,
+    vertexColors: !!vertexColors
   });
   if(dashed){ mat.dashSize = 0.045; mat.gapSize = 0.025; mat.dashScale = 1; }
   mat.resolution.set(state.mainW||1, state.mainH||1);
   const line = new Line2(geo, mat);
   line.frustumCulled = false;
   fatLineMaterials.push(mat);
-  return { line:line, geo:geo, material:mat, positions:positions, capacity:cap,
+  return { line:line, geo:geo, material:mat, positions:positions, colors:colors, capacity:cap,
            dashed:!!dashed, fat:true, baseOpacity:opacity, baseLinewidth:linewidthPx };
 }
-function makeFatDynamicLine(colorInt, opacity, linewidthPx, dashed, capacityPts){
-  const obj = makeFatLineRaw(colorInt, opacity, linewidthPx, dashed, capacityPts);
+function makeFatDynamicLine(colorInt, opacity, linewidthPx, dashed, capacityPts, vertexColors){
+  const obj = makeFatLineRaw(colorInt, opacity, linewidthPx, dashed, capacityPts, vertexColors);
   scene.add(obj.line); // dynamic arcs/sides are recomputed directly in world space every update
   return obj;
 }
@@ -2540,10 +2556,6 @@ function renderThree(){
       change — never from the per-frame path.)
    ========================================================================= */
 let arcAz, arcAlt, arcDec, arcH, arcRA;
-// below-horizon companions (Task 2): same colour/width as their above-horizon
-// counterpart, dashed + dim, drawn from the horizon crossing down -- see
-// splitArcByHorizon()/updateArcHorizonSplit()
-let arcAzBelow, arcAltBelow, arcDecBelow, arcHBelow, arcRABelow;
 let arrowAz, arrowAlt, arrowDec, arrowH, arrowRA;
 let labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj;
 let sectorAz, sectorEl, sectorDec, sectorAlpha; // coordinate-sector fans (Task 3)
@@ -2579,8 +2591,12 @@ function makeDynamicLine(colorInt, opacity, dashed, capacity){
   scene.add(line);
   return { line:line, geo:geo, positions:positions, distArr:distArr, capacity:cap, dashed:!!dashed };
 }
-/* overwrites the preallocated arrays in place — no allocation */
-function setLinePoints(obj, pts){
+/* overwrites the preallocated arrays in place — no allocation. `colors`
+   (optional) is a per-point array parallel to `pts` (each entry any object
+   with .r/.g/.b, e.g. a plain {r,g,b} literal) uploaded into `obj.colors` --
+   only meaningful when `obj` was built with vertexColors (see
+   makeFatLineRaw()); ignored otherwise. */
+function setLinePoints(obj, pts, colors){
   const n = Math.min(pts.length, obj.capacity);
   const arr = obj.positions;
   let cum = 0;
@@ -2595,6 +2611,13 @@ function setLinePoints(obj, pts){
       obj.distArr[i] = cum;
     }
   }
+  if(obj.colors && colors){
+    const carr = obj.colors;
+    for(let i=0;i<n;i++){
+      const c = colors[i];
+      carr[i*3]=c.r; carr[i*3+1]=c.g; carr[i*3+2]=c.b;
+    }
+  }
   if(obj.fat){
     // Line2/LineGeometry: setPositions() builds a fresh instanced buffer sized
     // to the array passed in, so pass only the first n*3 valid floats — this
@@ -2602,6 +2625,7 @@ function setLinePoints(obj, pts){
     // equivalent to the thin-line path below). Cheap at our arc sizes (<=121 pts).
     const nn = Math.max(2, n);
     obj.geo.setPositions(arr.subarray(0, nn*3));
+    if(obj.colors) obj.geo.setColors(obj.colors.subarray(0, nn*3)); // mirrors setPositions() exactly, same nn
     if(obj.dashed) obj.line.computeLineDistances();
   } else {
     obj.geo.attributes.position.needsUpdate = true;
@@ -2648,52 +2672,38 @@ const ARC_LIFT_H = 1.006;
 function liftedThreeAt(v, k){ return toThreeVec3(v).multiplyScalar(k); }
 
 /* =========================================================================
-   TASK 2 -- coordinate-arc horizon split. A lifted arc's own point already
-   carries the "up" component in its (three.js-space) y -- toThreeVec3() maps
-   model z (=Up) straight onto three.js y, and ARC_LIFT/ARC_LIFT_H are
-   positive scalars, so a point's sign of .y IS the sign of its elevation; no
-   separate az/el lookup is needed. Splits an OPEN sampled path (not a closed
-   loop -- no wraparound merge, unlike rebuildDiurnalCircle()'s version of
-   this same idea) into the two point lists a solid "above" line and a dashed
-   "below" line should each get, inserting the exact z=0 crossing (lerp) into
-   BOTH lists so the two halves visibly meet at the horizon. Every one of
-   these five teaching arcs is a t in [0,1] sweep of at most ~180 degrees in
-   one spherical coordinate (Az fixed at the horizon; El linear in altitude,
-   so provably monotonic; delta/H/alpha bounded to a single sinusoidal hump
-   over that range) -- in every configuration this page can produce, that
-   crosses the horizon at most once. A pathological sweep with more than one
-   crossing would still render correctly for its first crossing; any further
-   run of the same polarity is simply concatenated onto the matching list, so
-   it would draw one extra short (and here, never-actually-occurring)
-   bridging segment rather than misbehave outright. */
-function splitArcByHorizon(pts){
-  const abovePts = [], belowPts = [];
-  let curAbove = pts[0].y >= 0;
-  (curAbove ? abovePts : belowPts).push(pts[0]);
-  for(let i=1;i<pts.length;i++){
-    const nowAbove = pts[i].y >= 0;
-    if(nowAbove !== curAbove){
-      const p0 = pts[i-1], p1 = pts[i];
-      const t = p0.y / (p0.y - p1.y);
-      const cross = p0.clone().lerp(p1, t);
-      abovePts.push(cross); belowPts.push(cross);
-      curAbove = nowAbove;
-    }
-    (curAbove ? abovePts : belowPts).push(pts[i]);
-  }
-  return { abovePts:abovePts, belowPts:belowPts };
+   Coordinate-arc horizon dimming. A lifted arc's own point already carries
+   the "up" component in its (three.js-space) y -- toThreeVec3() maps model
+   z (=Up) straight onto three.js y, and ARC_LIFT/ARC_LIFT_H are positive
+   scalars, so a point's sign of .y IS the sign of its elevation; no separate
+   az/el lookup is needed.
+
+   Each of the five coordinate arcs is drawn as ONE continuous fat polyline
+   (never split into separate above/below objects -- an earlier version did
+   that via a since-removed splitArcByHorizon()/updateArcHorizonSplit() pair,
+   which broke whenever an arc crossed the horizon more than once: it pooled
+   every above-horizon sample into one array and every below-horizon sample
+   into another, so two separate above-horizon RUNS collapsed into one array
+   and rendered as a single polyline with a spurious chord jumping straight
+   between them). The below-horizon stretch is instead dimmed via a per-
+   vertex colour multiplier on the same unbroken line -- see the
+   `vertexColors` support added to makeFatLineRaw()/setLinePoints() above.
+   ARC_VCOLOR_BRIGHT/DIM are shared, read-only constants (never mutated), so
+   arcVertexColors() allocates no colour objects, only the array of
+   references to these two per call. */
+const ARC_VCOLOR_BRIGHT = { r:1, g:1, b:1 };     // leaves the material's own colour unchanged
+const ARC_VCOLOR_DIM    = { r:0.3, g:0.3, b:0.3 }; // 30% brightness, same hue
+function arcVertexColors(pts){
+  const cols = new Array(pts.length);
+  for(let i=0;i<pts.length;i++) cols[i] = pts[i].y >= 0 ? ARC_VCOLOR_BRIGHT : ARC_VCOLOR_DIM;
+  return cols;
 }
-// Feeds an arc's freshly-sampled `pts` into its above/below preallocated fat-
-// line pair, or hides both when the arc itself is off (`visible` false) --
-// same preallocated-buffer setLinePoints() every other dynamic arc already
-// uses each frame, just called twice (once per horizon side) instead of once.
-function updateArcHorizonSplit(aboveObj, belowObj, pts, visible){
-  if(!visible){ aboveObj.line.visible = false; belowObj.line.visible = false; return; }
-  const split = splitArcByHorizon(pts);
-  setLinePoints(aboveObj, split.abovePts);
-  aboveObj.line.visible = split.abovePts.length >= 2;
-  setLinePoints(belowObj, split.belowPts);
-  belowObj.line.visible = split.belowPts.length >= 2;
+// Feeds an arc's freshly-sampled `pts` (always >= 2 points -- these are fixed
+// t-in-[0,1] sweeps, never degenerate) into its single preallocated fat line,
+// or hides it when the arc itself is off (`visible` false).
+function setArcLine(obj, pts, visible){
+  if(visible) setLinePoints(obj, pts, obj.colors ? arcVertexColors(pts) : null);
+  obj.line.visible = visible;
 }
 
 /* Coordinate-sector fans (Task 3): translucent triangle fans from the observer
@@ -2752,9 +2762,8 @@ function updateWedgeLabel(sprite, pts, visible){
   sprite.visible = visible;
 }
 
-// Task 2: each coordinate arc's sample count (ARC_N+1) plus headroom for the
-// (at most a couple of) interpolated horizon-crossing points splitArcByHorizon()
-// inserts -- preallocated once here, never resized per frame.
+// Each coordinate arc's sample count (ARC_N+1) plus a little headroom,
+// preallocated once here and never resized per frame.
 const ARC_CAP = ARC_N + 4;
 
 /* =========================================================================
@@ -2777,29 +2786,25 @@ const ARC_CAP = ARC_N + 4;
           celestial equator, the meridian, the diurnal circle (incl. its
           disk and the two declination-limit rings)
       -5  coordinate-sector fans (Task 3)
-       0  the five coordinate arcs + their below-horizon dashed twins,
-          arrowheads, and other arc-adjacent markers
+       0  the five coordinate arcs (each one continuous line, below-horizon
+          stretch dimmed via vertex colour -- see setArcLine()), arrowheads,
+          and other arc-adjacent markers
        5  Task 1's leader lines
       10  label sprites (set once, in makeTextSprite())
    Every existing depthWrite/transparent flag is untouched -- only paint
    order changes. ========================================================= */
 function buildDynamicArcsGroup(){
-  arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false, ARC_CAP);
-  arcAzBelow  = makeFatDynamicLine(COLORI.cyan, 0.3, 2.75, true, ARC_CAP);
-  arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false, ARC_CAP);
-  arcAltBelow = makeFatDynamicLine(COLORI.cyan, 0.3, 2.75, true, ARC_CAP);
-  arcDec = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false, ARC_CAP);
-  arcDecBelow = makeFatDynamicLine(COLORI.amber, 0.3, 2.75, true, ARC_CAP);
-  // h: solid above the horizon like the other four, now that "dashed" is how
-  // ANY of these arcs marks its below-horizon continuation (Task 2) -- was
-  // unconditionally dashed before, to read as "the hour-angle arc" at a
-  // glance; that distinction is dropped in favour of the shared, consistent
-  // above/below convention the brief asks for.
-  arcH   = makeFatDynamicLine(COLORI.magenta, 1.0, 2.75, false, ARC_CAP);
-  arcHBelow   = makeFatDynamicLine(COLORI.magenta, 0.3, 2.75, true, ARC_CAP);
-  arcRA  = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false, ARC_CAP);   // solid right-ascension arc, on the equator
-  arcRABelow  = makeFatDynamicLine(COLORI.amber, 0.3, 2.75, true, ARC_CAP);
-  [arcAz, arcAzBelow, arcAlt, arcAltBelow, arcDec, arcDecBelow, arcH, arcHBelow, arcRA, arcRABelow]
+  arcAz  = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false, ARC_CAP, true);
+  arcAlt = makeFatDynamicLine(COLORI.cyan, 1.0, 2.75, false, ARC_CAP, true);
+  arcDec = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false, ARC_CAP, true);
+  // h: dashed, unlike the other four solid arcs, so it still reads as "the
+  // hour-angle arc" at a glance (matches hlstH's own dashed style on the
+  // hlst tab -- see its "matching the main h arc" comment below). Dashing
+  // and the below-horizon vertex-colour dimming are independent LineMaterial
+  // features and coexist fine on one line.
+  arcH   = makeFatDynamicLine(COLORI.magenta, 1.0, 2.75, true, ARC_CAP, true);
+  arcRA  = makeFatDynamicLine(COLORI.amber, 1.0, 2.75, false, ARC_CAP, true);   // solid right-ascension arc, on the equator
+  [arcAz, arcAlt, arcDec, arcH, arcRA]
     .forEach(function(o){ o.line.renderOrder = 0; }); // explicit -- see the render-order scheme above
   arrowAz  = makeArrowCone(COLORI.cyan);
   arrowAlt = makeArrowCone(COLORI.cyan);
@@ -2873,7 +2878,7 @@ function updateDynamicArcs(){
   if(computeArcs){
     let pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec((i/ARC_N)*d.A_deg, 0)));
-    updateArcHorizonSplit(arcAz, arcAzBelow, pts, showArcs);
+    setArcLine(arcAz, pts, showArcs);
     arrowAz.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowAz, pts);
     labelAtMid(labelAObj, pts); labelAObj.visible = showArcs && showLabels;
@@ -2883,7 +2888,7 @@ function updateDynamicArcs(){
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(hzToVec(d.A_deg, (i/ARC_N)*d.a_deg)));
-    updateArcHorizonSplit(arcAlt, arcAltBelow, pts, showArcs);
+    setArcLine(arcAlt, pts, showArcs);
     arrowAlt.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowAlt, pts);
     labelAtMid(labelAltObj, pts); labelAltObj.visible = showArcs && showLabels;
@@ -2893,7 +2898,7 @@ function updateDynamicArcs(){
 
     pts = [];
     for(let i=0;i<=ARC_N;i++) pts.push(liftedThree(eqToVec(d.H_deg, (i/ARC_N)*state.dec, state.phi)));
-    updateArcHorizonSplit(arcDec, arcDecBelow, pts, showArcs);
+    setArcLine(arcDec, pts, showArcs);
     arrowDec.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowDec, pts);
     labelAtMid(labelDecObj, pts); labelDecObj.visible = showArcs && showLabels;
@@ -2908,7 +2913,7 @@ function updateDynamicArcs(){
       const Hh = (i/ARC_N)*d.H_deg;
       pts.push(liftedThreeAt(eqToVec(Hh, -4, state.phi), ARC_LIFT_H));
     }
-    updateArcHorizonSplit(arcH, arcHBelow, pts, showArcs);
+    setArcLine(arcH, pts, showArcs);
     arrowH.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowH, pts);
     labelAtMid(labelHObj, pts); labelHObj.visible = showArcs && showLabels;
@@ -2920,7 +2925,7 @@ function updateDynamicArcs(){
       const Hh = lstDeg - (i/ARC_N)*alphaDeg;
       pts.push(liftedThree(eqToVec(Hh, 0, state.phi)));
     }
-    updateArcHorizonSplit(arcRA, arcRABelow, pts, showArcs);
+    setArcLine(arcRA, pts, showArcs);
     arrowRA.visible = showArcs;
     if(showArcs) placeArrowAtEnd(arrowRA, pts);
     labelAtMid(labelRAObj, pts); labelRAObj.visible = showArcs && showLabels;
@@ -2931,7 +2936,6 @@ function updateDynamicArcs(){
     starHourCircle.line.visible = showArcs;
   } else {
     hideAll([arcAz.line, arcAlt.line, arcDec.line, arcH.line, arcRA.line,
-             arcAzBelow.line, arcAltBelow.line, arcDecBelow.line, arcHBelow.line, arcRABelow.line,
              arrowAz, arrowAlt, arrowDec, arrowH, arrowRA,
              labelAObj, labelAltObj, labelDecObj, labelHObj, labelRAObj,
              starHourCircle.line,
