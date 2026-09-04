@@ -2440,11 +2440,18 @@ function drawHarmonicMain(ctx,w,h){
     drawEllipsePath(ctx, toScreen, selAE.a, selAE.e);
   }
 
-  // Sun
-  drawGlow(ctx, glowSprite, cx, cy, 30);
+  // Sun -- drawn through toScreen() at the WORLD ORIGIN (the shared focus of
+  // every orbit here), NOT at the raw canvas centre (cx,cy). Those two agree
+  // only while the view's pan is 0: viewToScreen() maps the origin to
+  // (cx+panX, cy+panY), and both wheel-zoom-about-the-cursor (zoomViewAt()
+  // sets pan to keep the point under the cursor fixed) and drag-to-pan make
+  // panX/panY nonzero -- so a Sun pinned to (cx,cy) slid off the orbits'
+  // common focus by exactly (panX,panY) as soon as the user zoomed or panned.
+  const sunS = toScreen({x:0, y:0});
+  drawGlow(ctx, glowSprite, sunS.x, sunS.y, 30);
   ctx.fillStyle = COLORS.amber;
-  ctx.beginPath(); ctx.arc(cx,cy,6,0,TAU); ctx.fill();
-  drawLabel(ctx, cx, cy, "Sun", {dx:0,dy:-1}, {color:COLORS.amber, size:11, offset:9});
+  ctx.beginPath(); ctx.arc(sunS.x,sunS.y,6,0,TAU); ctx.fill();
+  drawLabel(ctx, sunS.x, sunS.y, "Sun", {dx:0,dy:-1}, {color:COLORS.amber, size:11, offset:9});
 
   const moving = [];      // bodies that get a moving, collision-avoided label this frame
   const legendItems = []; // EVERY drawn body -- stable membership, dot filled/hollow per-frame
@@ -2487,7 +2494,9 @@ function drawHarmonicMain(ctx,w,h){
   }
 
   if(labelsOn()){
-    if(moving.length) layoutHarmonicLabels(ctx, moving, cx, cy, w, h);
+    // labels push outward from the SUN (the system's centre on screen), which is
+    // the panned/zoomed sunS -- not the raw canvas centre; same reason as above
+    if(moving.length) layoutHarmonicLabels(ctx, moving, sunS.x, sunS.y, w, h);
     const onCanvas = {};
     moving.forEach(function(it){ if(it.onCanvas) onCanvas[it.key] = true; });
     legendItems.forEach(function(it){ it.filled = !!onCanvas[it.key]; });
