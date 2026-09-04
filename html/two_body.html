@@ -1100,9 +1100,17 @@ function drawReducedMain(ctx,w,h){
   const toScreenRight = viewToScreen(baseRight, cxRight, cy);
   const q = state.p.q, e = state.p.e, t = state.t;
 
+  // Each half is an independent scene sharing one zoom/pan, so each must be clipped
+  // to its own rectangle -- otherwise a zoomed-in view spills across the divider and
+  // the two pictures visually merge into each other.
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, halfW, h); ctx.clip();
   drawCmScene(ctx, toScreenLeft, q, e, t, { showVectorR:true });
+  ctx.restore();
 
   // right: one body of mass mu about a fixed mass M
+  ctx.save();
+  ctx.beginPath(); ctx.rect(halfW+gap, 0, halfW, h); ctx.clip();
   const rel = relState(e, t);
   const sM = toScreenRight({x:0,y:0});
   ctx.lineWidth = 1;
@@ -1115,6 +1123,8 @@ function drawReducedMain(ctx,w,h){
   drawDisk(ctx, sMu, DISK_MU, COLORS.purple);
   drawLabel(ctx, sM.x, sM.y, "M = m₁+m₂", {dx:0,dy:1}, { offset:DISK_M+10, size:10 });
   drawLabel(ctx, sMu.x, sMu.y, "μ", outwardDir(sMu.x,sMu.y,sM.x,sM.y), { color:COLORS.purple, italic:true });
+
+  ctx.restore();
 
   // divider + sub-panel titles
   ctx.strokeStyle = COLORS.border; ctx.lineWidth = 1;

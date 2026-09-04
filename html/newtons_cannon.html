@@ -1661,6 +1661,24 @@ function drawArrow(ctx, from, to, colorHex, alpha, widthMul){
   ctx.closePath(); ctx.fill();
   ctx.restore();
 }
+// Horizontal double-headed dimension line (short perpendicular end ticks + inward-pointing
+// arrowheads) -- used for the "fall" gap on the Falling-Moon panel and, in spirit, matches the
+// apple panel's own hand-drawn tick convention (see drawApplePanel).
+function drawDimLineH(ctx, xa, xb, y, colorHex, alpha){
+  alpha = (alpha==null) ? 1 : alpha;
+  const lo = Math.min(xa,xb), hi = Math.max(xa,xb);
+  const c = hexAlpha(colorHex, alpha);
+  ctx.save();
+  ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(lo,y); ctx.lineTo(hi,y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(lo,y-4); ctx.lineTo(lo,y+4); ctx.moveTo(hi,y-4); ctx.lineTo(hi,y+4); ctx.stroke();
+  const headLen=6, headHalf=3;
+  if(hi-lo > headLen*2.2){
+    ctx.beginPath(); ctx.moveTo(lo,y); ctx.lineTo(lo+headLen,y-headHalf); ctx.lineTo(lo+headLen,y+headHalf); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(hi,y); ctx.lineTo(hi-headLen,y-headHalf); ctx.lineTo(hi-headLen,y+headHalf); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
 
 /* =========================================================================
    14. VIEW TRANSFORM (pan/zoom -- active on Cannon and Orbital-energy tabs)
@@ -1748,13 +1766,15 @@ function fmtSciPlain(n){
 }
 const SUPERSCRIPT_DIGITS = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","-":"⁻"};
 function toSuperscript(n){ return String(n).split("").map(function(c){ return SUPERSCRIPT_DIGITS[c] != null ? SUPERSCRIPT_DIGITS[c] : c; }).join(""); }
-// "6.6·10¹⁰" style formatting (mantissa to 1 decimal, unicode superscript exponent) --
-// used for the Moon-tab magnifier caption where a plain "6.63e10" reads as a raw JS number.
-function fmtSciSuper(n){
+// "6.6·10¹⁰" style formatting (mantissa to `decimals` places -- default 1 -- unicode superscript
+// exponent) -- used for the Moon-tab exaggeration caption and the true-angle label, where a plain
+// "6.63e10" or "2.662e-6" reads as a raw JS number.
+function fmtSciSuper(n, decimals){
   if(!isFinite(n) || n===0) return "0";
+  decimals = (decimals==null) ? 1 : decimals;
   const e = Math.floor(Math.log10(Math.abs(n)));
   const m = n/Math.pow(10,e);
-  return m.toFixed(1) + "·10" + toSuperscript(e);
+  return m.toFixed(decimals) + "·10" + toSuperscript(e);
 }
 
 /* ---- Cannon tab ---- */
@@ -1766,6 +1786,11 @@ function drawCannonMain(ctx,w,h){
   const toScreen = viewToScreen(baseToScreen, cx, cy);
   const scale = viewScale(baseScale);
   const d = cannonDerived(state.p.h, state.p.v0);
+  // World origin (Earth's centre) in screen space -- NOT (cx,cy): panning moves the whole
+  // world, including the origin, away from the raw canvas centre. Every world-anchored draw
+  // (the Earth disk itself, and outward-pointing label directions) must use this, not cx,cy,
+  // or it stays glued to the canvas centre while the orbit/mountain/projectile pan around it.
+  const sOrigin = toScreen({x:0,y:0});
 
   if(state.display.family){
     FAMILY_MULTS.forEach(function(fm){
@@ -1789,12 +1814,12 @@ function drawCannonMain(ctx,w,h){
         labelWorld = poly.labelPt;
       }
       const ls = toScreen(labelWorld);
-      drawLabel(ctx, ls.x, ls.y, fm.label, outwardDir(ls.x,ls.y,cx,cy), { color:hexAlpha(COLORS.muted,0.8), size:9.5, offset:4 });
+      drawLabel(ctx, ls.x, ls.y, fm.label, outwardDir(ls.x,ls.y,sOrigin.x,sOrigin.y), { color:hexAlpha(COLORS.muted,0.8), size:9.5, offset:4 });
     });
   }
 
   const rEarthPx = scale*R_E;
-  ctx.beginPath(); ctx.arc(cx,cy,rEarthPx,0,TAU); ctx.fillStyle = EARTH_FILL; ctx.fill();
+  ctx.beginPath(); ctx.arc(sOrigin.x,sOrigin.y,rEarthPx,0,TAU); ctx.fillStyle = EARTH_FILL; ctx.fill();
   ctx.lineWidth = 1.4; ctx.strokeStyle = hexAlpha(COLORS.cyan,0.45); ctx.stroke();
 
   const baseHalfW = R_E*0.045;
@@ -1827,7 +1852,7 @@ function drawCannonMain(ctx,w,h){
     const farAngle = farIsApo ? Math.PI : 0;
     const farW = orbitToWorld(farR, farAngle, d.theta0);
     const s = toScreen(farW);
-    const dir = outwardDir(s.x,s.y,cx,cy);
+    const dir = outwardDir(s.x,s.y,sOrigin.x,sOrigin.y);
     const perp = {dx:-dir.dy, dy:dir.dx};
     ctx.beginPath();
     ctx.moveTo(s.x-perp.dx*5, s.y-perp.dy*5);
@@ -2015,12 +2040,14 @@ function drawApplePanel(ctx,x0,y0,ww,hh){
   ctx.beginPath(); ctx.moveTo(cxp-26,yStart); ctx.lineTo(cxp+26,yStart); ctx.stroke();
   ctx.fillStyle=COLORS.muted; ctx.font="9.5px Inter"; ctx.textAlign="left";
   ctx.fillText("release", cxp+30, yStart+3);
-  ctx.strokeStyle = hexAlpha(COLORS.text,0.5); ctx.lineWidth=1;
+  ctx.strokeStyle = hexAlpha(COLORS.amber,0.85); ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(cxp-40,yStart); ctx.lineTo(cxp-40,yNow); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cxp-44,yStart); ctx.lineTo(cxp-36,yStart); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cxp-44,yNow); ctx.lineTo(cxp-36,yNow); ctx.stroke();
+  ctx.fillStyle=COLORS.amber; ctx.font="9.5px Inter"; ctx.textAlign="right";
+  ctx.fillText("d = ½gΔt²", cxp-48, (yStart+yNow)/2-7);
   ctx.fillStyle=COLORS.text; ctx.font="11px Inter"; ctx.textAlign="right";
-  ctx.fillText(fmtLenSI(dShown), cxp-48, (yStart+yNow)/2+4);
+  ctx.fillText(fmtLenSI(dShown), cxp-48, (yStart+yNow)/2+7);
   ctx.beginPath(); ctx.arc(cxp,yNow,7,0,TAU); ctx.fillStyle=COLORS.coral; ctx.fill();
   ctx.fillStyle=COLORS.muted; ctx.font="9px Inter"; ctx.textAlign="right";
   ctx.fillText("scale ×"+fmtSciPlain(scale)+" px/m", x0+ww-8, y0+hh-8);
@@ -2029,70 +2056,189 @@ function drawApplePanel(ctx,x0,y0,ww,hh){
 function drawMoonPanel(ctx,x0,y0,ww,hh){
   ctx.save();
   ctx.beginPath(); ctx.rect(x0,y0,ww,hh); ctx.clip();
-  ctx.font="10.5px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="center";
-  ctx.fillText("Moon at r = 60.3 R_E", x0+ww/2, y0+16);
-  const cx=x0+ww/2, cy=y0+hh/2+6;
-  const Rdisp = Math.min(ww,hh)*0.36;
-  const dtShown = state.moonShownDt || 0;
-  const theta = OMEGA_MOON*dtShown;
 
-  ctx.strokeStyle = hexAlpha(COLORS.muted,0.5); ctx.lineWidth=1.2;
-  ctx.beginPath(); ctx.arc(cx,cy,Rdisp,0,TAU); ctx.stroke();
-  const rE = Math.max(2.5, Rdisp*(R_E/R_MOON));
-  ctx.beginPath(); ctx.arc(cx,cy,rE,0,TAU); ctx.fillStyle=EARTH_FILL; ctx.fill();
-  ctx.strokeStyle=hexAlpha(COLORS.cyan,0.5); ctx.lineWidth=1; ctx.stroke();
+  ctx.font="10.5px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+  ctx.fillText("The Moon's fall in Δt", x0+ww/2, y0+16);
 
-  const startPt = { x:cx+Rdisp, y:cy };
-  ctx.strokeStyle = hexAlpha(COLORS.green,0.7); ctx.setLineDash([4,3]); ctx.lineWidth=1.3;
-  ctx.beginPath(); ctx.moveTo(startPt.x,cy-Rdisp*0.5); ctx.lineTo(startPt.x,cy+Rdisp*0.15); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle=hexAlpha(COLORS.green,0.85); ctx.font="9px Inter"; ctx.textAlign="right";
-  ctx.fillText("tangent", Math.min(startPt.x+6, x0+ww-4), cy-Rdisp*0.5-2);
+  // Local clamp helpers -- keep every label inside the panel rect regardless of panel
+  // aspect ratio (the geometry's radius R is a fixed fraction of min(ww,hh), but a
+  // near-square panel leaves much less lateral margin than a wide one).
+  function clampCenterX(text, xPref, pad){
+    pad = (pad==null) ? 6 : pad;
+    const w = ctx.measureText(text).width;
+    return clamp(xPref, x0+pad+w/2, x0+ww-pad-w/2);
+  }
+  function clampLeftX(text, xPref, pad){
+    pad = (pad==null) ? 6 : pad;
+    const w = ctx.measureText(text).width;
+    return clamp(xPref, x0+pad, x0+ww-pad-w);
+  }
+  function clampY(yPref, pad){
+    pad = (pad==null) ? 20 : pad;
+    return clamp(yPref, y0+pad, y0+hh-pad);
+  }
+  function clampRightAlignX(text, xPref, pad){
+    pad = (pad==null) ? 6 : pad;
+    const w = ctx.measureText(text).width;
+    return clamp(xPref, x0+pad+w, x0+ww-pad);
+  }
 
-  const mx = cx+Rdisp*Math.cos(theta), my = cy-Rdisp*Math.sin(theta);
-  ctx.beginPath(); ctx.arc(mx,my,5,0,TAU); ctx.fillStyle=COLORS.cyan; ctx.fill();
-  ctx.fillStyle=COLORS.text; ctx.font="9.5px Inter"; ctx.textAlign="right";
-  ctx.fillText("Moon", mx-8, my);
+  const dtShown = Math.max(state.moonShownDt || 0, 0);
+  const m = moonMetrics(dtShown);
+  const thTrueRad = m.theta;              // OMEGA_MOON*dtShown, radians -- the real angle swept
+  const thTrueDeg = thTrueRad*DEG;
 
-  // Fixed corner placement (rather than anchored to the Moon marker) keeps the inset well
-  // clear of the orbit/Moon-label area regardless of panel size -- the Moon always sits at
-  // world angle 0 (the right side of the circle), so the upper-left corner is always free.
-  const insetR = Math.min(52, Math.min(ww,hh)*0.20);
-  const insetCx = x0 + insetR + 12;
-  const insetCy = y0 + insetR + 30;
-  ctx.strokeStyle = hexAlpha(COLORS.muted,0.4); ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(insetCx,insetCy); ctx.stroke();
+  // Displayed (exaggerated) angle: grows from 30deg (dt=1s) to 60deg (dt=3600s) on a log scale --
+  // widened from an earlier 14-36deg range because at 14-36deg the construction was too small to
+  // read: with R sized as a fixed fraction of the panel, the teaching content (angle, tangent,
+  // fall gap, four labels) was crushed into a sliver at the circle's edge. A larger swept angle
+  // gives more vertical room to work with once R is sized to actually fill the panel (below).
+  // Falls back to the true angle if it ever exceeds this (never happens for dt in the slider's
+  // 1-3600s range, but keeps the picture honest if the range is ever widened).
+  let thDispDeg = clamp(30 + 30*Math.log10(Math.max(dtShown,1))/Math.log10(3600), 30, 60);
+  if(thTrueDeg > thDispDeg) thDispDeg = thTrueDeg;
+  const thDispRad = thDispDeg*RAD;
+  const N = thDispDeg/Math.max(thTrueDeg, 1e-12); // exaggeration factor
 
-  ctx.save();
-  ctx.beginPath(); ctx.arc(insetCx,insetCy,insetR,0,TAU); ctx.clip();
-  ctx.fillStyle = hexAlpha(COLORS["panel-deep"],0.97); ctx.fillRect(insetCx-insetR,insetCy-insetR,insetR*2,insetR*2);
-  const gapPxNormal = Rdisp*(1-Math.cos(theta));
-  const arcPxNormal = Rdisp*theta;
-  const magX = 40/Math.max(1e-12, gapPxNormal);
-  const magY = 30/Math.max(1e-9, arcPxNormal);
-  ctx.strokeStyle = hexAlpha(COLORS.green,0.8); ctx.setLineDash([3,2]); ctx.lineWidth=1.2;
-  ctx.beginPath(); ctx.moveTo(insetCx, insetCy-insetR+3); ctx.lineTo(insetCx, insetCy+insetR-3); ctx.stroke();
-  ctx.setLineDash([]);
+  // Size R to FILL the panel with the construction, rather than to an arbitrary fraction of it.
+  // The construction's own bounding box, in units of R, runs x from 0 (Earth centre) to 1 (the
+  // tangent line at A/T) and y from 0 (A) up to sin(thDisp) (C) -- plus a fixed 24px for the
+  // tangent's own extension above C, approximated below as +0.10 of R so a single R solves both
+  // the width and height constraints. padX reserves ~12% of the panel width as left/right label
+  // margin; TOP_BAND/BOTTOM_BAND/LABEL_ROOM reserve room for the title, the bottom caption, and
+  // headroom for the various text labels respectively.
+  const TOP_BAND = 24, BOTTOM_BAND = 20, LABEL_ROOM = 30;
+  const padX = 0.12*ww;
+  const availH = hh - TOP_BAND - BOTTOM_BAND - LABEL_ROOM;
+  const R = Math.max(30, Math.min( (ww-padX)/1.0, availH/(Math.sin(thDispRad)+0.10) ));
+
+  // Anchor Earth at the lower-left of the fitted box (A sits at the same height as E, C sits
+  // sin(thDisp)*R above it), then vertically centre that whole box -- E down to the tangent's
+  // 24px-higher top -- within the panel's available vertical band (between the title and the
+  // caption), so leftover slack splits evenly above and below rather than piling up on one side.
+  const availTop = y0+TOP_BAND, availBottom = y0+hh-BOTTOM_BAND;
+  const boxHeight = R*Math.sin(thDispRad) + 24;
+  const E = { x:x0+padX/2, y:(availTop+availBottom)/2 + boxHeight/2 };
+  const A = { x:E.x+R, y:E.y };                                    // Moon at t=0
+  const C = { x:E.x+R*Math.cos(thDispRad), y:E.y-R*Math.sin(thDispRad) }; // Moon after dt (displayed)
+  const T = { x:E.x+R, y:C.y };                                    // no-gravity point (same x as A)
+
+  // 1. orbit arc only (not the full circle -- at this larger R a full circle runs far outside
+  // the panel): a muted, thin arc from -10deg to thDisp+10deg so it still reads as a piece of a
+  // much bigger orbit, with the actually-travelled part (0 to thDisp) drawn in cyan on top.
+  const NARC=48;
+  const arcLoDeg = -10, arcHiDeg = thDispDeg+10;
   ctx.beginPath();
-  const M=20;
-  for(let i=0;i<=M;i++){
-    const th=(theta*i)/M;
-    const lx = -(Rdisp*(1-Math.cos(th)))*magX;
-    const ly = -(Rdisp*Math.sin(th))*magY;
-    const px=insetCx+lx, py=insetCy+ly;
+  for(let i=0;i<=NARC;i++){
+    const phi = (arcLoDeg + (arcHiDeg-arcLoDeg)*i/NARC)*RAD;
+    const px = E.x+R*Math.cos(phi), py = E.y-R*Math.sin(phi);
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.35); ctx.lineWidth=1; ctx.stroke();
+
+  // 2. arc actually travelled, angle 0 -> thDisp. Built as an explicit polyline (rather than
+  // ctx.arc's own angle convention) so it unambiguously sweeps counter-clockwise -- i.e. UP the
+  // right-hand side of the circle, screen y being down.
+  ctx.beginPath();
+  for(let i=0;i<=NARC;i++){
+    const phi = thDispRad*i/NARC;
+    const px = E.x+R*Math.cos(phi), py = E.y-R*Math.sin(phi);
     if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
   }
   ctx.strokeStyle = COLORS.cyan; ctx.lineWidth=2; ctx.stroke();
-  const endLx = -(Rdisp*(1-Math.cos(theta)))*magX, endLy = -(Rdisp*Math.sin(theta))*magY;
-  const endPx = insetCx+endLx, endPy = insetCy+endLy;
-  ctx.beginPath(); ctx.arc(endPx,endPy,3.5,0,TAU); ctx.fillStyle=COLORS.cyan; ctx.fill();
-  ctx.strokeStyle = hexAlpha(COLORS.amber,0.85); ctx.lineWidth=1.2;
-  ctx.beginPath(); ctx.moveTo(insetCx,endPy); ctx.lineTo(endPx,endPy); ctx.stroke();
-  ctx.restore();
-  ctx.strokeStyle = hexAlpha(COLORS.border,0.9); ctx.lineWidth=1.4;
-  ctx.beginPath(); ctx.arc(insetCx,insetCy,insetR,0,TAU); ctx.stroke();
-  ctx.fillStyle=COLORS.amber; ctx.font="9px Inter"; ctx.textAlign="center";
-  ctx.fillText("gap ×"+fmtSciSuper(magX), insetCx, insetCy+insetR+11);
+
+  // 3. Earth
+  ctx.beginPath(); ctx.arc(E.x,E.y,15,0,TAU); ctx.fillStyle=EARTH_FILL; ctx.fill();
+  ctx.strokeStyle = hexAlpha(COLORS.cyan,0.45); ctx.lineWidth=1.4; ctx.stroke();
+  ctx.font="10px Inter"; ctx.fillStyle=COLORS.text; ctx.textAlign="center"; ctx.textBaseline="top";
+  ctx.fillText("Earth", E.x, E.y+18);
+  ctx.font="8.5px Inter"; ctx.fillStyle=COLORS.muted;
+  ctx.fillText("(not to scale)", E.x, E.y+30);
+
+  // 4. radius E->A, labelled -- kept BELOW the E-A line (the arc/angle-arc/theta-label all live
+  // in the upper half, y<=E.y, so the lower half is free real estate for this one).
+  ctx.strokeStyle = hexAlpha(COLORS.muted,0.6); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(E.x,E.y); ctx.lineTo(A.x,A.y); ctx.stroke();
+  const rLabel = "r = 60.3 R_E";
+  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="center"; ctx.textBaseline="top";
+  ctx.fillText(rLabel, clampCenterX(rLabel, (E.x+A.x)/2), E.y+7);
+
+  // 5. radius E->C
+  ctx.beginPath(); ctx.moveTo(E.x,E.y); ctx.lineTo(C.x,C.y); ctx.stroke();
+
+  // 6. angle arc at E, amber, labelled with the TRUE angle
+  const rArc = 0.26*R;
+  ctx.beginPath();
+  for(let i=0;i<=NARC;i++){
+    const phi = thDispRad*i/NARC;
+    const px = E.x+rArc*Math.cos(phi), py = E.y-rArc*Math.sin(phi);
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle = hexAlpha(COLORS.amber,0.9); ctx.lineWidth=1.5; ctx.stroke();
+  const thetaLabel = "θ = ωΔt = "+fmtSciSuper(thTrueRad,3)+" rad";
+  const midPhi = thDispRad*0.5;
+  const labelR = rArc+16;
+  const thetaAnchorX = E.x+labelR*Math.cos(midPhi), thetaAnchorY = E.y-labelR*Math.sin(midPhi);
+  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.amber; ctx.textAlign="left"; ctx.textBaseline="middle";
+  ctx.fillText(thetaLabel, clampLeftX(thetaLabel, thetaAnchorX), clampY(thetaAnchorY, 24));
+
+  // 7. tangent: dashed green vertical line at x = A.x, from A up to 24px above C's height.
+  // The line's own 24px extension above C is barely enough room for the 2-line fall label
+  // that sits just above C (item 9), so this label is deliberately placed HIGHER STILL --
+  // above the fall label rather than beside it -- a fixed 8px above the line's own top,
+  // which stays clear regardless of how large or small the circle radius R is.
+  const tangentTopY = C.y-24;
+  ctx.strokeStyle = hexAlpha(COLORS.green,0.8); ctx.setLineDash([4,3]); ctx.lineWidth=1.3;
+  ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(A.x,tangentTopY); ctx.stroke();
+  ctx.setLineDash([]);
+  const tangentLabel = "tangent: no gravity";
+  ctx.font="9px Inter"; ctx.fillStyle=hexAlpha(COLORS.green,0.9); ctx.textAlign="left"; ctx.textBaseline="bottom";
+  ctx.fillText(tangentLabel, clampLeftX(tangentLabel, A.x+6), clampY(tangentTopY-8, 24));
+
+  // 8. no-gravity point T -- hollow green circle, label to its RIGHT (below the T/C line,
+  // so it can never collide with the fall label above the line at item 9, regardless of how
+  // small the T-C gap gets).
+  ctx.beginPath(); ctx.arc(T.x,T.y,4,0,TAU); ctx.strokeStyle=COLORS.green; ctx.lineWidth=1.4; ctx.stroke();
+  const tLine1="where it would be", tLine2="with no gravity";
+  ctx.font="9px Inter"; ctx.fillStyle=COLORS.green; ctx.textAlign="left"; ctx.textBaseline="top";
+  ctx.fillText(tLine1, clampLeftX(tLine1, T.x+8), T.y+7);
+  ctx.fillText(tLine2, clampLeftX(tLine2, T.x+8), T.y+18);
+
+  // 9. the fall: amber double-headed dimension arrow from T to C (same y), labelled above on
+  // two lines with the formula and the exact current value -- stays ABOVE the T/C line, so it
+  // never collides with item 8 (now placed below the line) or item 10's "Moon after dt" (now
+  // placed to the left of C, item 10 below).
+  drawDimLineH(ctx, T.x, C.x, C.y, COLORS.amber, 0.9);
+  const dLine1 = "d = r(1 − cos θ)", dLine2 = fmtLenSI(m.d_moon_m);
+  const dimLabelX = (T.x+C.x)/2;
+  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.amber; ctx.textAlign="center"; ctx.textBaseline="bottom";
+  ctx.fillText(dLine1, clampCenterX(dLine1, dimLabelX), C.y-17);
+  ctx.fillText(dLine2, clampCenterX(dLine2, dimLabelX), C.y-6);
+
+  // 10. Moon markers at t=0 (hollow) and after dt (filled). A now sits close to the panel's
+  // right edge (R is sized to nearly fill the width), so the t=0 marker's label goes BELOW it
+  // rather than to its right -- to the right there usually isn't enough margin left over, and
+  // clamping a rightward label back onto the panel would print it right through the marker
+  // itself. Below is clear: A sits a full R*sin(thDisp) below the T/C cluster above it. The
+  // after-dt marker's label goes to the LEFT of C, at the line's own height -- the one
+  // direction left free by items 7-9 above.
+  ctx.beginPath(); ctx.arc(A.x,A.y,5,0,TAU); ctx.strokeStyle=COLORS.cyan; ctx.lineWidth=1.6; ctx.stroke();
+  const aLabel = "Moon at t = 0";
+  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.cyan; ctx.textAlign="center"; ctx.textBaseline="top";
+  ctx.fillText(aLabel, clampCenterX(aLabel, A.x), A.y+9);
+
+  ctx.beginPath(); ctx.arc(C.x,C.y,5,0,TAU); ctx.fillStyle=COLORS.cyan; ctx.fill();
+  const cLabel = "Moon after Δt";
+  ctx.font="9.5px Inter"; ctx.fillStyle=COLORS.cyan; ctx.textAlign="right"; ctx.textBaseline="middle";
+  ctx.fillText(cLabel, clampRightAlignX(cLabel, C.x-10), C.y);
+
+  // Bottom caption
+  const caption = (N>1.05)
+    ? ("angle exaggerated ×"+fmtSciSuper(N)+"; distances shown are exact")
+    : "drawn to scale";
+  ctx.font="9px Inter"; ctx.fillStyle=COLORS.muted; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+  ctx.fillText(caption, x0+ww/2, y0+hh-8);
+
   ctx.restore();
 }
 // log-log fall-distance chart: both curves are pure power laws (d ~ dt^2) so two points would
@@ -2240,7 +2386,7 @@ function drawEnergyMain(ctx,w,h){
   if(state.display.apsides){
     [[ap.rp_AU,0,"peri",ap.vp],[ap.ra_AU,Math.PI,"apo",ap.va]].forEach(function(row){
       const s = toScreen({x:row[0]*Math.cos(row[1]), y:row[0]*Math.sin(row[1])});
-      const dir = outwardDir(s.x,s.y,cx,cy);
+      const dir = outwardDir(s.x,s.y,sunS.x,sunS.y);
       const perp={dx:-dir.dy,dy:dir.dx};
       ctx.beginPath(); ctx.moveTo(s.x-perp.dx*5,s.y-perp.dy*5); ctx.lineTo(s.x+perp.dx*5,s.y+perp.dy*5);
       ctx.strokeStyle=hexAlpha(COLORS.amber,0.8); ctx.lineWidth=1.5; ctx.stroke();

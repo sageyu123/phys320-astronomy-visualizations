@@ -718,7 +718,7 @@ const els = {};
 function cacheEls(){
   ["tabBar","playbackCard","btnStepBack","btnPlay","btnStepFwd","btnReset","speedRange","speedNum",
    "paramsFields","displayFields","extraTitle","extraBody","noticeBody","lectureLink",
-   "panelATitle","panelAReadouts","panelACaption","btnResetView","zoomBadgeA",
+   "panelA","panelB","panelATitle","panelAReadouts","panelACaption","btnResetView","zoomBadgeA",
    "panelBTitle","panelBReadouts","panelBCaption",
    "stripPanelTitle","stripReadouts","stripBody",
    "canvasA","canvasB","mainRow"
@@ -979,6 +979,8 @@ function buildDisplayCard(){
   if(state.tab === "parallax"){
     state.display.bgstars = true;
     buildToggleButton(c, "bgstars", "Background stars");
+    state.display.skyInset = true;
+    buildToggleButton(c, "skyInset", "Sky inset");
   }
 }
 
@@ -1062,19 +1064,21 @@ function buildNoticeCard(){
 function buildPanelHeaders(){
   state._last = {};
   if(state.tab === "parallax"){
+    // Sky view is a canvas-drawn inset inside this panel now (see drawSkyInset()) --
+    // panel B is not used on this tab, so it is hidden and its readouts (the
+    // ellipse-axes numbers it used to show) move in after this panel's own.
+    els.panelB.style.display = "none";
     els.panelATitle.textContent = "Geometry";
     els.panelAReadouts.innerHTML =
       'd = <b id="roD" class="tabular">&ndash;</b> &nbsp;' +
       '(<b id="roDly" class="tabular">&ndash;</b> ly, <b id="roDau" class="tabular">&ndash;</b> AU) &nbsp;' +
-      'p = <b id="roP" class="tabular">&ndash;</b> &nbsp; day <b id="roDay" class="tabular">0</b>/365';
-    els.panelBTitle.textContent = "What the observer sees";
-    els.panelBReadouts.innerHTML =
+      'p = <b id="roP" class="tabular">&ndash;</b> &nbsp; day <b id="roDay" class="tabular">0</b>/365 &nbsp;' +
       'ellipse axes <b id="roAxA" class="tabular">&ndash;</b> &times; <b id="roAxB" class="tabular">&ndash;</b>';
     els.panelACaption.hidden = false;
     els.panelACaption.classList.remove("truescale");
-    els.panelBCaption.hidden = false;
     els.btnResetView.style.display = "";
   } else {
+    els.panelB.style.display = "";
     els.panelATitle.textContent = "The magnitude ladder";
     els.panelAReadouts.innerHTML =
       'm = <b id="roM" class="tabular">&ndash;</b> &nbsp; M = <b id="roMabs" class="tabular">&ndash;</b> &nbsp;' +
@@ -1438,8 +1442,10 @@ function wireCanvasAView(){
   });
   canvas.addEventListener("pointermove", function(ev){
     if(!drag || ev.pointerId !== drag.id) return;
-    state.view.az = clamp(drag.az0 + (ev.clientX-drag.x0)*0.3, VIEW_AZ_MIN, VIEW_AZ_MAX);
-    state.view.el = clamp(drag.el0 - (ev.clientY-drag.y0)*0.3, VIEW_EL_MIN, VIEW_EL_MAX);
+    // Inverted on both axes so the scene follows the pointer as if the diagram
+    // itself were being grabbed and dragged, rather than the camera.
+    state.view.az = clamp(drag.az0 - (ev.clientX-drag.x0)*0.3, VIEW_AZ_MIN, VIEW_AZ_MAX);
+    state.view.el = clamp(drag.el0 + (ev.clientY-drag.y0)*0.3, VIEW_EL_MIN, VIEW_EL_MAX);
     render();
   });
   function endDrag(ev){
@@ -1458,6 +1464,18 @@ function wireCanvasAView(){
 /* =========================================================================
    15. DRAWING HELPERS
    ========================================================================= */
+// Rounded-rect path helper (manual arcTo-based, not relying on ctx.roundRect) --
+// used by the Parallax tab's "sky inset" frame (drawSkyInset() below), matching
+// the house convention for a main-panel inset (altaz_radec.html's drawAllskyInset()).
+function roundedRectPath(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
 function outwardDir(sx, sy, cx, cy){
   let vx = sx - cx, vy = sy - cy;
   const len = Math.hypot(vx, vy);
@@ -1620,19 +1638,80 @@ function niceScaleLength(pxPerArcsec, panelWidth){
 function drawParallaxA(ctx, w, h){
   ctx.clearRect(0,0,w,h);
   if(w<=0||h<=0) return;
-  const cx = w/2, cy = h/2 + 8;
-  const minDim = Math.min(w,h);
-  const orbitBasePx = 0.16*minDim;
-  const starDrawPx = 2.6*orbitBasePx;
   const d = state.pl.d, beta = state.pl.beta;
-  const orbitTruePx = starDrawPx/(d*PC_AU);
-  const logOrbit = lerp(Math.log10(orbitBasePx), Math.log10(Math.max(orbitTruePx,1e-9)), state.trueScale);
-  const orbitPx = Math.pow(10, logOrbit);
   const zoom = state.view.zoom;
   // once the true-scale ramp has mostly collapsed the orbit, the +-p ticks, the 1 AU
   // dimension line, and separate Sun/Earth labels would all pile onto one point --
   // simplify the annotations instead of letting them clutter into illegibility.
   const collapsed = state.trueScale > 0.6;
+
+  const lamE = earthLongitudeDeg(state.t)*RAD;
+  const earthDir = { x:Math.cos(lamE), y:Math.sin(lamE), z:0 };
+  const betaR = beta*RAD;
+  const starDir = { x:Math.cos(betaR), y:0, z:Math.sin(betaR) };
+
+  // Sky inset rectangle -- needed both to carve out the available space the scene
+  // fits into (below) and, unchanged, as the blocked region for the shift-then-shrink
+  // clearance and the label cascade further down.
+  const showInset = !!state.display.skyInset;
+  const insetRect = showInset ? skyInsetRect(w, h) : null;
+
+  // Available rect the geometry scene fits itself into: with the inset shown, the
+  // column to its left if that column is at least 55% of the canvas width, else the
+  // strip below the inset; with the inset off, the whole canvas.
+  let avail;
+  if(insetRect){
+    const leftColW = insetRect.left - 12;
+    avail = (leftColW >= 0.55*w)
+      ? { x0:0, y0:0, x1:insetRect.left-12, y1:h }
+      : { x0:0, y0:insetRect.bottom+12, x1:w, y1:h };
+  } else {
+    avail = { x0:0, y0:0, x1:w, y1:h };
+  }
+  const availW = Math.max(1, avail.x1-avail.x0), availH = Math.max(1, avail.y1-avail.y0);
+
+  // Fit the schematic scene -- Earth's orbit (r=1.0), the ecliptic-plane wash drawn
+  // around it (r=1.2 -- reduced from 1.6 so the wash itself is never clipped by the
+  // panel edge; 1.2 rather than 1.6's originally-proposed 1.25 because at the
+  // 2000x1450 column layout the wash's width is what the fit binds on, and 1.25
+  // measured out to 58.7% of the available rect's smaller dimension -- just under
+  // the required 60% floor -- while 1.2 clears it (~61%) with a small margin, at
+  // every tested viewport), the Sun (the origin), Earth's current position, and the
+  // target star at its fixed 2.6-orbit-radii distance -- to that rect, in the CURRENT
+  // camera orientation, so the drawing (wash included) is never clipped by the panel
+  // edge, and grows/shrinks with the available space and with drag-rotation instead of
+  // the old fixed 0.16*min(w,h) fraction (tuned for the old, permanently half-width
+  // panel). `orbitBasePx` -- the schematic Earth-orbit radius, same role it always
+  // had -- now comes out of this fit instead of that fixed fraction.
+  let bMinX=Infinity, bMaxX=-Infinity, bMinY=Infinity, bMaxY=-Infinity;
+  function growBounds(v, r){
+    const pr = project3D(v);
+    const x = pr.x*r, y = pr.y*r;
+    if(x<bMinX) bMinX=x; if(x>bMaxX) bMaxX=x;
+    if(y<bMinY) bMinY=y; if(y>bMaxY) bMaxY=y;
+  }
+  const FIT_SAMPLES = 64;
+  [1.0, 1.2].forEach(function(r){
+    for(let i=0;i<FIT_SAMPLES;i++){
+      const th = (i/FIT_SAMPLES)*TAU;
+      growBounds({ x:Math.cos(th), y:Math.sin(th), z:0 }, r); // Earth's orbit / ecliptic wash
+    }
+  });
+  growBounds({ x:0, y:0, z:0 }, 1); // the Sun
+  growBounds(earthDir, 1.0);         // Earth's current position
+  growBounds(starDir, 2.6);          // the target star
+
+  const boxW = Math.max(1e-6, bMaxX-bMinX), boxH = Math.max(1e-6, bMaxY-bMinY);
+  const FIT_PAD = 0.08; // ~8% padding on each side
+  const orbitBasePx = Math.min(availW*(1-2*FIT_PAD)/boxW, availH*(1-2*FIT_PAD)/boxH);
+  const boxCx = (bMinX+bMaxX)/2, boxCy = (bMinY+bMaxY)/2;
+  let cx = (avail.x0+avail.x1)/2 - orbitBasePx*boxCx;
+  let cy = (avail.y0+avail.y1)/2 - orbitBasePx*boxCy;
+
+  let starDrawPx = 2.6*orbitBasePx;
+  const orbitTruePx = starDrawPx/(d*PC_AU);
+  const logOrbit = lerp(Math.log10(orbitBasePx), Math.log10(Math.max(orbitTruePx,1e-9)), state.trueScale);
+  let orbitPx = Math.pow(10, logOrbit);
 
   function toScreen(v, radiusPx){
     const pr = project3D(v);
@@ -1654,16 +1733,57 @@ function drawParallaxA(ctx, w, h){
     ctx.stroke();
   }
 
+  // Sky inset clearance -- shift-then-shrink, unchanged, now applied ON TOP of the fit
+  // above: the target star, the Sun, the Earth and both connecting lines must never
+  // end up hidden behind the inset. Strategy, in priority order: (1) SHIFT the whole
+  // diagram's centre (cx,cy) away from the inset -- the Sun, Earth and star all move
+  // together, so nothing shrinks or changes shape, just slides clear; only if shifting
+  // alone cannot clear it (the inset covers a large share of a small/narrow canvas,
+  // e.g. the mobile layout) does it (2) fall back to also shrinking the scale, from
+  // the fully-shifted position, as a last resort so clearance is still guaranteed.
+  if(insetRect){
+    const insetCx = (insetRect.left+insetRect.right)/2, insetCy = (insetRect.top+insetRect.bottom)/2;
+    let dirX = cx - insetCx, dirY = cy - insetCy;
+    const dirLen = Math.hypot(dirX, dirY);
+    if(dirLen < 1e-6){ dirX = -1; dirY = 1; } else { dirX /= dirLen; dirY /= dirLen; }
+    function clearAt(testCx, testCy, mul){
+      function at(v, radiusPx){ const pr = project3D(v); return { x: testCx + zoom*radiusPx*mul*pr.x, y: testCy + zoom*radiusPx*mul*pr.y }; }
+      const tSun = { x:testCx, y:testCy }, tEarth = at(earthDir, orbitPx), tStar = at(starDir, starDrawPx);
+      const sunBox = { left:tSun.x-10, right:tSun.x+10, top:tSun.y-10, bottom:tSun.y+10 };
+      const earthBox = { left:tEarth.x-7, right:tEarth.x+7, top:tEarth.y-7, bottom:tEarth.y+7 };
+      const starBox = { left:tStar.x-9, right:tStar.x+9, top:tStar.y-9, bottom:tStar.y+9 };
+      return !boxesOverlap(sunBox, insetRect) && !boxesOverlap(earthBox, insetRect) && !boxesOverlap(starBox, insetRect) &&
+        !segIntersectsBox(tSun, tStar, insetRect) && !segIntersectsBox(tEarth, tStar, insetRect);
+    }
+    const maxShift = 0.5*Math.min(w,h);
+    let shift = 0, cleared = clearAt(cx, cy, 1);
+    if(!cleared){
+      for(let guard=1; guard<=24; guard++){
+        shift = maxShift*guard/24;
+        if(clearAt(cx+dirX*shift, cy+dirY*shift, 1)){ cleared = true; break; }
+      }
+    }
+    if(cleared){
+      cx += dirX*shift; cy += dirY*shift;
+    } else {
+      // shifting the full allowance still isn't enough -- shrink too, from there
+      cx += dirX*maxShift; cy += dirY*maxShift;
+      let scaleMul = 1;
+      for(let guard=0; guard<40; guard++){
+        if(clearAt(cx, cy, scaleMul)) break;
+        scaleMul *= 0.92;
+      }
+      orbitPx *= scaleMul;
+      starDrawPx *= scaleMul;
+    }
+  }
+
   const sunS = { x:cx, y:cy };
-  const lamE = earthLongitudeDeg(state.t)*RAD;
-  const earthDir = { x:Math.cos(lamE), y:Math.sin(lamE), z:0 };
   const earthS = toScreen(earthDir, orbitPx);
-  const betaR = beta*RAD;
-  const starDir = { x:Math.cos(betaR), y:0, z:Math.sin(betaR) };
   const starS = toScreen(starDir, starDrawPx);
 
   // ecliptic plane: faint disk + one inner grid ellipse
-  strokeRing(orbitPx*1.6, COLORS.muted, 0.22, 0.05, 1);
+  strokeRing(orbitPx*1.2, COLORS.muted, 0.22, 0.05, 1);
   strokeRing(orbitPx*0.85, COLORS.muted, 0.14, 0, 1);
   // Earth's orbit (structure, not data -- neutral gray)
   strokeRing(orbitPx, COLORS["border-strong"], 0.9, 0, 1.2);
@@ -1721,7 +1841,10 @@ function drawParallaxA(ctx, w, h){
      a lower-priority label is skipped for this frame if its box intersects
      any higher-priority box that's already been accepted.
      ----------------------------------------------------------------------- */
-  const acceptedBoxes = [];
+  // The sky inset (when shown) is seeded as an already-"accepted" box, ahead of
+  // everything else -- so it acts as a blocked region in this same cascade and no
+  // geometry label ever gets drawn underneath it.
+  const acceptedBoxes = insetRect ? [ { left:insetRect.left, right:insetRect.right, top:insetRect.top, bottom:insetRect.bottom } ] : [];
   function accept(box){ acceptedBoxes.push(box); return true; }
   function clearOfAccepted(box){ return !acceptedBoxes.some(function(b){ return boxesOverlap(b, box); }); }
 
@@ -1756,7 +1879,7 @@ function drawParallaxA(ctx, w, h){
   }
   let showAngle = false;
   if(!collapsed){
-    showAngle = accept(angleBox);
+    showAngle = clearOfAccepted(angleBox) && accept(angleBox);
   }
 
   // "line of sight": priority 2. Midpoint of Earth->star, offset perpendicular to
@@ -1852,13 +1975,20 @@ function drawParallaxA(ctx, w, h){
   ctx.fillStyle = COLORS.cyan;
   ctx.beginPath(); ctx.arc(earthS.x,earthS.y,4.5,0,TAU); ctx.fill();
 
+  // "Sun" / the collapsed combined label: lowest priority after 1 AU/the ticks --
+  // still checked against the same cascade (which includes the inset, seeded above)
+  // so it is skipped rather than drawn underneath the inset on some view/zoom.
+  const sunLabelBox = collapsed
+    ? labelBounds(ctx, sunS.x, sunS.y, "Sun + Earth's orbit (smaller than a pixel)", earthLabelDir, { offset:16 })
+    : labelBounds(ctx, sunS.x, sunS.y, "Sun", {dx:0,dy:-1}, { offset:12 });
+  const showSunLabel = clearOfAccepted(sunLabelBox) && accept(sunLabelBox);
   if(collapsed){
     // Sun and Earth's orbit have collapsed onto the same point -- one combined label,
     // placed below-left of the dot (same fixed direction as the ordinary "Earth" label),
     // clear of the line-of-sight line/label which run up toward the star.
-    drawLabel(ctx, sunS.x, sunS.y, "Sun + Earth's orbit (smaller than a pixel)", earthLabelDir, { color:COLORS.amber, offset:16 });
+    if(showSunLabel) drawLabel(ctx, sunS.x, sunS.y, "Sun + Earth's orbit (smaller than a pixel)", earthLabelDir, { color:COLORS.amber, offset:16 });
   } else {
-    drawLabel(ctx, sunS.x, sunS.y, "Sun", {dx:0,dy:-1}, { color:COLORS.amber, offset:12 });
+    if(showSunLabel) drawLabel(ctx, sunS.x, sunS.y, "Sun", {dx:0,dy:-1}, { color:COLORS.amber, offset:12 });
     if(showEarthLabel){
       drawLabel(ctx, earthS.x, earthS.y, "Earth", earthLabelDir, { color:COLORS.cyan, offset:10 });
     }
@@ -1867,7 +1997,17 @@ function drawParallaxA(ctx, w, h){
   if(glowStar) drawGlow(ctx, glowStar, starS.x, starS.y, 28);
   ctx.fillStyle = "#eaffff";
   ctx.beginPath(); ctx.arc(starS.x,starS.y,5.5,0,TAU); ctx.fill();
-  drawLabel(ctx, starS.x, starS.y, "target star", outwardDir(starS.x,starS.y,cx,cy), { color:"#eaffff", offset:12 });
+  // "target star": same cascade, lowest priority of all -- the star's marker glyph is
+  // always drawn (kept clear of the inset by the scale-shrink above); only its text
+  // label is gated, exactly like every other geometry label here.
+  const starLabelDir = outwardDir(starS.x,starS.y,cx,cy);
+  const starLabelBox = labelBounds(ctx, starS.x, starS.y, "target star", starLabelDir, { offset:12 });
+  if(clearOfAccepted(starLabelBox) && accept(starLabelBox)){
+    drawLabel(ctx, starS.x, starS.y, "target star", starLabelDir, { color:"#eaffff", offset:12 });
+  }
+
+  // sky inset, drawn last so it sits on top of the geometry scene (see section 17)
+  if(showInset) drawSkyInset(ctx, w, h);
 
   // caption: "not to scale" note, or the true-scale punchline once the ramp completes
   if(state.trueScale < 0.985){
@@ -1881,16 +2021,38 @@ function drawParallaxA(ctx, w, h){
 }
 
 /* =========================================================================
-   17. PARALLAX TAB -- SKY PANEL ("what the observer sees", canvasB)
+   17. PARALLAX TAB -- SKY INSET ("what the observer sees")
+   A square, panel-deep-background inset drawn at the TOP-RIGHT of the geometry
+   panel's own canvas (canvasA), in the house style shared with altaz_radec.html's
+   drawAllskyInset(): rounded rect, panel-deep fill @0.85 alpha, 1px border, clipped
+   to itself, an 11px muted title top-left, an 8.5px caption along the bottom.
+   Toggle: state.display.skyInset (Display card, default ON). What used to be the
+   separate panel B ("What the observer sees") is drawn here instead -- same scene
+   (background stars, dashed parallactic ellipse, the star's displaced position +
+   year trail, the arcsecond scale bar), auto-fit so the ellipse's major axis is
+   about 55% of the inset's width, same as the old panel.
    ========================================================================= */
-function drawParallaxB(ctx, w, h){
-  ctx.clearRect(0,0,w,h);
-  if(w<=0||h<=0) return;
-  const cx = w/2, cy = h/2;
-  const d = state.pl.d, beta = state.pl.beta;
+function skyInsetRect(panelW, panelH){
+  const S = clamp(0.30*Math.min(panelW,panelH), 200, 340);
+  const x = panelW - S - 12, y = 12;
+  return { x:x, y:y, S:S, left:x, right:x+S, top:y, bottom:y+S };
+}
+// Pure geometry (no drawing): the pixels-per-arcsec scale and the resulting ellipse
+// axes for a sky scene of local width `w` -- shared between the inset frame (which
+// needs the angular span for its caption before it draws anything) and the scene
+// drawer itself.
+function skySceneGeom(d, beta, w){
   const p = parallaxArcsec(d);
   const majorArcsec = p, minorArcsec = p*Math.abs(Math.sin(beta*RAD));
   const pxPerArcsec = (0.55*w) / (2*Math.max(majorArcsec, 1e-12));
+  return { p:p, majorArcsec:majorArcsec, minorArcsec:minorArcsec, pxPerArcsec:pxPerArcsec, panelSpanArcsec: w/pxPerArcsec };
+}
+// The sky scene itself, in a LOCAL w x h coordinate system starting at (0,0) --
+// the caller (drawSkyInset) translates/clips into place first.
+function drawSkyScene(ctx, w, h, geom){
+  const cx = w/2, cy = h/2;
+  const d = state.pl.d, beta = state.pl.beta;
+  const pxPerArcsec = geom.pxPerArcsec, majorArcsec = geom.majorArcsec, minorArcsec = geom.minorArcsec;
 
   if(state.display.bgstars){
     BG_STARS.forEach(function(s){
@@ -1948,9 +2110,36 @@ function drawParallaxB(ctx, w, h){
   ctx.stroke();
   ctx.fillStyle = COLORS.text; ctx.font = "10px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="bottom";
   ctx.fillText(bar.label, barX0, barY-6);
+}
+// Frame + title + caption (house convention, matching altaz_radec.html's
+// drawAllskyInset()), wrapping drawSkyScene() above. `panelW`/`panelH` are the
+// geometry canvas's own full size; the inset rectangle itself comes from
+// skyInsetRect(), already computed once per frame by drawParallaxA() (so the
+// label cascade and the scene-clearance shrink there use the exact same rect).
+function drawSkyInset(ctx, panelW, panelH){
+  const rect = skyInsetRect(panelW, panelH);
+  const x = rect.x, y = rect.y, S = rect.S;
+  const TOP_RESERVE = 16, BOTTOM_RESERVE = 14;
+  const geom = skySceneGeom(state.pl.d, state.pl.beta, S);
 
-  const panelSpanArcsec = w/pxPerArcsec;
-  els.panelBCaption.textContent = "East (positive Δλ) is drawn to the left, as astronomers plot the sky. Panel spans " + fmtArcsec(panelSpanArcsec) + " edge to edge.";
+  ctx.save();
+  roundedRectPath(ctx, x, y, S, S, 4);
+  ctx.fillStyle = hexAlpha(COLORS["panel-deep"], 0.85);
+  ctx.fill();
+  ctx.lineWidth = 1; ctx.strokeStyle = COLORS.border; ctx.stroke();
+  ctx.clip();
+
+  ctx.font = "11px Inter, sans-serif"; ctx.fillStyle = COLORS.muted;
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("What the observer sees", x+8, y+5);
+
+  ctx.font = "8.5px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.85);
+  ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  ctx.fillText("east is left · spans " + fmtArcsec(geom.panelSpanArcsec), x+8, y+S-4);
+
+  ctx.translate(x, y+TOP_RESERVE);
+  drawSkyScene(ctx, S, S-TOP_RESERVE-BOTTOM_RESERVE, geom);
+  ctx.restore();
 }
 
 /* =========================================================================
@@ -2144,7 +2333,7 @@ function render(){
   const ctxB = els.canvasB.getContext("2d");
   const wA = state.mainW || els.canvasA.clientWidth, hA = state.mainH || els.canvasA.clientHeight;
   const wB = state.panelBW || els.canvasB.clientWidth, hB = state.panelBH || els.canvasB.clientHeight;
-  if(state.tab === "parallax"){ drawParallaxA(ctxA,wA,hA); drawParallaxB(ctxB,wB,hB); }
+  if(state.tab === "parallax"){ drawParallaxA(ctxA,wA,hA); }
   else { drawMagA(ctxA,wA,hA); drawMagB(ctxB,wB,hB); }
   updateZoomBadge();
 }
