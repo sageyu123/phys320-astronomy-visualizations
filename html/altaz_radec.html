@@ -151,6 +151,42 @@
     opacity:.7; pointer-events:none; white-space:nowrap; z-index:3;
   }
 
+  /* ---------- Sidereal clock chart: direct year scrubber ---------- */
+  .sidereal-strip-timeline{
+    height:32px; flex:0 0 32px; display:flex; align-items:center; gap:8px;
+    padding:0 10px; background:var(--panel-deep); border-bottom:1px solid var(--border);
+    min-width:0;
+  }
+  .sidereal-strip-timeline[hidden]{ display:none; }
+  .sidereal-strip-label{ flex:0 0 auto; font-size:10px; color:var(--muted); white-space:nowrap; }
+  .sidereal-strip-range{
+    -webkit-appearance:none; appearance:none; display:block; flex:1 1 auto; min-width:80px;
+    height:16px; margin:0; background:transparent; cursor:pointer; accent-color:var(--cyan);
+  }
+  .sidereal-strip-range::-webkit-slider-runnable-track{
+    height:6px; border-radius:3px; background:var(--panel-raised); border:1px solid var(--border);
+  }
+  .sidereal-strip-range::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:16px; height:16px; margin-top:-5px;
+    border-radius:50%; background:var(--cyan); border:2px solid var(--on-accent);
+    box-shadow:0 1px 3px var(--black-shadow); cursor:pointer;
+  }
+  .sidereal-strip-range::-moz-range-track{
+    height:6px; border-radius:3px; background:var(--panel-raised); border:1px solid var(--border);
+  }
+  .sidereal-strip-range::-moz-range-thumb{
+    width:16px; height:16px; border-radius:50%; background:var(--cyan);
+    border:2px solid var(--on-accent); box-shadow:0 1px 3px var(--black-shadow); cursor:pointer;
+  }
+  .sidereal-strip-readout{
+    flex:0 0 auto; min-width:94px; color:var(--text); font-size:10px; text-align:right;
+    font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  @media (max-width:560px){
+    .sidereal-strip-label{ display:none; }
+    .sidereal-strip-readout{ min-width:86px; }
+  }
+
   /* ---------- Origin tab: full-width timeline overlay across the top of
      #mainPanel (a CSS overlay only -- the WebGL canvas underneath keeps its
      full size, no layout shift). Shown only on the Origin tab, hidden in
@@ -660,6 +696,8 @@
             <span>EoT = <b id="originEot" class="tabular">&mdash;</b> min</span>
             <span>&middot;</span>
             <span>noon <span class="math-upright" data-latex="\text{El}">El</span> (<span class="math" data-latex="\varphi">&phi;</span>) = <b id="originNoonEl" class="tabular">&mdash;</b>&deg;</span>
+            <span>&middot;</span>
+            <span id="originSkyStatus" class="pill pill-rises">RISES &amp; SETS</span>
           </div>
           <div class="panel-header-right">
             <button type="button" class="btn icon-btn" id="btnResetView" title="Reset camera view">&#8962;</button>
@@ -702,6 +740,11 @@
             <span id="legendOrigin" style="display:none"><i class="swatch" style="background:var(--coral)"></i>ecliptic &nbsp; <i class="swatch" style="background:var(--amber)"></i>Sun</span>
             <span id="legendSidereal" style="display:none"><i class="swatch" style="background:var(--cyan)"></i>LST at local noon (solid) / at midnight (dashed) &nbsp; <i class="swatch" style="background:var(--amber)"></i>star's &alpha;</span>
           </div>
+        </div>
+        <div class="sidereal-strip-timeline" id="siderealStripTimeline" hidden>
+          <label class="sidereal-strip-label" for="siderealDayRange">Year position</label>
+          <input class="sidereal-strip-range" id="siderealDayRange" type="range" min="0" max="366" step="1" value="0" aria-label="Day since March 20">
+          <output class="sidereal-strip-readout" id="siderealDayReadout">Mar 20 · day 0</output>
         </div>
         <div class="panel-body"><canvas id="stripCanvas"></canvas></div>
       </div>
@@ -1723,7 +1766,7 @@ let siderealStage = null, siderealStagePromise = null;
 function ensureSiderealStage(){
   if(siderealStage) return Promise.resolve(siderealStage);
   if(!siderealStagePromise){
-    siderealStagePromise = import('./altaz_sidereal_stage.js').then(function(m){
+    siderealStagePromise = import('./altaz_sidereal_stage.js?v=year-endpoint-2').then(function(m){
       siderealStage = m.createSiderealStage({ COLORS:COLORS, hexAlpha:hexAlpha });
       return siderealStage;
     }).catch(function(err){
@@ -4558,7 +4601,36 @@ function originTrueSun(dayOfYear){
 function originSunAltAz(dayOfYear, clockHr, phiDeg){
   const sun = originTrueSun(dayOfYear);
   const hDeg = 15*(clockHr-12) + sun.eotDeg;
-  return altAzFromEq(phiDeg, sun.decDeg, hDeg);
+  // Use the local Cartesian vector rather than the inverse Az/El formulas:
+  // cos(phi)cos(El) in the azimuth denominator vanishes at a pole and when
+  // the Sun crosses the zenith. The vector remains continuous there, while
+  // azimuth is marked undefined only at the true coordinate singularity.
+  const v = eqToVec(hDeg, sun.decDeg, phiDeg);
+  const horizontal = Math.hypot(v.x, v.y);
+  const altitude = Math.asin(clamp(v.z, -1, 1))*DEG;
+  const azimuth = horizontal < 1e-9 ? NaN : norm360(Math.atan2(v.x, v.y)*DEG);
+  // A zenith-centred tangent chart is well behaved through the azimuth
+  // singularity: these are signed east/north offsets from the zenith.
+  return {
+    A: azimuth, a: altitude,
+    eastOffset: Math.atan2(v.x, v.z)*DEG,
+    northOffset: Math.atan2(v.y, v.z)*DEG,
+    eastNadir: Math.atan2(v.x, -v.z)*DEG,
+    northNadir: Math.atan2(v.y, -v.z)*DEG,
+    zenithSingular: horizontal < 1e-9,
+    visible: altitude >= -1e-9
+  };
+}
+
+function originDaylightState(phiDeg, decDeg){
+  const phi=phiDeg*RAD, delta=decDeg*RAD;
+  const centre=Math.sin(phi)*Math.sin(delta), swing=Math.abs(Math.cos(phi)*Math.cos(delta));
+  const maxSinEl=centre+swing, minSinEl=centre-swing;
+  if(Math.abs(centre)<1e-10 && swing<1e-10) return "horizon all day";
+  if(Math.abs(minSinEl)<1e-10 || Math.abs(maxSinEl)<1e-10) return "touches horizon";
+  if(minSinEl > 1e-10) return "polar day";
+  if(maxSinEl < -1e-10) return "polar night";
+  return "rises & sets";
 }
 
 /* The year's (Az,El) curve depends only on (clockHr, phi, eccentricity,
@@ -4568,20 +4640,35 @@ function originSunAltAz(dayOfYear, clockHr, phiDeg){
    below calls this every frame (drawOverlay() has no dirty-flag gate, unlike
    drawStrip()) but the 366-point trig sweep itself only re-runs on a real
    change; per frame only the current-date Sun dot is recomputed. */
-let _analemmaCurveCache = null; // { key, pts, minAz, maxAz, minEl, maxEl }
+let _analemmaCurveCache = null; // { key, pts, minAz, maxAz, minEl, maxEl, mode }
 function getAnalemmaCurve(clockHr, phi){
   const key = clockHr.toFixed(4) + "|" + phi.toFixed(4) + "|" + ORIGIN_ECC + "|" + ORIGIN_APOGEE_DEG;
   if(_analemmaCurveCache && _analemmaCurveCache.key === key) return _analemmaCurveCache;
   const pts = [];
   let minAz=Infinity, maxAz=-Infinity, minEl=Infinity, maxEl=-Infinity;
+  let previousAz=null;
   for(let d=0; d<=365; d++){
     const altaz = originSunAltAz(d, clockHr, phi);
-    pts.push({ day:d, A:altaz.A, El:altaz.a });
-    if(!isNaN(altaz.A)){ if(altaz.A<minAz) minAz=altaz.A; if(altaz.A>maxAz) maxAz=altaz.A; }
+    let azUnwrapped=altaz.A;
+    if(altaz.zenithSingular){ previousAz=null; }
+    else if(!isNaN(azUnwrapped)){
+      if(previousAz!=null){ while(azUnwrapped-previousAz>180) azUnwrapped-=360; while(azUnwrapped-previousAz<-180) azUnwrapped+=360; }
+      previousAz=azUnwrapped;
+      if(azUnwrapped<minAz) minAz=azUnwrapped; if(azUnwrapped>maxAz) maxAz=azUnwrapped;
+    }
+    pts.push({ day:d, A:azUnwrapped, El:altaz.a, east:altaz.eastOffset, north:altaz.northOffset, eastNadir:altaz.eastNadir, northNadir:altaz.northNadir, visible:altaz.visible, zenithSingular:altaz.zenithSingular });
     if(altaz.a<minEl) minEl=altaz.a; if(altaz.a>maxEl) maxEl=altaz.a;
   }
   if(!isFinite(minAz)){ minAz=170; maxAz=190; } // degenerate fallback (e.g. phi = +-90)
-  _analemmaCurveCache = { key:key, pts:pts, minAz:minAz, maxAz:maxAz, minEl:minEl, maxEl:maxEl };
+  // Azimuth is undefined at a zenith crossing; use a smooth zenith-centred
+  // tangent plot for that case instead of auto-scaling two branches into a
+  // misleading horizontal bar. At ordinary latitudes the familiar Az/El
+  // chart remains the primary representation.
+  const nearZenith=maxEl > 85 && minEl > 0, nearNadir=minEl < -85 && maxEl < 0;
+  const mode=nearZenith ? "zenith" : nearNadir ? "nadir" : "azel";
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  pts.forEach(function(p){ const x=mode==="zenith"?p.east:mode==="nadir"?p.eastNadir:p.A, y=mode==="zenith"?p.north:mode==="nadir"?p.northNadir:p.El; if(isFinite(x)){minX=Math.min(minX,x);maxX=Math.max(maxX,x);} if(isFinite(y)){minY=Math.min(minY,y);maxY=Math.max(maxY,y);} });
+  _analemmaCurveCache = { key:key, pts:pts, minAz:minX, maxAz:maxX, minEl:minY, maxEl:maxY, mode:mode };
   return _analemmaCurveCache;
 }
 
@@ -4607,6 +4694,15 @@ function drawAnalemmaInset(ctx, panelW, panelH){
 
   const phi = state.phi, clockHr = state.originClockHr;
   const curve = getAnalemmaCurve(clockHr, phi);
+  function plotPoint(p){ const tangent=curve.mode==="zenith"?"zenith":curve.mode==="nadir"?"nadir":""; return { x:tangent==="zenith"?p.east:tangent==="nadir"?p.eastNadir:p.A, y:tangent==="zenith"?p.north:tangent==="nadir"?p.northNadir:p.El }; }
+  function plotAltAz(day, altaz){
+    if(curve.mode==="zenith") return { x:altaz.eastOffset, y:altaz.northOffset };
+    if(curve.mode==="nadir") return { x:altaz.eastNadir, y:altaz.northNadir };
+    if(isNaN(altaz.A)) return null;
+    const anchor=curve.pts[Math.max(0,Math.min(365,Math.round(day)))].A; let a=altaz.A;
+    if(isFinite(anchor)){ while(a-anchor>180) a-=360; while(a-anchor<-180) a+=360; }
+    return { x:a, y:altaz.a };
+  }
   const azSpan0 = Math.max(1e-6, curve.maxAz-curve.minAz), elSpan0 = Math.max(1e-6, curve.maxEl-curve.minEl);
   const azSpanP = azSpan0*1.16, elSpanP = elSpan0*1.16; // 8% padding on each side
   const scale = Math.min(plotW/azSpanP, plotH/elSpanP); // px per degree -- SAME on both axes
@@ -4626,11 +4722,11 @@ function drawAnalemmaInset(ctx, panelW, panelH){
 
   ctx.font = "11px Inter, sans-serif"; ctx.fillStyle = COLORS.muted;
   ctx.textAlign = "left"; ctx.textBaseline = "top";
-  ctx.fillText("Analemma · same clock time every day", boxX+8, boxY+5);
+  ctx.fillText(curve.mode==="zenith" ? "Analemma · zenith-centered sky offsets" : curve.mode==="nadir" ? "Analemma · nadir-centered sky offsets" : "Analemma · same clock time every day", boxX+8, boxY+5);
 
   ctx.font = "8.5px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.85);
   ctx.textAlign = "left"; ctx.textBaseline = "bottom";
-  ctx.fillText("height = declination (23.4°) · width = equation of time", boxX+8, boxY+S-4);
+  ctx.fillText(curve.mode!=="azel" ? "east/north offsets · dashed = below horizon" : "height = declination (23.4°) · dashed = below horizon", boxX+8, boxY+S-4);
 
   // gridlines every 10 deg (light)
   ctx.lineWidth=1; ctx.strokeStyle = hexAlpha(COLORS.border,0.35);
@@ -4643,27 +4739,36 @@ function drawAnalemmaInset(ctx, panelW, panelH){
     ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
   }
 
-  // horizon (El=0), muted, only when in range
-  if(elLo <= 0 && elHi >= 0){
+  // horizon (El=0), muted, only in the ordinary Az/El chart. The zenith
+  // tangent chart remains continuous through the horizon and uses line style
+  // (rather than a misleading horizontal line) for visibility.
+  if(curve.mode==="azel" && elLo <= 0 && elHi >= 0){
     ctx.strokeStyle = hexAlpha(COLORS.muted,0.5); ctx.lineWidth=1.2;
     const y = yOf(0);
     ctx.beginPath(); ctx.moveTo(plotL,y); ctx.lineTo(plotR,y); ctx.stroke();
+    ctx.font="8px Inter, sans-serif"; ctx.fillStyle=hexAlpha(COLORS.muted,.85); ctx.textAlign="right"; ctx.textBaseline="bottom"; ctx.fillText("horizon 0°",plotR-2,y-2);
   }
 
-  // the year's curve: thin cream polyline, with a sparse dot every 14 days
-  ctx.strokeStyle = hexAlpha(ORIGIN_ANALEMMA_CREAM, 0.85); ctx.lineWidth = 1.3;
-  ctx.beginPath();
-  let started = false;
-  curve.pts.forEach(function(p){
-    if(isNaN(p.A)){ started=false; return; }
-    const x = xOf(p.A), y = yOf(p.El);
-    if(!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+  // The year's curve: above-horizon segments are solid, below-horizon
+  // segments dashed. Zenith mode has no azimuth gap; Az/El mode still breaks
+  // at a true coordinate singularity and never invents a connecting segment.
+  [true,false].forEach(function(visible){
+    ctx.strokeStyle = visible ? hexAlpha(ORIGIN_ANALEMMA_CREAM, 0.85) : hexAlpha(COLORS.muted, 0.62);
+    ctx.lineWidth = 1.3; ctx.setLineDash(visible ? [] : [4,3]); ctx.beginPath();
+    let started = false;
+    curve.pts.forEach(function(p){
+      if((curve.mode==="azel" && (p.zenithSingular || isNaN(p.A))) || p.visible !== visible){ started=false; return; }
+      const q=plotPoint(p), x=xOf(q.x), y=yOf(q.y);
+      if(!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
   });
-  ctx.stroke();
+  ctx.setLineDash([]);
   ctx.fillStyle = hexAlpha(ORIGIN_ANALEMMA_CREAM, 0.6);
   curve.pts.forEach(function(p){
-    if(isNaN(p.A) || p.day % 14 !== 0) return;
-    const x = xOf(p.A), y = yOf(p.El);
+    if((curve.mode==="azel" && (p.zenithSingular || isNaN(p.A))) || p.day % 14 !== 0) return;
+    const q=plotPoint(p), x = xOf(q.x), y = yOf(q.y);
+    ctx.fillStyle = p.visible ? hexAlpha(ORIGIN_ANALEMMA_CREAM, 0.6) : hexAlpha(COLORS.muted, 0.5);
     ctx.beginPath(); ctx.arc(x,y,1.3,0,TAU); ctx.fill();
   });
 
@@ -4671,10 +4776,11 @@ function drawAnalemmaInset(ctx, panelW, panelH){
   ctx.font = "8px Inter, sans-serif"; ctx.textAlign="left"; ctx.textBaseline="bottom";
   ORIGIN_ANALEMMA_CARDINALS.forEach(function(c, i){
     const altaz = originSunAltAz(c.day, clockHr, phi);
-    if(isNaN(altaz.A)) return;
-    const x = xOf(altaz.A), y = yOf(altaz.a);
-    ctx.strokeStyle = COLORS.muted; ctx.lineWidth=1.1;
+    const q=plotAltAz(c.day,altaz); if(!q) return;
+    const x = xOf(q.x), y = yOf(q.y);
+    ctx.strokeStyle = altaz.visible ? COLORS.muted : hexAlpha(COLORS.muted,.55); ctx.lineWidth=1.1; ctx.setLineDash(altaz.visible?[]:[3,2]);
     ctx.beginPath(); ctx.arc(x,y,3,0,TAU); ctx.stroke();
+    ctx.setLineDash([]);
     ctx.fillStyle = hexAlpha(COLORS.muted,0.9);
     ctx.fillText(ORIGIN_ANALEMMA_SHORT_LABELS[i], x+5, y-3);
   });
@@ -4683,11 +4789,14 @@ function drawAnalemmaInset(ctx, panelW, panelH){
   // plays (only this per-frame lookup runs every frame; the curve is cached)
   {
     const altaz = originSunAltAz(state.day, clockHr, phi);
-    if(!isNaN(altaz.A)){
-      const x = xOf(altaz.A), y = yOf(altaz.a);
-      drawGlow(ctx, glowSprite, x, y, 16);
-      ctx.fillStyle = COLORS.amber;
+    const q=plotAltAz(state.day,altaz);
+    if(q){
+      const x = xOf(q.x), y = yOf(q.y);
+      if(altaz.visible) drawGlow(ctx, glowSprite, x, y, 16);
+      ctx.fillStyle = altaz.visible ? COLORS.amber : COLORS.muted;
+      ctx.setLineDash(altaz.visible?[]:[3,2]);
       ctx.beginPath(); ctx.arc(x,y,2.6,0,TAU); ctx.fill();
+      ctx.setLineDash([]);
     }
   }
 
@@ -4697,12 +4806,12 @@ function drawAnalemmaInset(ctx, panelW, panelH){
   // axis titles: "azimuth (°)" along the bottom, "elevation (°)" rotated along the left
   ctx.font = "8px Inter, sans-serif"; ctx.fillStyle = hexAlpha(COLORS.muted, 0.8);
   ctx.textAlign = "center"; ctx.textBaseline = "top";
-  ctx.fillText("azimuth (°)", (plotL+plotR)/2, plotB+2);
+  ctx.fillText(curve.mode!=="azel" ? "east offset (°)" : "azimuth (°)", (plotL+plotR)/2, plotB+2);
   ctx.save();
   ctx.translate(boxX+AN_PAD+4, (plotT+plotB)/2);
   ctx.rotate(-Math.PI/2);
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("elevation (°)", 0, 0);
+  ctx.fillText(curve.mode!=="azel" ? "north offset (°)" : "elevation (°)", 0, 0);
   ctx.restore();
 
   ctx.restore();
@@ -4724,9 +4833,10 @@ function cacheEls(){
    "readoutA","readoutAlt","readoutRA","readoutDec","readoutH",
    "poleReadout","readoutPoleAlt","badgeWrap","riseBadge","diurnalExtra","readoutTransitEl","readoutH0",
    "originDateLabel","originDayNum","originLambda","originAlpha","originDelta","originSeasonN","originSeasonS",
-   "originEot","originNoonEl",
+   "originEot","originNoonEl","originSkyStatus",
    "aboutCard","aboutTitle","aboutBody","formulasCard","formulasHead","formulasBody",
    "stripPanelTitle","legendRadec","legendOrigin","legendSidereal","dialHoverZone",
+   "siderealStripTimeline","siderealDayRange","siderealDayReadout",
    "lstSteps","lstStepControl","lstStepCaption","dragHint","btnResetView"
   ].forEach(function(id){ els[id] = document.getElementById(id); });
 }
@@ -4817,6 +4927,77 @@ function togglePlayback(){
   if(state.playing) startLoop(); else stopLoop();
 }
 
+function pausePlaybackForSiderealScrub(){
+  if(!state.playing) return;
+  state.playing = false;
+  updatePlayButton();
+  stopLoop();
+}
+
+const SIDEREAL_YEAR_DAYS = 365.2422;
+const SIDEREAL_FINAL_POSITION = 366;
+
+function siderealDayFromSliderPosition(position){
+  const p = clamp(Math.round(parseFloat(position)), 0, SIDEREAL_FINAL_POSITION);
+  return p === SIDEREAL_FINAL_POSITION ? SIDEREAL_YEAR_DAYS : p;
+}
+
+function siderealSliderPosition(day){
+  return Math.abs(day - SIDEREAL_YEAR_DAYS) < 1e-9
+    ? SIDEREAL_FINAL_POSITION : clamp(Math.round(day), 0, 365);
+}
+
+function siderealStepTarget(day, direction){
+  if(Math.abs(day - SIDEREAL_YEAR_DAYS) < 1e-9){
+    return direction > 0 ? SIDEREAL_YEAR_DAYS : 365;
+  }
+  return clamp(Math.floor(day) + direction, 0, SIDEREAL_YEAR_DAYS);
+}
+
+/* Mirrors the sidereal stage's model day on the strip toolbar. The stage's
+   setDay() deliberately preserves its current time-of-day, so this control
+   changes the date on the chart without jumping the clocks back to noon. */
+function syncSiderealTimeline(st){
+  if(!els.siderealStripTimeline) return;
+  const visible = state.tab === "hlst" && state.lstStep === "twoclocks";
+  els.siderealStripTimeline.hidden = !visible;
+  if(!visible) return;
+
+  st = st || ((siderealStage && siderealStage.getState) ? siderealStage.getState() : null);
+  const day = st ? clamp(st.day, 0, SIDEREAL_YEAR_DAYS)
+                 : siderealDayFromSliderPosition(els.siderealDayRange.value);
+  const endpoint = Math.abs(day - SIDEREAL_YEAR_DAYS) < 1e-9;
+  const position = siderealSliderPosition(day);
+  const label = endpoint ? "1 year" : (st ? st.calendarLabel : (day === 0 ? "Mar 20" : "day " + day));
+  els.siderealDayRange.value = String(position);
+  els.siderealDayReadout.textContent = endpoint ? "1 year · 365.2422 d" : label + " · day " + Math.floor(day);
+  els.siderealDayRange.setAttribute("aria-valuetext", endpoint ? "1 year, 365.2422 days" : label + ", day " + Math.floor(day));
+}
+
+function setSiderealDayFromScrubber(value){
+  const day = siderealDayFromSliderPosition(value);
+  pausePlaybackForSiderealScrub();
+  if(els.siderealDayRange) els.siderealDayRange.value = String(siderealSliderPosition(day));
+
+  function apply(stage){
+    if(!stage || state.tab !== "hlst" || state.lstStep !== "twoclocks") return;
+    stage.setDay(day);
+    updateReadouts();
+    updateFormulas();
+    syncSiderealTimeline(stage.getState());
+    state.stripDirty = true;
+    requestRender();
+  }
+  if(siderealStage) apply(siderealStage);
+  else ensureSiderealStage().then(apply);
+}
+
+function wireSiderealTimeline(){
+  els.siderealDayRange.addEventListener("input", function(){
+    setSiderealDayFromScrubber(els.siderealDayRange.value);
+  });
+}
+
 function isTwoClocksStep(){ return state.tab === "hlst" && state.lstStep === "twoclocks"; }
 
 function wirePlayback(){
@@ -4830,7 +5011,7 @@ function wirePlayback(){
     if(isTwoClocksStep()){
       if(siderealStage){
         const day = siderealStage.getState().day;
-        siderealStage.setDay(clamp(Math.floor(day) - 1, 0, 365));
+        siderealStage.setDay(siderealStepTarget(day, -1));
         updateReadouts(); updateFormulas();
         state.stripDirty = true; requestRender();
       }
@@ -4850,7 +5031,7 @@ function wirePlayback(){
     if(isTwoClocksStep()){
       if(siderealStage){
         const day = siderealStage.getState().day;
-        siderealStage.setDay(clamp(Math.floor(day) + 1, 0, 365));
+        siderealStage.setDay(siderealStepTarget(day, 1));
         updateReadouts(); updateFormulas();
         state.stripDirty = true; requestRender();
       }
@@ -5459,6 +5640,7 @@ function switchTab(tabId){
   const wasOrigin = state.tab === "origin";
   const isOrigin = tabId === "origin";
   state.tab = tabId;
+  syncSiderealTimeline(null);
   const cfg = TAB_CONFIG[tabId];
 
   // Dome state: unconditionally reseeded from every tab's config (including
@@ -5620,6 +5802,7 @@ function setLstStep(step){
   const cfg = TAB_CONFIG.hlst;
   const sc = cfg.steps[step];
   const isTwo = step === "twoclocks";
+  syncSiderealTimeline(null);
 
   if(sc.star){
     state.starKey = sc.star;
@@ -5768,7 +5951,10 @@ function updateOriginReadouts(){
   els.originSeasonN.textContent = s.seasonN;
   els.originSeasonS.textContent = s.seasonS;
   els.originEot.textContent = fmtSigned(s.eotMin, 1);
-  els.originNoonEl.textContent = fmtSigned(transitAltitudeDeg(state.phi, s.decDeg), 1);
+  const noonEl=transitAltitudeDeg(state.phi, s.decDeg), skyState=originDaylightState(state.phi, s.decDeg);
+  els.originNoonEl.textContent = fmtSigned(noonEl, 1);
+  els.originSkyStatus.className = "pill " + (skyState==="polar day" ? "pill-circumpolar" : skyState==="polar night" ? "pill-never" : "pill-rises");
+  els.originSkyStatus.textContent = skyState.toUpperCase();
 }
 
 /* =========================================================================
@@ -5830,14 +6016,16 @@ function updateHlstReadouts(){
     hlstReadoutEls.culminate.textContent = "culminates when LST = α = " + ra.toFixed(2) + " h";
   } else if(step === "twoclocks"){
     const st = (siderealStage && siderealStage.getState) ? siderealStage.getState() : null;
+    syncSiderealTimeline(st);
     if(st){
-      hlstReadoutEls.sidDateLabel.textContent = st.calendarLabel;
-      hlstReadoutEls.sidDayNum.textContent = Math.floor(st.day);
+      const endpoint = !!st.isYearEndpoint;
+      hlstReadoutEls.sidDateLabel.textContent = endpoint ? "1 year" : st.calendarLabel;
+      hlstReadoutEls.sidDayNum.textContent = endpoint ? st.YEAR_DAYS.toFixed(4) : Math.floor(st.day);
       hlstReadoutEls.sidLMT.textContent = fmtHMS(st.lmtHours);
       hlstReadoutEls.sidLST.textContent = fmtHMS(st.lstHours);
-      // gain = (LST - (LMT - 12h)) mod 24h -- how far the sidereal clock has
-      // pulled ahead of the solar clock since noon on the current calendar day
-      const gainH = mod24(st.lstHours - mod24(st.lmtHours - 12));
+      // Keep the gain unwrapped: at the exact year endpoint it is 24 h, even
+      // though both clock faces themselves read 00:00:00/12:00:00 again.
+      const gainH = st.day * st.GAIN_H + st.tHours * (st.SID_RATE - 1);
       let gsec = Math.round(gainH*3600);
       const gh = Math.floor(gsec/3600); gsec -= gh*3600;
       const gm = Math.floor(gsec/60); const gs = gsec - gm*60;
@@ -5984,8 +6172,9 @@ function updateHlstFormulas(){
 
   if(step === "twoclocks"){
     const st = (siderealStage && siderealStage.getState) ? siderealStage.getState() : null;
-    const n = st ? Math.floor(st.day) : 0;
-    const gainMinTotal = n * (3 + 56.6/60); // minutes
+    const n = st ? st.day : 0;
+    const nLabel = st && st.isYearEndpoint ? st.YEAR_DAYS.toFixed(4) : String(Math.floor(n));
+    const gainMinTotal = st ? n * st.GAIN_H * 60 : n * (3 + 56.6/60); // minutes
     const gh = Math.floor(gainMinTotal/60);
     const gm = Math.round(gainMinTotal - gh*60);
     const gainStr = (gh>0 ? gh + "h " + gm + "m" : gm + "m");
@@ -6001,8 +6190,8 @@ function updateHlstFormulas(){
       'LST(noon) = <span class="math" data-latex="\\alpha">&alpha;</span>&#9737; &asymp; (days since Mar 20) &times; 3 m 56.6 s',
       String.raw`\begin{aligned}&\text{LST(noon)} = \alpha_\odot\\&\approx (\text{days since Mar 20})\times 3^{\text{m}}56.6^{\text{s}}\end{aligned}`,
       "",
-      n + ' &times; 3 m 56.6 s = <b>' + gainStr + '</b> (day ' + n + ')',
-      String.raw`${n} \times 3^{\text{m}}56.6^{\text{s}} = \mathbf{${gainStr}}`,
+      nLabel + ' &times; 3 m 56.6 s = <b>' + gainStr + '</b> (' + (st && st.isYearEndpoint ? '1 year' : 'day ' + nLabel) + ')',
+      String.raw`${nLabel} \times 3^{\text{m}}56.6^{\text{s}} = \mathbf{${gainStr}}`,
       ""
     );
     return;
@@ -6424,6 +6613,7 @@ function init(){
   wireObserver();
   wireStar();
   wireLstSteps();
+  wireSiderealTimeline();
   wireFormulasCollapse();
   wireSplitters();
 

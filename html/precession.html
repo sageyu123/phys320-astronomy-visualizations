@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth's precession · Sky coordinates</title>
+<style>
+:root{
+  --background:#080b0f; --rail:#11161c; --canvas:#0d1015; --panel-deep:#11171d;
+  --panel:#171d24; --panel-raised:#202832; --border:#303b47; --border-strong:#5d6e80;
+  --text:#e7edf3; --muted:#8b98a8; --cyan:#56c7d9; --amber:#ffcc66; --magenta:#d17bff;
+  --green:#6bd69b; --on-accent:#071015; --black-shadow:rgba(0,0,0,.38); --radius:6px;
+}
+*{box-sizing:border-box} html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--background);color:var(--text);font-family:"SF Pro Text","Helvetica Neue",Arial,sans-serif;font-size:13px}
+button,input{font:inherit} button{color:inherit}
+#app{height:100dvh;display:grid;grid-template-rows:48px 1fr;overflow:hidden}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 16px;background:var(--panel-deep);border-bottom:1px solid var(--border);min-width:0}
+.brand{display:flex;align-items:center;gap:9px;color:inherit;text-decoration:none;min-width:0}.brand-mark{width:22px;height:22px;flex:0 0 auto}.brand-title{font-size:13px;font-weight:700;letter-spacing:.045em}.brand-sub{font-size:10px;color:var(--muted);letter-spacing:.02em}
+.top-note{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.body{--rail-w:288px;display:grid;grid-template-columns:var(--rail-w) 6px minmax(0,1fr);min-width:0;min-height:0}
+.rail{background:var(--rail);border-right:1px solid var(--border);padding:10px;overflow:auto;display:flex;flex-direction:column;gap:8px;min-width:0}.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:10px;box-shadow:0 4px 16px var(--black-shadow)}
+.eyebrow{font-size:10px;line-height:1.2;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;margin-bottom:8px}.muted{color:var(--muted)}
+.stepbar{display:grid;grid-template-columns:1fr;gap:5px}.stepbar button,.btn,.toggle{border:1px solid var(--border);background:var(--panel-raised);border-radius:4px;min-height:30px;cursor:pointer;transition:background .12s,border-color .12s}.stepbar button{text-align:left;padding:0 9px;font-size:12px}.stepbar button:hover,.btn:hover,.toggle:hover{background:#27323d;border-color:var(--border-strong)}.stepbar button.active{background:var(--cyan);border-color:var(--cyan);color:var(--on-accent);font-weight:700}.stepbar button:focus-visible,.btn:focus-visible,.toggle:focus-within,input:focus-visible,canvas:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.transport{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:5px;margin-bottom:8px}.btn{padding:0 7px;font-size:12px}.btn.play{font-size:14px}.btn.active{background:var(--cyan);color:var(--on-accent);border-color:var(--cyan)}
+.field{margin-top:9px}.field:first-of-type{margin-top:0}.field label,.field-label{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.field-row{display:flex;align-items:center;gap:7px}.field-row input[type=range]{flex:1 1 auto;min-width:0}.num{width:76px;min-height:28px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--panel-raised);color:var(--text);text-align:right;font-variant-numeric:tabular-nums}.unit{font-size:10px;color:var(--muted);white-space:nowrap}
+input[type=range]{accent-color:var(--cyan);height:22px}.timeline-ticks{position:relative;height:16px;margin:1px 7px 0}.timeline-ticks span{position:absolute;top:0;transform:translateX(-50%);font-size:9px;color:var(--muted);white-space:nowrap}.timeline-ticks span:first-child{transform:none}.timeline-ticks span:last-child{transform:translateX(-100%)}
+.toggle{display:flex;align-items:center;gap:8px;padding:0 9px;width:100%;min-height:29px;margin-bottom:5px;font-size:11px}.toggle:last-child{margin-bottom:0}.toggle input{accent-color:var(--cyan);margin:0}.toggle span{flex:1}.formula{font-family:"STIX Two Math","Cambria Math",serif;font-size:15px;text-align:center;color:var(--text);margin:4px 0 7px}.note{font-size:11px;line-height:1.45;color:var(--muted)}
+.workspace{min-width:0;min-height:0;padding:10px;display:grid;grid-template-rows:minmax(0,1fr) 6px var(--timeline-h,156px);gap:0;background:radial-gradient(circle at 50% 45%,#121a21 0%,var(--canvas) 62%,var(--background) 100%)}.splitter,.splitter-h{position:relative;background:transparent;z-index:2}.splitter{cursor:col-resize}.splitter-h{cursor:row-resize}.splitter:after,.splitter-h:after{content:"";position:absolute;background:var(--cyan);opacity:0;border-radius:2px}.splitter:after{top:0;bottom:0;left:2px;width:2px}.splitter-h:after{left:0;right:0;top:2px;height:2px}.splitter:hover:after,.splitter:focus-visible:after,.splitter-h:hover:after,.splitter-h:focus-visible:after{opacity:.45}
+.panel{display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;border:1px solid var(--border);border-radius:var(--radius);background:var(--canvas);box-shadow:0 5px 18px var(--black-shadow)}.panel-head{height:38px;flex:0 0 38px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 11px;background:var(--panel-deep);border-bottom:1px solid var(--border);min-width:0}.panel-title{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.panel-caption{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}.panel-body{position:relative;flex:1 1 auto;min-height:0}.panel-body canvas{width:100%;height:100%;display:block}
+.canvas-hint{position:absolute;left:12px;bottom:10px;color:var(--muted);font-size:10px;opacity:.72;pointer-events:none}.timeline-panel .panel-head{height:31px;flex-basis:31px}.timeline-panel .panel-body{background:var(--canvas)}#timelineCanvas{touch-action:none}
+@media(min-width:861px){.workspace.torque-view{grid-template-rows:minmax(360px,1fr) 6px var(--timeline-h,400px);overflow-y:auto}}
+@media(max-width:860px){html,body{overflow:auto}#app{height:auto;min-height:100dvh;grid-template-rows:48px auto}.body{grid-template-columns:1fr;min-height:0}.rail{order:2;border-right:none;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;align-content:start;overflow:visible}.rail .card:first-child,.rail .card:last-child{grid-column:1/-1}.splitter,.splitter-h{display:none}.workspace{order:1;grid-template-rows:clamp(410px,68vw,590px) 132px;padding:8px;gap:8px}.top-note{display:none}}
+@media(max-width:560px){.rail{grid-template-columns:1fr}.brand-sub{display:none}.panel-caption{display:none}.workspace{grid-template-rows:clamp(360px,88vw,500px) 125px}.topbar{padding:0 10px}}
+@media(max-width:860px){.workspace.torque-view{grid-template-rows:clamp(410px,68vw,590px) 420px}}
+@media(max-width:560px){.workspace.torque-view{grid-template-rows:640px 420px}}
+.plot-explanation{flex:0 0 auto;margin:0;padding:8px 12px;color:var(--muted);font-size:12px;line-height:1.45;border-bottom:1px solid var(--border)}.plot-explanation[hidden]{display:none}
+@media(max-width:560px){.workspace.torque-view .canvas-hint{top:95px;bottom:auto}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <a class="brand" href="../index.html" title="Back to the visualizations index">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 16c5-6 15-6 20 0" fill="none" stroke="var(--cyan)" stroke-width="1.5"/><ellipse cx="12" cy="11" rx="7" ry="8" transform="rotate(-28 12 11)" fill="none" stroke="var(--amber)" stroke-width="1.2"/><circle cx="12" cy="16" r="1.4" fill="var(--cyan)"/></svg>
+      <span><span class="brand-title">EARTH'S PRECESSION</span><br><span class="brand-sub">PHYS 320 · long-term sky</span></span>
+    </a>
+    <div class="top-note">A 26,000-year change in the celestial reference frame</div>
+  </header>
+  <div class="body">
+    <aside class="rail" aria-label="Precession controls">
+      <div class="card">
+        <div class="eyebrow">Three views</div>
+        <div class="stepbar" id="stepBar" role="tablist" aria-label="Precession lesson steps">
+          <button type="button" role="tab" aria-selected="true" data-step="0" class="active">1 · Axis traces a cone</button>
+          <button type="button" role="tab" aria-selected="false" data-step="1">2 · Torque on the bulge</button>
+          <button type="button" role="tab" aria-selected="false" data-step="2">3 · Poles and equinox</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Playback</div>
+        <div class="transport"><button class="btn" id="stepBack" type="button" title="Back 1000 years">&lang; 1000 y</button><button class="btn play" id="play" type="button" title="Play / pause" aria-label="Play">&#9658;</button><button class="btn" id="stepForward" type="button" title="Forward 1000 years">1000 y &rang;</button></div>
+        <div class="field"><label id="phaseLabel" for="yearRange">Precession phase</label><div class="field-row"><input id="yearRange" type="range" min="0" max="26000" step="1" value="0" aria-label="Precession phase in years"><input class="num" id="yearNum" type="number" min="0" max="26000" step="1" value="0" aria-label="Precession phase numeric value"><span class="unit" id="phaseUnit">y</span></div><div class="timeline-ticks" aria-hidden="true"><span id="tick0" style="left:0">0</span><span id="tick1" style="left:25%">6.5k</span><span id="tick2" style="left:50%">13k</span><span id="tick3" style="left:75%">19.5k</span><span id="tick4" style="left:100%">26k</span></div></div>
+        <div class="field"><label id="speedLabel" for="speedRange">Playback speed</label><div class="field-row"><input id="speedRange" type="range" min="100" max="4000" step="1" value="1000" aria-label="Playback speed in years per second"><input class="num" id="speedNum" type="number" min="100" max="4000" step="1" value="1000" aria-label="Playback speed numeric value"><span class="unit" id="speedUnit">y/s</span></div></div>
+        <button class="btn" id="reset" type="button" style="width:100%;margin-top:9px">Reset reference phase</button>
+      </div>
+      <div class="card" id="stepOptions0">
+        <div class="eyebrow">Show</div>
+        <label class="toggle"><input id="showCone" type="checkbox" checked><span>cone and precession tangent</span></label>
+      </div>
+      <div class="card" id="stepOptions1" hidden>
+        <div class="eyebrow">Show</div>
+        <label class="toggle"><input id="showTorque" type="checkbox" checked><span>torque vectors</span></label>
+        <label class="toggle"><input id="showSun" type="checkbox" checked><span>solar contribution</span></label>
+        <div class="field"><label for="moonRange">Moon orbital position</label><div class="field-row"><input id="moonRange" type="range" min="0" max="360" step="0.1" value="35" aria-label="Moon orbital position"><input id="moonReadout" class="num" type="number" min="0" max="360" step="0.1" value="35" aria-label="Moon orbital position numeric value"><span class="unit">°</span></div></div>
+      </div>
+      <div class="card" id="stepOptions2" hidden>
+        <div class="eyebrow">Show</div>
+        <label class="toggle"><input id="showGrid" type="checkbox" checked><span>RA/Dec grid and equinox trail</span></label>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Physics</div>
+        <div class="formula">dL/dt = τ</div>
+        <div id="physicsReadout" class="note">The ecliptic pole stays fixed while Earth's angular-momentum direction traces a cone at 23.44°.</div>
+      </div>
+      <div class="card note"><b style="color:var(--text)">Scale note.</b> The solid blue sphere is Earth; the amber shell exaggerates its equatorial bulge. Land shapes and force arrows are schematic. The precession clock is independent of the daily spin. Nutation and stellar proper motion are omitted.</div>
+    </aside>
+    <div class="splitter" id="splitter" tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize controls rail"></div>
+    <main class="workspace">
+      <section class="panel" aria-labelledby="mainTitle">
+        <div class="panel-head"><div class="panel-title" id="mainTitle">Axis traces a cone</div><div class="panel-caption" id="mainCaption">The celestial pole circles the fixed ecliptic pole.</div></div>
+        <div class="panel-body"><canvas id="mainCanvas" tabindex="0" role="img" aria-label="Interactive axial precession diagram"></canvas><div class="canvas-hint">drag to rotate · scroll to zoom · Home resets view</div></div>
+      </section>
+      <div class="splitter-h" id="hSplitter" tabindex="0" role="separator" aria-orientation="horizontal" aria-valuemin="120" aria-valuemax="300" aria-valuenow="156" aria-label="Resize timeline"></div>
+      <section class="panel timeline-panel" aria-labelledby="timelineTitle">
+        <div class="panel-head"><div class="panel-title" id="timelineTitle">Precession timeline</div><div class="panel-caption" id="timelineCaption">0 → 26,000 years · quarter-cycle markers</div></div>
+        <p id="torquePlotExplanation" class="plot-explanation" hidden>Both panels show components of <strong>lunar τ = dL/dt</strong>, not r or F. <strong>Top:</strong> along the green arrow, driving precession. <strong>Bottom:</strong> perpendicular to that arrow and L, canceling over one orbit. Magenta: instantaneous. Blue: mean since day 0. Dashed green: full-orbit mean. One unit = full-orbit average torque magnitude.</p>
+      <div class="panel-body"><canvas id="timelineCanvas" tabindex="0" role="slider" aria-label="Precession timeline in years" aria-valuemin="0" aria-valuemax="26000" aria-valuenow="0" aria-valuetext="0 years"></canvas></div>
+      </section>
+    </main>
+  </div>
+</div>
+<script type="module">
+import { LUNAR_ORBIT_DAYS, LUNAR_PHASE_OFFSET_DEG, PRECESSION_YEARS, TAU, clamp, earthSpinPhaseForDays, lunarStateAt, stateAt, sunAngleForDays } from "./precession_model.js?v=lunar-51";
+import { createPrecessionRenderer } from "./precession.js?v=precession-18";
+
+const els = {};
+["stepBar","stepBack","play","stepForward","reset","phaseLabel","yearRange","yearNum","phaseUnit","tick0","tick1","tick2","tick3","tick4","speedLabel","speedRange","speedNum","speedUnit","moonRange","moonReadout","showCone","showTorque","showSun","showGrid","stepOptions0","stepOptions1","stepOptions2","mainTitle","mainCaption","physicsReadout","mainCanvas","timelineCanvas","timelineTitle","timelineCaption","splitter","hSplitter"].forEach(id=>els[id]=document.getElementById(id));
+const modelState = { step:0, year:0, speed:1000, lunarDay:0, lunarSpeed:1, spinPhase:0, playing:false, showCone:true, showTorque:true, showSun:true, showGrid:true };
+const renderer = createPrecessionRenderer(els.mainCanvas, els.timelineCanvas);
+const STEP_INFO = [
+  {title:"Axis traces a cone", caption:"The celestial pole circles the fixed ecliptic pole while the tilt stays 23.44°", readout:"The ecliptic pole is the cone axis. Earth's angular-momentum direction changes around it; the axis is not falling upright."},
+  {title:"Torque on the bulge", caption:"Moon orbit: 5.1° to ecliptic · Earth’s equator: 23.44° to ecliptic", readout:"The ecliptic is Earth’s orbital plane around the Sun. The Moon’s orbital plane is inclined 5.1° to the ecliptic. Its normal k therefore differs from the ecliptic normal. Earth’s equator is perpendicular to L, tilted 23.44° to the ecliptic. L is 23.44° from the ecliptic normal. The lunar plane’s node is held fixed during this monthly view; its 18.6-year nodal cycle is omitted. Each lunar torque is Σ r × F. The inset adds equally spaced samples from a full orbit: sideways components cancel while components in the green direction add. The green arrow points toward the mean of the torque-vector tips, not toward the Moon. In this model its direction is L × k, where k is the orbit normal: curl your right-hand fingers from L toward k; your thumb gives the green direction. It is tangent to precession, perpendicular to both L and k."},
+  {title:"Poles and equinox", caption:"The celestial coordinate frame moves against approximately fixed stars", readout:"The ecliptic frame stays fixed in this lesson. The celestial pole, equator, and vernal equinox drift because the reference frame precesses."}
+];
+
+function fmtYear(y){ return Math.round(y).toLocaleString(); }
+function fmtDay(d){ return Number(d).toFixed(3).replace(/\.?(0+)$/," ").trim(); }
+function syncInputs(){
+  const lunar=modelState.step===1, phase=lunar?modelState.lunarDay:modelState.year, phaseMax=lunar?LUNAR_ORBIT_DAYS:PRECESSION_YEARS;
+  els.phaseLabel.textContent=lunar?"Lunar orbit day":"Precession phase"; els.phaseUnit.textContent=lunar?"d":"y";
+  [els.yearRange,els.yearNum].forEach(el=>{el.min=0;el.max=phaseMax;el.step=lunar?(el===els.yearRange?"any":"0.001"):"1";el.value=el===els.yearNum?(lunar?Number(phase.toFixed(3)):Math.round(phase)):phase;});
+  els.yearRange.setAttribute("aria-label",lunar?"Lunar orbit day in solar days":"Precession phase in years"); els.yearNum.setAttribute("aria-label",lunar?"Lunar orbit day numeric value":"Precession phase numeric value");
+  const tickValues=lunar?[0,LUNAR_ORBIT_DAYS/4,LUNAR_ORBIT_DAYS/2,LUNAR_ORBIT_DAYS*.75,LUNAR_ORBIT_DAYS]:[0,PRECESSION_YEARS/4,PRECESSION_YEARS/2,PRECESSION_YEARS*.75,PRECESSION_YEARS];
+  [els.tick0,els.tick1,els.tick2,els.tick3,els.tick4].forEach((el,i)=>el.textContent=lunar?fmtDay(tickValues[i]):(tickValues[i]/1000).toLocaleString()+"k");
+  const speed=lunar?modelState.lunarSpeed:modelState.speed; els.speedLabel.textContent=lunar?"Lunar playback speed":"Playback speed"; els.speedUnit.textContent=lunar?"d/s":"y/s";
+  [els.speedRange,els.speedNum].forEach(el=>{el.min=lunar?.1:100;el.max=lunar?5:4000;el.step=lunar?.1:1;el.value=speed;}); els.speedRange.setAttribute("aria-label",lunar?"Lunar playback speed in days per second":"Playback speed in years per second"); els.speedNum.setAttribute("aria-label",lunar?"Lunar playback speed numeric value":"Playback speed numeric value");
+  els.timelineCanvas.setAttribute("aria-valuemin",0); els.timelineCanvas.setAttribute("aria-valuemax",phaseMax); els.timelineCanvas.setAttribute("aria-valuenow",phase); els.timelineCanvas.setAttribute("aria-valuetext",lunar?fmtDay(phase)+" solar days":fmtYear(phase)+" years"); els.timelineCanvas.setAttribute("aria-label",lunar?"Lunar orbit timeline in solar days":"Precession timeline in years");
+  els.stepBack.textContent=lunar?"‹ 1 d":"‹ 1000 y"; els.stepForward.textContent=lunar?"1 d ›":"1000 y ›"; els.stepBack.title=lunar?"Back 1 solar day":"Back 1000 years"; els.stepForward.title=lunar?"Forward 1 solar day":"Forward 1000 years"; els.reset.textContent=lunar?"Reset lunar orbit":"Reset reference phase";
+  const lunarState=lunarStateAt(modelState.lunarDay); els.moonRange.value=lunarState.angleDeg; els.moonReadout.value=Number(lunarState.angleDeg.toFixed(1));
+  els.timelineTitle.textContent=lunar?"Torque through one lunar orbit":"Precession timeline"; els.timelineCaption.textContent=lunar?"τ = dL/dt · relative components · drag to scrub":"0 → 26,000 years · quarter-cycle markers";
+}
+function opts(){ return {showCone:modelState.showCone,showTorque:modelState.showTorque,showSun:modelState.showSun,showGrid:modelState.showGrid}; }
+function redraw(){
+  const lunar=lunarStateAt(modelState.lunarDay), s=stateAt(modelState.year,lunar.angleDeg,sunAngleForDays(modelState.lunarDay)); renderer.draw(Object.assign(s,{step:modelState.step,lunarDay:modelState.lunarDay,spinPhase:modelState.step===1?earthSpinPhaseForDays(modelState.lunarDay):modelState.spinPhase}),opts());
+  const info=STEP_INFO[modelState.step]; els.mainTitle.textContent=info.title; els.mainCaption.textContent=info.caption; els.physicsReadout.textContent=info.readout;
+}
+function setYear(value){ modelState.year=clamp(Math.round(Number(value)||0),0,PRECESSION_YEARS); syncInputs(); redraw(); }
+function setLunarDay(value){ modelState.lunarDay=clamp(Number(value)||0,0,LUNAR_ORBIT_DAYS); syncInputs(); redraw(); }
+function setLunarAngle(value){ const angle=clamp(Number(value)||0,0,360); const elapsed=((angle-LUNAR_PHASE_OFFSET_DEG+360)%360)/360*LUNAR_ORBIT_DAYS; setLunarDay(elapsed); }
+function setActivePhase(value){ if(modelState.step===1)setLunarDay(value); else setYear(value); }
+function pause(){ if(!modelState.playing && raf==null)return; modelState.playing=false; if(raf!=null){cancelAnimationFrame(raf);raf=null;} lastTs=null; updatePlay(); }
+function startPlay(){ if(raf!=null)return; modelState.playing=true; lastTs=null; updatePlay(); raf=requestAnimationFrame(loop); }
+function updatePlay(){ els.play.innerHTML=modelState.playing?"&#10074;&#10074;":"&#9658;"; els.play.setAttribute("aria-label",modelState.playing?"Pause":"Play"); els.play.classList.toggle("active",modelState.playing); }
+function setStep(step){ pause(); modelState.step=step; document.getElementById("torquePlotExplanation").hidden=step!==1; document.querySelector(".workspace").classList.toggle("torque-view",step===1); timelineHeight=step===1?400:156; applyTimeline(); els.stepBar.querySelectorAll("button").forEach(b=>{const on=Number(b.dataset.step)===step;b.classList.toggle("active",on);b.setAttribute("aria-selected",on);}); [els.stepOptions0,els.stepOptions1,els.stepOptions2].forEach((el,i)=>el.hidden=i!==step); syncInputs(); redraw(); }
+els.stepBar.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>setStep(Number(b.dataset.step))));
+els.yearRange.addEventListener("input",()=>{pause();setActivePhase(els.yearRange.value)}); els.yearNum.addEventListener("input",()=>{pause();setActivePhase(els.yearNum.value)}); els.yearNum.addEventListener("blur",()=>setActivePhase(els.yearNum.value));
+els.speedRange.addEventListener("input",()=>{if(modelState.step===1)modelState.lunarSpeed=clamp(Number(els.speedRange.value)||.1,.1,5);else modelState.speed=clamp(Number(els.speedRange.value)||100,100,4000);syncInputs()}); els.speedNum.addEventListener("input",()=>{if(modelState.step===1)modelState.lunarSpeed=clamp(Number(els.speedNum.value)||.1,.1,5);else modelState.speed=clamp(Number(els.speedNum.value)||100,100,4000);syncInputs()});
+els.moonRange.addEventListener("input",()=>{pause();setLunarAngle(els.moonRange.value)}); els.moonReadout.addEventListener("input",()=>{pause();setLunarAngle(els.moonReadout.value)});
+els.showCone.addEventListener("change",()=>{modelState.showCone=els.showCone.checked;redraw()}); els.showTorque.addEventListener("change",()=>{modelState.showTorque=els.showTorque.checked;redraw()}); els.showSun.addEventListener("change",()=>{modelState.showSun=els.showSun.checked;redraw()}); els.showGrid.addEventListener("change",()=>{modelState.showGrid=els.showGrid.checked;redraw()});
+function stepActive(delta){pause();if(modelState.step===1)setLunarDay(modelState.lunarDay+delta);else setYear(modelState.year+delta)}
+els.stepBack.addEventListener("click",()=>stepActive(modelState.step===1?-1:-1000)); els.stepForward.addEventListener("click",()=>stepActive(modelState.step===1?1:1000)); els.reset.addEventListener("click",()=>{pause();if(modelState.step===1)modelState.lunarDay=0;else {modelState.year=0;modelState.spinPhase=0;}renderer.camera.yaw=-.55;renderer.camera.pitch=.38;renderer.camera.zoom=1;syncInputs();redraw()});
+let raf=null,lastTs=null; function loop(ts){if(!modelState.playing){raf=null;lastTs=null;return}if(lastTs==null)lastTs=ts;const dt=Math.min(.25,(ts-lastTs)/1000);lastTs=ts;if(modelState.step===1){modelState.lunarDay+=modelState.lunarSpeed*dt;if(modelState.lunarDay>=LUNAR_ORBIT_DAYS)modelState.lunarDay=0;}else{modelState.spinPhase=(modelState.spinPhase+dt*TAU*.7)%TAU;modelState.year+=modelState.speed*dt;if(modelState.year>PRECESSION_YEARS)modelState.year=0;}syncInputs();redraw();raf=requestAnimationFrame(loop)}
+els.play.addEventListener("click",()=>{if(modelState.playing)pause();else startPlay()});
+let dragging=false,lastX=0,lastY=0; els.mainCanvas.addEventListener("pointerdown",e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;els.mainCanvas.setPointerCapture(e.pointerId)});els.mainCanvas.addEventListener("pointermove",e=>{if(!dragging)return;renderer.rotate((modelState.step===1?-1:1)*(e.clientX-lastX),e.clientY-lastY);lastX=e.clientX;lastY=e.clientY;redraw()});["pointerup","pointercancel","lostpointercapture"].forEach(t=>els.mainCanvas.addEventListener(t,()=>dragging=false));els.mainCanvas.addEventListener("wheel",e=>{e.preventDefault();renderer.zoom(e.deltaY);redraw()},{passive:false});els.mainCanvas.addEventListener("keydown",e=>{if(e.key==="Home"){renderer.camera.yaw=-.55;renderer.camera.pitch=.38;renderer.camera.zoom=1;redraw()}else if(e.key==="ArrowLeft"){renderer.rotate(-20,0);redraw()}else if(e.key==="ArrowRight"){renderer.rotate(20,0);redraw()}else if(e.key==="ArrowUp"){renderer.rotate(0,-20);redraw()}else if(e.key==="ArrowDown"){renderer.rotate(0,20);redraw()}else if(e.key==="+"||e.key==="="){renderer.zoom(-1);redraw()}else if(e.key==="-"){renderer.zoom(1);redraw()}});
+const ro=new ResizeObserver(()=>{renderer.resize();redraw()});ro.observe(els.mainCanvas);ro.observe(els.timelineCanvas);
+function scrubTimeline(e){const rect=els.timelineCanvas.getBoundingClientRect(),p=clamp((e.clientX-rect.left-50)/(Math.max(1,rect.width-70)),0,1);pause();setActivePhase(p*(modelState.step===1?LUNAR_ORBIT_DAYS:PRECESSION_YEARS))}
+let timelineDragging=false; els.timelineCanvas.addEventListener("pointerdown",e=>{timelineDragging=true;els.timelineCanvas.setPointerCapture(e.pointerId);scrubTimeline(e)});els.timelineCanvas.addEventListener("pointermove",e=>{if(timelineDragging)scrubTimeline(e)});["pointerup","pointercancel","lostpointercapture"].forEach(t=>els.timelineCanvas.addEventListener(t,()=>timelineDragging=false));els.timelineCanvas.addEventListener("keydown",e=>{if(e.key==="Home"){e.preventDefault();pause();setActivePhase(0)}else if(e.key==="End"){e.preventDefault();pause();setActivePhase(modelState.step===1?LUNAR_ORBIT_DAYS:PRECESSION_YEARS)}else if(e.key==="ArrowLeft"||e.key==="ArrowRight"){e.preventDefault();pause();setActivePhase((modelState.step===1?modelState.lunarDay:modelState.year)+(e.key==="ArrowRight"?(modelState.step===1?.1:100):-(modelState.step===1?.1:100)))}});
+let railWidth=288,splitDragging=false,startX=0,startWidth=0; function applyRail(){document.querySelector(".body").style.setProperty("--rail-w",railWidth+"px")} function endSplit(){splitDragging=false;document.body.style.cursor=""} els.splitter.addEventListener("pointerdown",e=>{splitDragging=true;startX=e.clientX;startWidth=railWidth;els.splitter.setPointerCapture(e.pointerId);document.body.style.cursor="col-resize"});els.splitter.addEventListener("pointermove",e=>{if(splitDragging){railWidth=clamp(startWidth+e.clientX-startX,230,420);applyRail()}});["pointerup","pointercancel","lostpointercapture"].forEach(t=>els.splitter.addEventListener(t,endSplit));els.splitter.addEventListener("keydown",e=>{if(e.key==="ArrowLeft"||e.key==="ArrowRight"){e.preventDefault();railWidth=clamp(railWidth+(e.key==="ArrowRight"?10:-10),230,420);applyRail()}});
+let timelineHeight=156,hSplitDragging=false,startY=0,startHeight=0; function applyTimeline(){document.querySelector(".workspace").style.setProperty("--timeline-h",timelineHeight+"px");els.hSplitter.setAttribute("aria-valuenow",timelineHeight)} function endHSplit(){hSplitDragging=false;document.body.style.cursor=""} els.hSplitter.addEventListener("pointerdown",e=>{hSplitDragging=true;startY=e.clientY;startHeight=timelineHeight;els.hSplitter.setPointerCapture(e.pointerId);document.body.style.cursor="row-resize"});els.hSplitter.addEventListener("pointermove",e=>{if(hSplitDragging){timelineHeight=clamp(startHeight-(e.clientY-startY),modelState.step===1?380:120,500);applyTimeline()}});["pointerup","pointercancel","lostpointercapture"].forEach(t=>els.hSplitter.addEventListener(t,endHSplit));els.hSplitter.addEventListener("keydown",e=>{if(e.key==="ArrowUp"||e.key==="ArrowDown"){e.preventDefault();timelineHeight=clamp(timelineHeight+(e.key==="ArrowUp"?10:-10),modelState.step===1?380:120,500);applyTimeline()}});
+syncInputs();setStep(0);renderer.resize();redraw();
+</script>
+</body>
+</html>

@@ -24,15 +24,19 @@
    the Sun back up. That few-minutes-per-day gap is exactly why a sidereal
    clock (LST) drifts ahead of an ordinary (solar) clock by about 3 m 56.6 s
    every day -- 360 degrees over one year, i.e. one whole extra sidereal
-   "lap" per year (366.25 sidereal days == 365.25 solar days).
+   "lap" per year (366.2422 sidereal days == 365.2422 solar days in this
+   mean-tropical-year model).
 
    PHYSICS MODEL (all true-scale, mean Sun -- no dramatization of any angle
    or duration; every number this module reports is the literal output of
    the formulas below, not a stylised stand-in for them):
 
-     SID_RATE = 1.00273791          sidereal hours per mean-solar hour
+     SID_RATE = 1 + 1/YEAR_DAYS
+                                    sidereal hours per mean-solar hour in this
+                                    one-year model (chosen so the exact model
+                                    year gains one full 24 h turn)
      T_SID_H  = 24 / SID_RATE       length of a sidereal day in ordinary
-                                    (solar) hours = 23.934470 h, and
+                                    (solar) hours = 23.9345 h, and
                                     hmsParts()/fmtHMS() render that as
                                     "23 h 56 m 04 s" -- see the self-check
                                     at the bottom of this file's header for
@@ -46,7 +50,7 @@
      SUN_DEG_PER_DAY = 360/YEAR_DAYS  the Sun's apparent daily eastward
                                     creep against the stars, ~0.9856 deg/day
 
-   Day `n` (integer, 0..365) counts solar days since local mean noon of
+   Day `n` (0..YEAR_DAYS) counts solar days since local mean noon of
    March 20 (day-of-year 79 in a 365-day calendar): at that instant the mean
    Sun sits at the vernal point ("Aries", RA 0h), so LST = 0. `t` is clock
    hours since noon of day n, 0 <= t <= 24. Angles below are measured in the
@@ -102,17 +106,26 @@ export function createSiderealStage(deps) {
   const RAD = Math.PI / 180;
   const DEG = 180 / Math.PI;
 
-  const SID_RATE = 1.00273791;
-  const T_SID_H = 24 / SID_RATE;              // 23.934470... h
   const YEAR_DAYS = 365.2422;
   const GAIN_H = 24 / YEAR_DAYS;               // 0.0657098... h
+  // Tie the daily sidereal/solar difference to the exact model year so that
+  // day YEAR_DAYS at noon lands on LST 24 h (shown as 00:00:00), rather than
+  // leaving a small endpoint mismatch from two rounded constants.
+  const SID_RATE = 1 + 1 / YEAR_DAYS;
+  const T_SID_H = 24 / SID_RATE;              // 23.9345... h
   const SUN_DEG_PER_DAY = 360 / YEAR_DAYS;     // 0.985647... deg/day
-  const TVERNAL_STEP = 24 - T_SID_H;           // ~0.06553 h, the "earlier each day" step
+  const TVERNAL_STEP = 24 - T_SID_H;           // ~0.06553 h, earlier each day
 
-  function mod(a, n) { const r = a % n; return r < 0 ? r + n : r; }
+  function mod(a, n) {
+    const r = a % n;
+    const v = r < 0 ? r + n : r;
+    // Exact model endpoints often land a few ulps below n; treating those as
+    // zero keeps the clock readout at 00:00:00 instead of 23:59:59.
+    return (Math.abs(v) < 1e-10 || Math.abs(v - n) < 1e-10) ? 0 : v;
+  }
   function mod360(a) { return mod(a, 360); }
   function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
-  function tVernal(n) { return T_SID_H - n * TVERNAL_STEP; }
+  function tVernal(n) { return Math.max(0, T_SID_H - n * TVERNAL_STEP); }
   function pad2(x) { return (x < 10 ? "0" : "") + x; }
 
   // floor-based H/MM/SS split -- matches a real clock (it TICKS to the next
@@ -142,10 +155,10 @@ export function createSiderealStage(deps) {
     return MONTH_NAMES[m] + " " + rem;
   }
   function calendarLabel(n) {
-    const doy = mod(79 + n - 1, 365) + 1;
+    const doy = mod(79 + Math.floor(n) - 1, 365) + 1;
     return dayOfYearToLabel(doy);
   }
-  // n (0..365) at which a given day-of-year falls, inverse of the line above
+  // n (0..YEAR_DAYS) at which a given day-of-year falls, inverse of the line above
   // -- used only to lay out the strip chart's month gridlines below.
   function nOfDoy(doy) { return mod(doy - 79, 365); }
 
@@ -161,7 +174,7 @@ export function createSiderealStage(deps) {
 
   function derivePhaseFromT() {
     state.dwellElapsed = 0; state.extraElapsed = 0; state.extraDur = 0;
-    state.phase = (state.t < tVernal(state.day)) ? "spin" : "extra";
+    state.phase = (state.t <= tVernal(state.day) + 1e-9) ? "spin" : "extra";
   }
 
   function reset() {
@@ -170,7 +183,7 @@ export function createSiderealStage(deps) {
   }
 
   function setDay(n) {
-    state.day = clamp(Math.round(n), 0, 365);
+    state.day = clamp(Number(n), 0, YEAR_DAYS);
     derivePhaseFromT();
   }
 
@@ -232,6 +245,10 @@ export function createSiderealStage(deps) {
         if (!(state.extraDur > 0)) {
           const naturalDur = (speedHoursPerSec > 0) ? hoursLeft / speedHoursPerSec : Infinity;
           state.extraDur = Math.max(1.5, naturalDur);
+          // setDay() preserves t while re-deriving the phase. Seed the
+          // elapsed portion here so resuming a scrubbed state never jumps
+          // backward to the start of the extra turn.
+          state.extraElapsed = clamp((state.t - tv) / hoursLeft, 0, 1) * state.extraDur;
         }
         const room = state.extraDur - state.extraElapsed;
         if (room <= 1e-9) {
@@ -251,8 +268,8 @@ export function createSiderealStage(deps) {
         const room = 1.0 - state.dwellElapsed;
         if (remaining >= room) {
           remaining -= room;
-          state.day = (state.day + 1) % 366;
-          if (state.day > 365) state.day = 0; // defensive; 366 only ever appears via the mod above
+          if (state.day >= YEAR_DAYS - 1e-9) state.day = 0;
+          else state.day = Math.min(YEAR_DAYS, state.day + 1);
           state.t = 0; state.phase = "spin";
           state.dwellElapsed = 0; state.extraElapsed = 0; state.extraDur = 0;
         } else {
@@ -294,7 +311,8 @@ export function createSiderealStage(deps) {
       day: n, tHours: t, phase: state.phase,
       lmtHours, lstHours, sunAngleDeg, pointerAngleDeg,
       calendarLabel: calendarLabel(n),
-      T_SID_H, GAIN_H,
+      T_SID_H, SID_RATE, GAIN_H, YEAR_DAYS,
+      isYearEndpoint: Math.abs(n - YEAR_DAYS) < 1e-9,
       banner: computeBanner(n, t, state.phase)
     };
   }
@@ -738,10 +756,13 @@ export function createSiderealStage(deps) {
       readoutLabel: "mean time", readoutValue: fmtClock(st.lmtHours)
     });
 
-    const solarAsHourAngle = mod(st.lmtHours - 12 + 24, 24);
-    const gain = mod(st.lstHours - solarAsHourAngle + 48, 24);
+    // Keep the elapsed gain unwrapped so the exact year endpoint reads +24 h
+    // rather than wrapping back to 0 h with the two clock faces.
+    const gain = st.day * st.GAIN_H + st.tHours * (st.SID_RATE - 1);
     const gy = cy + rc + 26;
-    const gainText = "LST − solar: +" + st.day + " × 3 m 56.6 s = +" + fmtHMS(gain);
+    const gainText = st.isYearEndpoint
+      ? "LST − solar: +1 year · 365.2422 d = +" + fmtHMS(gain)
+      : "LST − solar: +" + st.day + " × 3 m 56.6 s = +" + fmtHMS(gain);
     // Centred under the two dials, at a font size shrunk (down to a 7px
     // floor) just enough that it fits WITHOUT sliding off-centre -- the
     // two-dial cluster sits close to the right edge (both anchored off
@@ -804,7 +825,7 @@ export function createSiderealStage(deps) {
     const plotW = Math.max(1, px1 - px0), plotH = Math.max(1, py1 - py0);
     const st = getState();
 
-    function xOf(n) { return px0 + (n / 365) * plotW; }
+    function xOf(n) { return px0 + (n / YEAR_DAYS) * plotW; }
     function yOf(hr) { return py1 - (hr / 24) * plotH; }
 
     // grid + axes
@@ -827,7 +848,7 @@ export function createSiderealStage(deps) {
     ctx.textAlign = "center"; ctx.textBaseline = "top";
     for (let i = 0; i < orderedMonths.length; i++) {
       const n = nOfDoy(orderedDoys[i]);
-      if (n < 0 || n > 365) continue;
+      if (n < 0 || n > YEAR_DAYS) continue;
       const x = xOf(n);
       ctx.strokeStyle = hexAlpha(COLORS.border, 0.35);
       ctx.beginPath(); ctx.moveTo(x, py0); ctx.lineTo(x, py1); ctx.stroke();
@@ -860,8 +881,11 @@ export function createSiderealStage(deps) {
       ctx.beginPath();
       let prev = null;
       for (let i = 0; i <= steps; i++) {
-        const n = (365 * i) / steps;
-        const v = mod(valueFn(n), 24);
+        const n = (YEAR_DAYS * i) / steps;
+        const raw = valueFn(n);
+        // Keep the exact one-year noon endpoint at the 24 h gridline rather
+        // than wrapping it to 0 h and leaving a disconnected endpoint dot.
+        const v = (i === steps && Math.abs(raw - 24) < 1e-8) ? 24 : mod(raw, 24);
         const x = xOf(n), y = yOf(v);
         if (prev === null || Math.abs(v - prev) > 12) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
@@ -891,7 +915,7 @@ export function createSiderealStage(deps) {
     const nMidnight = mod(raWrapped - 12 * SID_RATE, 24) / GAIN_H;
     const nNoon = raWrapped / GAIN_H;
     function markMeet(n, label, dim) {
-      if (!(n >= 0 && n <= 365)) return;
+      if (!(n >= 0 && n <= YEAR_DAYS)) return;
       const x = xOf(n);
       ctx.fillStyle = COLORS.amber;
       ctx.beginPath(); ctx.arc(x, yStar, 3, 0, TAU); ctx.fill();
@@ -904,22 +928,26 @@ export function createSiderealStage(deps) {
       ctx.textAlign = align; ctx.textBaseline = (yStar < (py0 + py1) / 2) ? "top" : "bottom";
       ctx.fillText(label, lx, yStar + (align ? 0 : 0) + ((yStar < (py0 + py1) / 2) ? 5 : -5));
     }
-    markMeet(nMidnight, "on the meridian at midnight: " + calendarLabel(Math.round(mod(nMidnight, 366))), false);
+    markMeet(nMidnight, "on the meridian at midnight: " + calendarLabel(Math.round(mod(nMidnight, YEAR_DAYS))), false);
     markMeet(nNoon, "… at noon", true);
 
     // current day marker
     {
       const n = st.day;
       const x = xOf(n);
-      ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.35); ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
+      // Keep the selected day legible against both the chart curves and the
+      // month grid: this is the visual counterpart of the year scrubber in
+      // the host page's strip toolbar.
+      ctx.strokeStyle = hexAlpha(COLORS.cyan, 0.72); ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
       ctx.beginPath(); ctx.moveTo(x, py0); ctx.lineTo(x, py1); ctx.stroke();
       ctx.setLineDash([]);
-      const yN = yOf(mod(noonVal(n), 24));
+      const noonPlot = (Math.abs(n - YEAR_DAYS) < 1e-8) ? 24 : mod(noonVal(n), 24);
+      const yN = yOf(noonPlot);
       const yM = yOf(mod(midnightVal(n), 24));
       ctx.fillStyle = COLORS.cyan;
-      ctx.beginPath(); ctx.arc(x, yN, 3.2, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(x, yM, 3.2, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(x, yN, 4, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(x, yM, 4, 0, TAU); ctx.fill();
       if (!compact) {
         const label = "LST(noon) = " + mod(noonVal(n), 24).toFixed(2) + " h";
         const textW = ctx.measureText(label).width;
@@ -934,13 +962,13 @@ export function createSiderealStage(deps) {
     if (!compact) {
       ctx.font = "10px " + UI_FONT; ctx.fillStyle = hexAlpha(COLORS.text, 0.7);
       ctx.textAlign = "left"; ctx.textBaseline = "bottom";
-      const nA = 365 / 3;
+      const nA = YEAR_DAYS / 3;
       ctx.fillText("+3 m 56.6 s per day", xOf(nA) + 6, yOf(noonVal(nA)) - 6);
       // The solid line ends near 24h, i.e. right at the plot's TOP edge --
       // an "above the line" placement (like the annotation above) would
       // sit off the top of the canvas here, so this one goes below instead.
       ctx.textAlign = "right"; ctx.textBaseline = "top";
-      ctx.fillText("= 24 h in a year: 366.25 sidereal days = 365.25 solar days", px1 - 2, yOf(noonVal(365)) + 6);
+      ctx.fillText("= 24 h in a year: 366.2422 sidereal days = 365.2422 solar days", px1 - 2, yOf(noonVal(YEAR_DAYS)) + 6);
     }
   }
 

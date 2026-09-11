@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs>
+    <radialGradient id="earth"><stop stop-color="#244650"/><stop offset="1" stop-color="#101c24"/></radialGradient>
+    <linearGradient id="cone" x2="0" y2="1"><stop stop-color="#56c7d9" stop-opacity=".15"/><stop offset="1" stop-color="#56c7d9" stop-opacity=".02"/></linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="#0d1015"/>
+  <g fill="#979ea6" opacity=".5"><circle cx="91" cy="61" r="1.5"/><circle cx="510" cy="72" r="2"/><circle cx="546" cy="164" r="1.2"/><circle cx="143" cy="154" r="1"/><circle cx="437" cy="38" r="1"/><circle cx="83" cy="283" r="1"/></g>
+  <ellipse cx="320" cy="251" rx="174" ry="47" fill="#ffcc66" fill-opacity=".025" stroke="#ffcc66" stroke-opacity=".4"/>
+  <path d="M320 251 L229 77 Q320 111 411 77 Z" fill="url(#cone)"/>
+  <path d="M229 77 L320 251 L411 77" fill="none" stroke="#56c7d9" stroke-opacity=".28"/>
+  <path d="M320 316 V35" stroke="#ffcc66" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <ellipse cx="320" cy="251" rx="58" ry="53" fill="url(#earth)" stroke="#56c7d9" stroke-opacity=".7"/>
+  <ellipse cx="320" cy="251" rx="58" ry="16" fill="none" stroke="#56c7d9" stroke-opacity=".4" transform="rotate(25 320 251)"/>
+  <ellipse cx="320" cy="77" rx="91" ry="30" fill="none" stroke="#56c7d9" stroke-width="1.5"/>
+  <path d="M319 47 L308 42 L310 51 Z" fill="#56c7d9"/>
+  <path d="M293 301 L408 82" stroke="#56c7d9" stroke-width="3"/>
+  <circle cx="408" cy="82" r="5" fill="#56c7d9"/>
+  <g font-family="-apple-system,Arial,sans-serif" font-size="13" fill="#979ea6">
+    <text x="334" y="36" fill="#ffcc66">Ecliptic pole</text>
+    <text x="426" y="86" fill="#56c7d9">Moving axis</text>
+    <text x="26" y="333">ONE SLOW TURN · ≈ 26,000 YEARS</text>
+  </g>
+</svg>
