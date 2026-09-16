@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Uniform Spherical Shell — PHYS 320</title>
+<link rel="stylesheet" href="../vendor/katex/katex.min.css">
+<style>
+:root{--bg:#050607;--rail:#171a1f;--canvas:#0d1015;--deep:#151a20;--panel:#202328;--raised:#292d32;--border:#3b4046;--strong:#4a5057;--hover:#69717a;--text:#e7e9eb;--muted:#979ea6;--cyan:#56c7d9;--magenta:#ee65be;--purple:#a99bff;--amber:#ffcc66;--green:#56dc72;--coral:#ff7f66;--on:#0c181b;--rail-w:300px;--strip-h:270px}
+*,*::before,*::after{box-sizing:border-box}html,body{height:100%;margin:0;overflow:hidden}body{background:var(--bg);color:var(--text);font:13px/1.4 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}.math{font-family:"STIX Two Math","Cambria Math","Times New Roman",serif;font-style:italic}.tabular{font-variant-numeric:tabular-nums}button,input{font:inherit}button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+#app{height:100dvh;display:grid;grid-template-rows:44px 1fr;overflow:hidden}.topbar{display:flex;align-items:center;gap:12px;padding:0 12px;background:var(--rail);border-bottom:1px solid var(--border);min-width:0}.brand{display:flex;align-items:center;gap:8px;color:inherit;text-decoration:none;min-width:0}.brand-icon{filter:drop-shadow(0 0 5px rgb(86 199 217/28%))}.brand-text{display:flex;flex-direction:column;line-height:1.15;min-width:0}.brand-title{font-weight:700;font-size:15px;letter-spacing:.02em;white-space:nowrap}.brand-sub{color:var(--muted);font-size:10px;white-space:nowrap}.tabbar{margin-left:auto;max-width:100%;overflow-x:auto;scrollbar-width:thin}.segmented{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--raised);white-space:nowrap}.segmented button{border:0;border-right:1px solid var(--border);background:transparent;color:var(--text);min-height:28px;padding:0 13px;cursor:pointer}.segmented button:last-child{border:0}.segmented button:hover{background:#343a41}.segmented button.active{background:var(--cyan);color:var(--on);font-weight:600}
+.body{display:grid;grid-template-columns:var(--rail-w,300px) 6px minmax(0,1fr);min-height:0}.rail{background:var(--rail);border-right:1px solid var(--border);overflow:auto;padding:10px;min-width:0}.workspace{display:grid;grid-template-rows:minmax(0,1fr) 6px var(--strip-h,270px);min-width:0;min-height:0;padding:10px;background:radial-gradient(circle at 50% 45%,var(--deep),var(--canvas) 60%,var(--bg))}.splitter{position:relative;z-index:2;touch-action:none}.splitter::after{content:"";position:absolute;background:var(--cyan);opacity:0;border-radius:2px}.splitter:hover::after,.splitter.dragging::after,.splitter:focus-visible::after{opacity:.4}.v-splitter{cursor:col-resize}.v-splitter::after{top:0;bottom:0;left:2px;width:2px}.h-splitter{cursor:row-resize;margin:0 0}.h-splitter::after{left:0;right:0;top:2px;height:2px}body.resizing,body.resizing *{user-select:none;cursor:col-resize!important}
+.card,.panel{border:1px solid var(--border);border-radius:6px;background:var(--panel);box-shadow:0 5px 18px rgb(0 0 0/13%)}.card{padding:10px;margin-bottom:8px}.eyebrow{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}.intro{color:var(--muted);font-size:12px;margin:0}.field{margin-bottom:12px}.field:last-child{margin-bottom:0}.field-label{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.field-label .math{color:var(--text);font-size:12px}.field-row{display:flex;align-items:center;gap:8px}input[type=range]{flex:1;min-width:0;accent-color:var(--cyan);height:22px}.num{width:68px;min-height:28px;padding:4px 7px;text-align:right;color:var(--text);background:var(--raised);border:1px solid var(--border);border-radius:4px;font-variant-numeric:tabular-nums}.unit{color:var(--muted);font-size:11px}.readout{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);color:var(--muted)}.readout:last-child{border-bottom:0}.readout b{color:var(--text);font-weight:600}.notice{padding:8px;border:1px solid color-mix(in srgb,var(--amber) 45%,var(--border));border-radius:4px;background:rgb(255 204 102/7%);color:var(--amber);font-size:11px}.legend{display:grid;grid-template-columns:1fr 1fr;gap:5px;color:var(--muted);font-size:11px}.swatch{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.panel{display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;background:var(--canvas)}.panel-header{height:34px;flex:0 0 34px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 10px;background:var(--deep);border-bottom:1px solid var(--border)}.panel-title{font-size:12px;font-weight:700;white-space:nowrap}.panel-readouts{display:flex;gap:12px;color:var(--muted);font-size:11px;white-space:nowrap}.panel-readouts b{color:var(--text)}.panel-body{position:relative;min-width:0;min-height:0;flex:1}.panel-body canvas{display:block;width:100%;height:100%}.caption{padding:6px 10px;color:var(--muted);font-size:11px;background:var(--deep);border-top:1px solid var(--border)}.ktx{display:none}.derivation{height:100%;overflow:auto;padding:15px 18px;color:var(--text);font-size:12px}.derivation h2{font-size:15px;margin:0 0 8px}.derivation p{max-width:72ch;margin:7px 0;color:var(--muted)}.equation{padding:8px 0;color:var(--text);overflow-x:auto}.equation .katex-display{margin:0;text-align:left}.derivation .step{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;margin-bottom:8px}.step-no{color:var(--cyan);font-weight:700}.pill{display:inline-block;border:1px solid var(--border);border-radius:999px;padding:2px 7px;color:var(--muted);font-size:10px}.result{color:var(--green)!important}.mobile-note{display:none}
+@media(max-width:700px){html,body{overflow:auto}#app{height:auto;min-height:100dvh;display:block}.topbar{position:sticky;top:0;z-index:5;height:auto;min-height:44px;flex-wrap:wrap;padding:7px 10px;gap:6px}.brand{width:100%;height:30px}.brand-sub{display:none}.tabbar{width:100%;margin-left:0;overflow-x:auto}.segmented{width:max-content}.body{display:block}.rail{border:0;padding:10px}.workspace{height:780px;min-height:780px;padding:0 10px 10px}.v-splitter,.h-splitter{display:none}.mobile-note{display:block;color:var(--muted);font-size:10px;margin:0 0 8px}.panel-readouts{gap:6px;font-size:10px}.workspace .panel{min-height:0}}
+
+[hidden], .panel-body canvas[hidden] { display:none!important; }
+.derivation { position:absolute; inset:0; height:auto; }
+.derivation h2 { margin-top:18px; }
+.derivation h2:first-of-type { margin-top:10px; }
+.equation .katex-display > .katex { text-align:left; }
+.panel-title { overflow:hidden; text-overflow:ellipsis; }
+.panel-readouts { flex-shrink:0; }
+@media(max-width:700px) {
+  .topbar { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; padding:9px 12px; }
+  .brand-sub { display:block; }
+  .tabbar { margin-left:0; width:100%; }
+  .workspace { height:820px; min-height:820px; grid-template-rows:minmax(0,1fr) 0 220px; gap:8px; }
+  .panel-header { padding:0 8px; }
+  .panel-title { font-size:11px; }
+  .panel-readouts { font-size:10px; }
+  .derivation { padding:12px; }
+  .equation { font-size:11px; }
+}
+
+#mainCanvas { touch-action:none; cursor:grab; }
+#mainCanvas:active { cursor:grabbing; }
+#sceneTools { position:absolute; top:10px; left:12px; right:12px; display:flex; justify-content:space-between; gap:8px; align-items:center; pointer-events:none; color:var(--muted); font-size:11px; }
+#resetView { pointer-events:auto; border:1px solid var(--border); border-radius:5px; background:var(--panel); color:var(--text); padding:5px 9px; cursor:pointer; white-space:nowrap; }
+@media(max-width:700px) {
+  html,body { height:auto; overflow:visible; }
+  #app { overflow:visible; }
+  #sceneTools { font-size:10px; align-items:flex-start; }
+}
+
+.sweep-actions { display:flex; gap:5px; margin:9px 0; }
+.sweep-actions button, #chartMode { background:var(--raised); border:1px solid var(--border); border-radius:5px; color:var(--text); padding:6px 7px; cursor:pointer; font:inherit; font-size:11px; }
+.sweep-actions button:hover { border-color:var(--cyan); }
+.sweep-actions button:disabled { opacity:.5; cursor:default; }
+.sum-card { border-color:#3f7750; }
+.sum-number { font-size:28px; font-variant-numeric:tabular-nums; color:var(--green); margin:2px 0; }
+#sumExplanation { margin-top:9px; font-size:11px; }
+#chartMode { flex-shrink:0; max-width:130px; }
+@media(max-width:700px) { .workspace { grid-template-rows:minmax(0,1fr) 0 245px; } #chartTitle { font-size:10px; } #chartMode { max-width:106px; font-size:10px; } }
+
+.equivalence { display:grid; grid-template-columns:1fr 26px 1fr; align-items:center; gap:4px 10px; padding:9px 12px; flex-shrink:0; background:var(--deep); border-bottom:1px solid var(--border); text-align:center; }
+.equivalence div { display:flex; gap:8px; justify-content:center; align-items:center; }
+.equivalence span { color:var(--muted); font-size:11px; }
+.equivalence b { color:var(--green); font-size:20px; font-variant-numeric:tabular-nums; }
+.equivalence strong { font-size:24px; color:var(--amber); }
+.equivalence.matched strong { color:var(--green); }
+.equivalence p { grid-column:1/-1; margin:2px 0 0; font-size:11px; color:var(--muted); }
+.equivalence.matched p { color:var(--green); }
+#comparisonLabels { position:absolute; inset:0; pointer-events:none; font-size:11px; color:var(--text); }
+#comparisonLabels span { position:absolute; top:49px; text-align:center; width:50%; }
+.point-label { left:50%; }
+@media(max-width:700px) {
+  .equivalence div { flex-direction:column; gap:0; }
+  .equivalence span { font-size:10px; }
+  .workspace { height:1060px; min-height:1060px; }
+}
+#comparisonLabels.stacked span { width:100%; left:0; }
+#comparisonLabels.stacked .point-label { top:calc(50% + 12px); }
+
+@media(max-width:700px) { .workspace { height:1340px; min-height:1340px; grid-template-rows:minmax(0,1fr) 0 490px; } }
+.workspace > .panel:first-child { grid-row:1; }
+.workspace > .panel:last-child { grid-row:3; }
+.h-splitter { grid-row:2; }
+</style>
+</head>
+<body>
+<div id="app">
+<header class="topbar"><a class="brand" href="../index.html" aria-label="Back to PHYS 320 visualizations"><svg class="brand-icon" width="25" height="25" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="8" stroke="var(--cyan)"/><ellipse cx="16" cy="16" rx="14" ry="5" stroke="var(--amber)"/><circle cx="25" cy="14.5" r="1.6" fill="var(--magenta)"/></svg><span class="brand-text"><span class="brand-title">PHYS 320 · Astronomy</span><span class="brand-sub">Uniform spherical shell</span></span></a><nav class="tabbar" aria-label="Visualization view"><div class="segmented" role="tablist"><button id="geometryTab" aria-controls="mainCanvas" class="active" data-tab="geometry" role="tab" aria-selected="true">3D Integration</button><button id="derivationTab" tabindex="-1" aria-controls="derivation" data-tab="derivation" role="tab" aria-selected="false">Derivation</button></div></nav></header>
+<main class="body">
+<aside class="rail" aria-label="Controls">
+<p class="mobile-note">Drag the sliders or enter values. Distances are normalized by shell radius <span class="math">R</span>.</p>
+<section class="card"><p class="eyebrow">1 · Place the test mass</p><div class="sweep-actions"><button id="outsidePreset" type="button">Outside</button><button id="insidePreset" type="button">Inside</button></div><div class="field"><label class="field-label" for="rSlider"><span class="math">r / R</span> · center to exterior</label><div class="field-row"><input id="rSlider" type="range" min="0" max="3" step="0.01" value="1.6"><input id="rNum" class="num" type="number" min="0" max="3" step="0.01" value="1.60" aria-label="Test radius divided by shell radius"></div></div></section><section class="card"><p class="eyebrow">2 · Add the rings</p><p class="intro">Sweep the amber ring. The green surface is the mass included in the sum.</p><div class="sweep-actions"><button id="playSweep" type="button">▶ Sweep shell</button><button id="restartSweep" type="button">Start over</button><button id="finishSweep" type="button">All rings</button></div><div class="field"><label class="field-label" for="thetaSlider"><span class="math">θ</span> · sweep from near pole to far pole</label><div class="field-row"><input id="thetaSlider" type="range" min="0" max="3.1415926536" step="any" value="3.141592653589793"><input id="thetaNum" class="num" type="number" min="0" max="3.1415926536" step="any" value="3.14" aria-label="Ring angle in radians"><span class="unit">rad</span></div></div></section>
+<section class="card sum-card"><p class="eyebrow">3 · Watch the running sum</p><div class="math" style="color:var(--muted);font-size:12px">F<sub>added</sub> = ∫₀<sup>θ</sup> (dF/dϑ) dϑ</div><div id="sumOut" class="sum-number">0.000</div><div id="sumDirection" class="intro">No rings added yet</div><div class="readout"><span>shell mass included</span><b id="massIncluded">0%</b></div><p class="intro" id="sumExplanation">Each new ring adds a small force.</p></section>
+<section class="card"><p class="eyebrow">One ring · two locations</p><p class="intro">Its mass is the same: dm = ½ M sin θ dθ.</p><div class="readout"><span>on shell: dF/dθ</span><b id="ringShell">—</b></div><div class="readout"><span>at center: dF/dθ</span><b id="ringPoint">—</b></div><p class="intro" style="font-size:11px">Multiply by the thin ring’s width dθ to get its force contribution.</p></section>
+<section class="card"><p class="eyebrow">Full shell reference</p><div class="readout"><span>distance <span class="math">s / R</span></span><b id="sOut" class="tabular">—</b></div><div class="readout"><span>ring angle <span class="math">θ</span></span><b id="thetaOut" class="tabular">—</b></div><div class="readout"><span>all rings: force <span class="math">F R² / GMm</span></span><b id="forceOut" class="tabular">—</b></div><div class="readout"><span>direction</span><b id="directionOut">—</b></div></section>
+<section class="card"><p class="eyebrow">Convention</p><p class="intro">Force units are GMm/R². Positive means inward (−x); negative means outward (+x). At the center these signs refer to the chosen x-axis. The shell has mass <span class="math">M</span>, test mass <span class="math">m</span>, and radius <span class="math">R</span>.</p></section>
+<section class="card"><p class="eyebrow">Visual key</p><div class="legend"><span><i class="swatch" style="background:var(--cyan)"></i>shell / axis</span><span><i class="swatch" style="background:var(--magenta)"></i>test mass</span><span><i class="swatch" style="background:var(--amber)"></i>ring / paired pulls</span><span><i class="swatch" style="background:var(--green)"></i>included surface</span></div></section>
+<div class="notice"><strong>At r = R:</strong> the ideal thin shell has a discontinuous field. The surface value is undefined; limits are 0 from inside and GMm/R² from outside.</div>
+</aside>
+<div class="splitter v-splitter" id="vSplitter" role="separator" aria-label="Resize controls" aria-orientation="vertical" tabindex="0"></div>
+<section class="workspace">
+<div class="panel"><div class="panel-header"><span class="panel-title" id="viewTitle">Shell versus a central point mass</span><span class="panel-readouts"><span><span class="math">r/R</span> = <b id="rOut">1.60</b></span><span><span class="math">ΣF</span> = <b id="headerForce">0.000</b></span></span></div><div id="equivalence" class="equivalence">
+  <div><span>Force from added shell mass</span><b id="shellCompare">0.391</b></div>
+  <strong id="compareSymbol">=</strong>
+  <div><span>Same added mass, placed at center</span><b id="pointCompare">0.391</b></div>
+  <p id="equivalenceMessage">Outside: the full shell and central point mass pull equally.</p>
+</div><div class="panel-body"><canvas role="tabpanel" aria-labelledby="geometryTab" id="mainCanvas" tabindex="0" aria-label="Compare a distributed spherical shell with the same mass at its center. Drag or use arrow keys to rotate both views."></canvas>
+<div id="comparisonLabels"><span class="shell-label">Distributed shell · mass M</span><span class="point-label">Same ring masses moved to center</span></div><div id="sceneTools"><span>Drag either view to rotate both</span><button type="button" id="resetView">Reset view</button></div>
+<article id="derivation" class="derivation" role="tabpanel" aria-labelledby="derivationTab" hidden>
+  <p class="result" id="currentResult"></p>
+  <h2>What the two lower plots mean</h2>
+  <p>Both use the original ring angle θ to label the same mass dm. The right graph is a bookkeeping decomposition of a point mass into the original ring masses, all now at the center. It is not a second spatial ring.</p>
+  <div class="equation" data-math="dF_{\rm shell}=\frac{Gm\,dm}{s^2}\cos\alpha,\qquad dF_{\rm center}=\frac{Gm\,dm}{r^2}">dF_shell = Gm dm cosα/s²; dF_center = Gm dm/r²</div>
+  <p>On the right, Gm/r² is constant: adding all dm gives M immediately. On the left, the distance and projection vary; the derivation below shows why their weighted sum gives the same result outside.</p>
+  <div class="equation" data-math="F_{\rm center}=\frac{GMm}{r^2}\int_0^\pi\frac{\sin\theta}{2}\,d\theta=\frac{GMm}{r^2}">F_center = GMm/r² × ∫₀π ½sinθ dθ = GMm/r²</div>
+  <h2>1. Add rings, not individual points</h2>
+  <p>Measure θ from the axis toward the test mass. A ring has circumference 2πR sin θ and width R dθ. Opposite azimuths cancel transverse forces.</p>
+  <div class="equation" data-math="\sigma=\frac{M}{4\pi R^2},\qquad dm=2\pi\sigma R^2\sin\theta\,d\theta">σ = M/(4πR²), dm = 2πσR² sinθ dθ</div>
+  <h2>2. Project the attraction onto the inward axis</h2>
+  <p>Let s be the distance from the ring to m, and α the angle between its pull and the inward axis. The axial component can be negative when the test mass lies inside the shell.</p>
+  <div class="equation" data-math="s^2=r^2+R^2-2rR\cos\theta">s² = r² + R² − 2rR cosθ</div>
+  <div class="equation" data-math="\cos\alpha=\frac{r-R\cos\theta}{s}=\frac{r^2+s^2-R^2}{2rs}">cosα = (r − R cosθ)/s = (r² + s² − R²)/(2rs)</div>
+  <div class="equation" data-math="dF_{\rm in}=\frac{Gm\,dm}{s^2}\cos\alpha">dFᵢₙ = Gm dm cosα/s²</div>
+  <h2>3. Replace θ with distance s</h2>
+  <div class="equation" data-math="2s\,ds=2rR\sin\theta\,d\theta">2s ds = 2rR sinθ dθ</div>
+  <div class="equation" data-math="dF_{\rm in}=\frac{GMm}{4Rr^2}\left(1+\frac{r^2-R^2}{s^2}\right)ds">dFᵢₙ = GMm/(4Rr²) [1 + (r² − R²)/s²] ds</div>
+  <p>For r &gt; 0 and r ≠ R, the nearest distance is |r − R| and the farthest is r + R.</p>
+  <div class="equation" data-math="F_{\rm in}=\frac{GMm}{4Rr^2}\left[s-\frac{r^2-R^2}{s}\right]_{|r-R|}^{r+R}">Fᵢₙ = GMm/(4Rr²) [s − (r² − R²)/s] from |r − R| to r + R</div>
+  <h2>4. Evaluate the two endpoints</h2>
+  <p>Outside (r &gt; R), the bracket is 2R − (−2R) = 4R. Inside (0 &lt; r &lt; R), it is 2R − 2R = 0.</p>
+  <div class="equation" data-math="F_{\rm in}=\begin{cases}0,&0\le r<R,\\GMm/r^2,&r>R.\end{cases}">F = 0 inside; F = GMm/r² outside.</div>
+  <p>At r = 0, symmetry gives zero directly. At r = R, the ideal surface field is discontinuous; this visualization leaves its value unset and shows both one-sided limits.</p>
+  <p>A spherically symmetric planet is a stack of shells. Outside the entire planet, their forces add to GMm/r². Inside a solid planet, only the mass enclosed within r contributes.</p>
+</article></div><div class="caption" id="caption">Each circular ring pulls along its radial lines. Components perpendicular to the center-to-test axis cancel in pairs, leaving only the inward axial component.</div></div>
+<div class="splitter h-splitter" id="hSplitter" role="separator" aria-label="Resize panels" aria-orientation="horizontal" tabindex="0"></div>
+<div class="panel"><div class="panel-header"><span class="panel-title" id="chartTitle">Same ring masses · two force integrals</span><select id="chartMode" aria-label="Force chart"><option value="rings">Adding rings</option><option value="full">Whole-shell law</option></select></div><div class="panel-body"><canvas id="chartCanvas" aria-label="Two force integrals on identical axes: rings on the shell versus the same mass slices moved to the center. Dashed lines show the other distribution."></canvas></div></div>
+</section></main></div>
+<script defer src="../vendor/katex/katex.min.js"></script>
+<script type="module">
+import { createShellScene } from './spherical_shell_scene.js';
+import { fullForce, accumulatedForce, ringDensity, pointRingDensity, pointAccumulatedForce } from './spherical_shell_model.js';
+import { drawComparison } from './spherical_shell_comparison_plot.js';
+const $ = id => document.getElementById(id);
+const state = { r: 1.6, theta: Math.PI, tab: 'geometry', chart: 'rings' };
+const colors = { shell: '#56c7d9', mass: '#ee65be', ring: '#ffcc66', net: '#56dc72', muted: '#979ea6', line: '#69717a' };
+const main = $('mainCanvas'), chart = $('chartCanvas');
+const shellScene = createShellScene(main);
+$('resetView').addEventListener('click', () => shellScene.resetView());
+const force = fullForce;
+const fmt = value => Number.isFinite(value) ? value.toFixed(3) : 'undefined';
+
+function bindControl(key, max) {
+  const slider = $(key + 'Slider'), number = $(key + 'Num');
+  function set(value) {
+    state[key] = Math.max(0, Math.min(max, value));
+    slider.value = state[key];
+    number.value = state[key].toFixed(2);
+    update();
+  }
+  slider.addEventListener('input', () => set(Number(slider.value)));
+  number.addEventListener('input', () => {
+    if (number.value !== '' && Number.isFinite(number.valueAsNumber)) {
+      state[key] = Math.max(0, Math.min(max, number.valueAsNumber));
+      slider.value = state[key];
+      update();
+    }
+  });
+  number.addEventListener('change', () => set(number.value === '' ? state[key] : Number(number.value)));
+}
+
+function update() {
+  const f = force(state.r);
+  $('ringShell').textContent = fmt(ringDensity(state.r, state.theta));
+  $('ringPoint').textContent = fmt(pointRingDensity(state.r, state.theta));
+  $('sOut').textContent = fmt(Math.hypot(state.r - Math.cos(state.theta), Math.sin(state.theta)));
+  $('thetaOut').textContent = state.theta.toFixed(2) + ' rad';
+  const sum = accumulatedForce(state.r, state.theta);
+  $('forceOut').textContent = fmt(f);
+  $('headerForce').textContent = $('sumOut').textContent = fmt(sum);
+  $('sumOut').style.color = sum < -1e-8 ? 'var(--coral)' : 'var(--green)';
+  $('massIncluded').textContent = (50 * (1 - Math.cos(state.theta))).toFixed(1) + '%';
+  $('sumDirection').textContent = state.r === 1 ? 'Choose a point off the ideal surface' : state.theta === 0 ? 'No rings added yet' : Math.abs(sum) < 1e-8 ? 'The forces cancel' : sum > 0 ? 'Accumulated pull: inward (−x)' : 'Accumulated pull: outward (+x)';
+  $('sumExplanation').textContent = state.r === 1 ? 'The thin-shell surface is excluded.' : state.theta >= Math.PI ? (state.r < 1 ? 'All the mass is included. Positive and negative contributions cancel exactly.' : 'All the mass is included. The sum equals GMm/r².') : state.r < 1 ? 'Nearby rings pull outward first. Later rings add inward force and bring the sum back to zero.' : 'Every ring adds inward force. The sum grows until the whole shell is included.';
+  $('playSweep').disabled = state.r === 1;
+  $('caption').textContent = 'The amber markers select the same original ring in both plots. Left: its true distance and projection. Right: its mass relocated to the center, where every pull is axial. Shaded areas add the forces; dashed curves show the other distribution.';
+  $('rOut').textContent = state.r.toFixed(2);
+  const pointForce = pointAccumulatedForce(state.r, state.theta);
+  $('shellCompare').textContent = fmt(sum);
+  $('pointCompare').textContent = fmt(pointForce);
+  const complete = state.theta >= Math.PI;
+  const outside = state.r > 1;
+  $('compareSymbol').textContent = outside && complete ? '=' : state.r === 1 || state.r === 0 ? '—' : (state.theta === 0 ? '=' : '≠');
+  $('equivalence').classList.toggle('matched', outside && complete);
+  $('equivalenceMessage').textContent = state.r === 1 ? 'At the ideal shell surface the two one-sided limits differ.' : state.r === 0 ? 'At the center: shell force is zero; the ideal point-mass force is undefined.' : outside ? complete ? 'All rings included: both graph areas equal GMm/r². The shell’s near-side excess balances its far-side deficit.' : 'Both sides include the same mass. Individual contributions differ; integrate all rings to recover equal exterior forces.' : 'Equivalence applies only outside. Inside, the full shell gives zero; a central point mass still attracts.';
+  $('directionOut').textContent = state.r === 1 ? 'surface limits differ' : state.r === 0 ? 'zero (center)' : state.r < 1 ? 'zero (inside)' : 'inward';
+  $('currentResult').textContent = state.r === 1 ? 'At the ideal surface: the inner and outer limits differ.' : state.r === 0 ? 'At the center: symmetry gives F = 0; the substitution below assumes r > 0.' : state.r < 1 ? 'Inside: the endpoint terms are equal, so the total force is zero.' : 'Outside: the shell pulls exactly like a point mass at its center.';
+
+  draw();
+}
+
+function fit(canvas) {
+  const { width: w, height: h } = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [ctx, w, h];
+}
+function line(ctx, x, y, a, b, color, width = 1, dash = []) {
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(a, b); ctx.stroke(); ctx.restore();
+}
+function label(ctx, value, x, y, color = '#e7e9eb', align = 'left', size = 12) {
+  ctx.font = `${size}px Inter, Arial, sans-serif`; ctx.fillStyle = color;
+  ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(value, x, y);
+}
+function dot(ctx, x, y, radius, color, open = false) {
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, 2 * Math.PI);
+  ctx.fillStyle = open ? '#0d1015' : color; ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.stroke();
+}
+function drawGeometry() {
+  if (state.tab !== 'geometry') return;
+  shellScene.resize();
+  shellScene.update(state.r, state.theta, accumulatedForce(state.r, state.theta));
+}
+
+function drawFullChart() {
+  const [ctx, w, h] = fit(chart);
+  const L = 53, B = 33, T = 20, pw = w - L - 18, ph = h - T - B;
+  const X = x => L + x * pw / 3, Y = y => h - B - y * ph;
+  for (let x = 0; x <= 3; x += .5) {
+    line(ctx, X(x), T, X(x), Y(0), '#252a31');
+    label(ctx, x.toFixed(1), X(x), Y(0) + 14, colors.muted, 'center', 10);
+  }
+  for (const y of [0, .5, 1]) {
+    line(ctx, L, Y(y), w - 18, Y(y), '#252a31');
+    label(ctx, y.toFixed(1), L - 9, Y(y), colors.muted, 'right', 10);
+  }
+  ctx.save(); ctx.translate(14, T + ph / 2); ctx.rotate(-Math.PI / 2);
+  label(ctx, 'F / (GMm/R²)', 0, 0, colors.muted, 'center', 11); ctx.restore();
+  label(ctx, 'r / R', X(1.5), h - 6, colors.muted, 'center', 10);
+  line(ctx, X(1), T, X(1), Y(0), colors.ring, 1, [3, 4]);
+  line(ctx, X(0), Y(0), X(1), Y(0), colors.net, 2);
+  ctx.strokeStyle = colors.net; ctx.lineWidth = 2; ctx.beginPath();
+  for (let i = 0; i <= 300; i++) {
+    const x = 1 + 2 * i / 300;
+    if (!i) ctx.moveTo(X(x), Y(1 / (x * x))); else ctx.lineTo(X(x), Y(1 / (x * x)));
+  }
+  ctx.stroke();
+  dot(ctx, X(1), Y(0), 4, colors.net, true); dot(ctx, X(1), Y(1), 4, colors.net, true);
+  const f = force(state.r);
+  if (Number.isFinite(f)) {
+    line(ctx, X(state.r), Y(0), X(state.r), Y(f), colors.mass, 1, [3, 4]);
+    dot(ctx, X(state.r), Y(f), 4, colors.mass);
+  }
+  label(ctx, 'inside: zero', X(.48), Y(.16), colors.net, 'center', 10);
+  label(ctx, 'outside: 1/r²', X(2.25), Y(.65), colors.net, 'center', 10);
+}
+function drawChart() {
+  chart.setAttribute('aria-label', state.chart === 'rings' ? 'Two force integrals on identical axes: rings on the shell versus the same mass slices moved to the center. Dashed lines show the other distribution.' : 'Full-shell gravitational force versus radius');
+  $('chartTitle').textContent = state.chart === 'rings' ? 'Same ring masses · two force integrals' : 'Full shell: force versus radius';
+  if (state.chart === 'rings') drawComparison(chart, state.r, state.theta); else drawFullChart();
+}
+$('chartMode').addEventListener('change', () => { state.chart = $('chartMode').value; drawChart(); });
+let playing = false, previousTime = null, animationFrame;
+function stopSweep() {
+  playing = false; previousTime = null; cancelAnimationFrame(animationFrame);
+  $('playSweep').textContent = '▶ Sweep shell';
+}
+function setSweep(theta) {
+  state.theta = theta;
+  $('thetaSlider').value = theta; $('thetaNum').value = theta.toFixed(2);
+  update();
+}
+function animate(time) {
+  if (!playing) return;
+  if (previousTime !== null) setSweep(Math.min(Math.PI, state.theta + Math.min(.1, (time - previousTime) / 1000) * Math.PI / 12));
+  previousTime = time;
+  if (state.theta >= Math.PI || state.r === 1) stopSweep();
+  else animationFrame = requestAnimationFrame(animate);
+}
+$('playSweep').addEventListener('click', () => {
+  if (playing) { stopSweep(); return; }
+  if (state.theta >= Math.PI) setSweep(0);
+  playing = true; $('playSweep').textContent = 'Ⅱ Pause';
+  animationFrame = requestAnimationFrame(animate);
+});
+$('restartSweep').addEventListener('click', () => { stopSweep(); setSweep(0); });
+$('finishSweep').addEventListener('click', () => { stopSweep(); setSweep(Math.PI); });
+for (const [id, radius] of [['insidePreset', .5], ['outsidePreset', 1.6]]) $(id).addEventListener('click', () => {
+  stopSweep(); state.r = radius; $('rSlider').value = radius; $('rNum').value = radius.toFixed(2); setSweep(0);
+});
+for (const id of ['rSlider', 'rNum', 'thetaSlider', 'thetaNum']) $(id).addEventListener('input', stopSweep);
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopSweep(); });
+function draw() { drawGeometry(); drawChart(); }
+
+function setTab(name) {
+  stopSweep();
+  state.tab = name;
+  document.querySelectorAll('[data-tab]').forEach(button => {
+    const selected = button.dataset.tab === name;
+    button.classList.toggle('active', selected); button.setAttribute('aria-selected', selected);
+    button.tabIndex = selected ? 0 : -1;
+  });
+  main.hidden = name !== 'geometry'; $('equivalence').hidden = name !== 'geometry'; $('comparisonLabels').hidden = name !== 'geometry'; $('sceneTools').hidden = name !== 'geometry'; $('derivation').hidden = name !== 'derivation';
+  $('viewTitle').textContent = name === 'geometry' ? 'Shell versus a central point mass' : 'From rings to Newton’s shell theorem';
+  $('caption').hidden = name !== 'geometry';
+  draw();
+}
+for (const button of document.querySelectorAll('[data-tab]')) {
+  button.addEventListener('click', () => setTab(button.dataset.tab));
+  button.addEventListener('keydown', event => {
+    if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      setTab(event.key === 'Home' ? 'geometry' : event.key === 'End' ? 'derivation' : state.tab === 'geometry' ? 'derivation' : 'geometry');
+      document.querySelector(`[data-tab="${state.tab}"]`).focus();
+    }
+  });
+}
+function splitter(id, prop, initial, min, max, horizontal) {
+  const el = $(id); let drag;
+  const current = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(prop)) || initial;
+  const set = value => document.documentElement.style.setProperty(prop, Math.max(min, Math.min(max, value)) + 'px');
+  el.addEventListener('pointerdown', event => {
+    drag = { position: horizontal ? event.clientY : event.clientX, value: current() };
+    el.setPointerCapture(event.pointerId); el.classList.add('dragging');
+  });
+  el.addEventListener('pointermove', event => {
+    if (drag) set(drag.value + (horizontal ? -1 : 1) * ((horizontal ? event.clientY : event.clientX) - drag.position));
+  });
+  for (const event of ['pointerup', 'pointercancel']) el.addEventListener(event, () => { drag = null; el.classList.remove('dragging'); });
+  el.addEventListener('keydown', event => {
+    const keys = horizontal ? ['ArrowUp', 'ArrowDown'] : ['ArrowLeft', 'ArrowRight'];
+    if (keys.includes(event.key)) { event.preventDefault(); set(current() + (event.key === keys[0] ? -1 : 1) * (horizontal ? -10 : 10)); }
+  });
+}
+bindControl('r', 3); bindControl('theta', Math.PI);
+splitter('vSplitter', '--rail-w', 300, 230, 430, false);
+splitter('hSplitter', '--strip-h', 270, 220, 420, true);
+new ResizeObserver(() => {
+  const narrow = main.parentElement.getBoundingClientRect().width < 600;
+  const labels = $('comparisonLabels');
+  labels.classList.toggle('stacked', narrow);
+  draw();
+}).observe(main.parentElement);
+new ResizeObserver(drawChart).observe(chart.parentElement);
+window.addEventListener('load', () => {
+  document.querySelectorAll('[data-math]').forEach(el => {
+    if (window.katex) katex.render(el.dataset.math, el, { displayMode: true, throwOnError: false });
+  });
+});
+update();
+</script>
+</body></html>
