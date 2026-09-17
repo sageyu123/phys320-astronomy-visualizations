@@ -60,12 +60,12 @@ export function createShellExtensions(host){
       const start=Math.atan2(-a[1],a[0]);
       const end=start+Math.atan2(Math.sin(Math.atan2(-b[1],b[0])-start),Math.cos(Math.atan2(-b[1],b[0])-start));
       if(showCones){
-        ctx.globalAlpha=primary?.15:.035;ctx.fillStyle=color;
+        ctx.globalAlpha=primary?.15:.09;ctx.fillStyle=color;
         ctx.beginPath();ctx.moveTo(...m);ctx.lineTo(...u);ctx.arc(cx,cy,scale,start,end,end<start);ctx.closePath();ctx.fill();
-        ctx.globalAlpha=primary?.8:.2;
+        ctx.globalAlpha=primary?.8:.55;
         line(ctx,...m,...u,color,[3,4]);line(ctx,...m,...v,color,[3,4]);
       }
-      ctx.globalAlpha=primary?1:.3;ctx.strokeStyle=color;ctx.lineWidth=primary?6:3;
+      ctx.globalAlpha=primary?1:.82;ctx.strokeStyle=color;ctx.lineWidth=primary?6:4;
       ctx.beginPath();ctx.arc(cx,cy,scale,start,end,end<start);ctx.stroke();ctx.globalAlpha=1;
       if(primary){
         const q=map(point), right=point[0]>=0;
