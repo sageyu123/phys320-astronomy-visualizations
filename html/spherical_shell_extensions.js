@@ -12,8 +12,8 @@ export function createShellExtensions(host){
   const $ = id => host.querySelector('#' + id);
   const state = {
     tab: 'dyson',
-    d: { p: [.55, 0, 0], mode: 'shell', patches: true, pairs: true, point: true },
-    r: { p: [.18, 0, 0], a: 1, mode: 'ring', elements: true, vectors: true, trace: false, history: [] },
+    d: { p: [.55, 0, 0], mode: 'shell', patches: true, pairs: true, point: true, zoom: 1 },
+    r: { p: [.18, 0, 0], a: 1, mode: 'ring', elements: true, vectors: true, trace: false, history: [], zoom: 1 },
   };
   const dCanvas = $('sx-d-canvas'), rCanvas = $('sx-r-canvas');
   const canvasLayout = new Map();
@@ -84,7 +84,7 @@ export function createShellExtensions(host){
   }
   function drawDyson() {
     const [ctx,w,h] = fit(dCanvas); if (!w || !h) return;
-    const scale = Math.max(15, Math.min((w-70)/4.4,(h-100)/4.4));
+    const scale = Math.max(15, Math.min((w-70)/4.4,(h-100)/4.4)) * state.d.zoom;
     const cx = w/2, cy = h/2;
     canvasLayout.set(dCanvas,{cx,cy,scale});
     const p = state.d.p, radius = Math.hypot(...p), data = fields('d');
@@ -132,6 +132,7 @@ export function createShellExtensions(host){
     drawMass(ctx,...m); label(ctx,'m',m[0]+10,m[1]-11,C.magenta,13);
     label(ctx,'Dyson Sphere · drag m in this cross-section',14,20,C.text,13);
     label(ctx,'Shell force: '+(state.d.mode==='star'?'off':fmt(data.base ? Math.hypot(...data.base) : NaN)),14,42,C.cyan,12);
+    label(ctx,`Scroll to zoom · ${Math.round(state.d.zoom * 100)}% · double-click to reset`,14,128,C.muted,w<500?10:11);
     label(ctx,data.total ? 'Net force: '+fmt(Math.hypot(...data.total)) : 'Net force undefined at this idealized location',14,h-42,C.green,12);
     label(ctx,'Fixed R · colored arcs show selected shell surface',14,h-20,C.muted,w<500?10:11);
     $('sx-d-pos').textContent=`(${p[0].toFixed(2)}, ${p[1].toFixed(2)})`;
@@ -142,8 +143,9 @@ export function createShellExtensions(host){
   }
 
   function ringLayout(w,h) {
-    if (w >= 650) return { top: {cx:w*.32,cy:h*.48,scale:Math.min(w*.22,h*.34)/state.r.a}, side:{cx:w*.80,cy:h*.48,scale:Math.min(w*.13,h*.27)/state.r.a}, split:w*.61, vertical:false };
-    return { top:{cx:w/2,cy:h*.30,scale:Math.min(w*.35,h*.23)/state.r.a},side:{cx:w/2,cy:h*.79,scale:Math.min(w*.32,h*.14)/state.r.a},split:h*.57,vertical:true };
+    const zoom = state.r.zoom;
+    if (w >= 650) return { top: {cx:w*.32,cy:h*.48,scale:Math.min(w*.22,h*.34)*zoom/state.r.a}, side:{cx:w*.80,cy:h*.48,scale:Math.min(w*.13,h*.27)*zoom/state.r.a}, split:w*.61, vertical:false };
+    return { top:{cx:w/2,cy:h*.30,scale:Math.min(w*.35,h*.23)*zoom/state.r.a},side:{cx:w/2,cy:h*.79,scale:Math.min(w*.32,h*.14)*zoom/state.r.a},split:h*.57,vertical:true };
   }
   function drawRing() {
     const [ctx,w,h]=fit(rCanvas); if (!w||!h) return;
@@ -174,6 +176,7 @@ export function createShellExtensions(host){
     drawMass(ctx,...m);label(ctx,Math.abs(p[2])>1e-9?'m (projection)':'m',m[0]+10,m[1]-12,C.magenta,12);
     label(ctx,'Ringworld · top view',14,20,C.text,13);
     label(ctx,'Drag sideways; the ring has less symmetry than a shell.',14,42,C.muted,w<500?10:11);
+    label(ctx,`Scroll to zoom · ${Math.round(s.zoom * 100)}% · double-click to reset`,14,63,C.muted,w<500?10:11);
     if(layout.vertical) line(ctx,16,layout.split,w-16,layout.split,C.grid);else line(ctx,layout.split,55,layout.split,h-50,C.grid);
     const sideRad=s.a*side.scale, sideMass=[side.cx+p[0]*side.scale,side.cy-p[2]*side.scale];
     line(ctx,side.cx-sideRad,side.cy,side.cx+sideRad,side.cy,C.grid,[4,4]);
@@ -244,6 +247,13 @@ export function createShellExtensions(host){
       const vectors={ArrowRight:[1,0],ArrowLeft:[-1,0],ArrowUp:[0,1],ArrowDown:[0,-1]};if(!vectors[e.key])return;e.preventDefault();
       const p=state[which].p,step=.02*(which==='r'?state.r.a:1);p[0]+=step*vectors[e.key][0];p[1]+=step*vectors[e.key][1];boundPosition(p,which==='r'?.85*state.r.a:2);afterPositionChange(which==='r');
     });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const view = state[which];
+      view.zoom = clamp(view.zoom * Math.exp(-e.deltaY * .0015), .65, 2.8);
+      render();
+    }, { passive: false });
+    canvas.addEventListener('dblclick', () => { state[which].zoom = 1; render(); });
   }
   bindDrag(dCanvas,'d');bindDrag(rCanvas,'r');
   for(const divider of host.querySelectorAll('.sx-divider')){

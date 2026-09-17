@@ -132,7 +132,7 @@ export function createShellScene(canvas) {
   let accumulatedForce = 0;
   let yaw = Math.atan2(6, 4);
   let pitch = 1.237;
-  let distance = 6;
+  let zoom = 1;
   let dragging = null;
 
   function pointOnRing(angle) {
@@ -235,7 +235,7 @@ export function createShellScene(canvas) {
   function resetView() {
     yaw = Math.atan2(6, 4);
     pitch = 1.237;
-    distance = 6;
+    zoom = 1;
     render();
   }
 
@@ -248,7 +248,7 @@ export function createShellScene(canvas) {
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     const target = new THREE.Vector3(0.65, 0, 0);
-    distance = Math.max(6.4, 2.25 / (Math.tan(17 * Math.PI / 180) * camera.aspect));
+    const distance = Math.max(6.4, 2.25 / (Math.tan(17 * Math.PI / 180) * camera.aspect)) / zoom;
     const cp = Math.max(0.22, Math.min(Math.PI - 0.22, pitch));
     camera.position.set(target.x + distance * Math.sin(cp) * Math.cos(yaw), target.y + distance * Math.cos(cp), target.z + distance * Math.sin(cp) * Math.sin(yaw));
     camera.lookAt(target);
@@ -280,6 +280,12 @@ export function createShellScene(canvas) {
   const endDrag = () => { dragging = null; };
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    zoom = Math.max(.65, Math.min(2.8, zoom * Math.exp(-event.deltaY * .0015)));
+    render();
+  }, { passive: false });
+  canvas.addEventListener('dblclick', resetView);
   canvas.addEventListener('keydown', (event) => {
     const step = 0.12;
     if (event.key === 'ArrowLeft') yaw -= step;
