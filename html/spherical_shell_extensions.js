@@ -46,7 +46,10 @@ export function createShellExtensions(host){
     ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x,y,radius,0,2*Math.PI); ctx.fill();
   }
   function drawConePair(ctx, m, map, p, angle, pair, primary, showCones) {
-    const eps = primary ? .085 : .055;
+    // Every displayed pair has the same cone opening.  At the center this
+    // makes all six patches identical; away from center their sizes differ
+    // only because they meet the fixed sphere at different distances.
+    const eps = .07;
     // Keep each cone on the same ray branch even at the center.
     const hit = t => {
       const u = [Math.cos(t), Math.sin(t)], dot = p[0]*u[0]+p[1]*u[1];
