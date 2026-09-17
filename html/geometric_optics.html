@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Geometric Optics for Astronomy — PHYS 320</title>
+<link rel="stylesheet" href="geometric_optics.css">
+</head>
+<body>
+<header><a href="../index.html">◉ &nbsp; PHYS 320 · Astronomy</a><span>Interactive astronomy</span></header>
+<main>
+<div class="heading"><h1>Geometric Optics for Astronomy</h1><p>Follow the rays. Shape the lens. Measure the sky.</p></div>
+<nav role="tablist" aria-label="Optics demonstrations">
+<button id="tab-ray" role="tab" data-tab="ray" aria-controls="workspace" aria-selected="true">Ray Diagram</button>
+<button id="tab-maker" role="tab" data-tab="maker" aria-controls="workspace" aria-selected="false" tabindex="-1">Lens Maker</button>
+<button id="tab-plate" role="tab" data-tab="plate" aria-controls="workspace" aria-selected="false" tabindex="-1">Focal Plane &amp; Plate Scale</button>
+</nav>
+<div class="workspace" id="workspace" role="tabpanel" aria-labelledby="tab-ray">
+<aside id="controls" aria-label="Diagram controls"></aside>
+<div id="splitter" role="separator" tabindex="0" aria-label="Control panel width" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="420" aria-valuenow="290"></div>
+<section class="work">
+<div class="diagram-title"><h2 id="canvasTitle"></h2><div class="title-tools" id="titleTools" hidden><div class="view-toggle" role="group" aria-label="Plate-scale display mode"><button type="button" data-scale-mode="fit">Fitted view</button><button type="button" data-scale-mode="real">Real scale</button></div><button type="button" id="resetRealView" hidden>Reset view</button><span id="canvasHint"></span></div></div>
+<div class="canvas-wrap"><canvas id="opticsCanvas" tabindex="0" aria-label="Optics diagram"></canvas></div>
+<div class="results"><article id="notice"></article><div id="readouts" aria-label="Calculated results"></div></div>
+</section>
+</div>
+</main>
+<script type="module" src="geometric_optics.js"></script>
+</body></html>

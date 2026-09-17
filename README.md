@@ -12,10 +12,11 @@ Interactive teaching visualizations for PHYS 320 (Astronomy) at NJIT, Fall 2026 
 - `html/two_body.html` — Two-body orbits: center of mass, the CM reference frame, and the reduced mass, with the barycenter drawn to scale against the primary.
 - `html/newtons_cannon.html` — Newton's cannon: from the falling apple and the falling Moon to circular, elliptical, parabolic, and hyperbolic paths, with orbital energy, escape speed, and the vis-viva equation.
 - `html/spherical_shell.html` — Newton’s shell theorem: a rotatable 3D sphere, animated ring integration with a running force sum and paired force-contribution integrals comparing shell rings with their masses relocated to the center, gravitational force inside and outside a uniform spherical shell, the calculus derivation, and Dyson Sphere / Ringworld comparisons with draggable test masses.
+- `html/geometric_optics.html` — Geometric optics for astronomy: thin-lens ray diagrams, a signed-radius lens-maker view, and focal-plane image size, f-ratio, plate scale, and pixel scale for telescopes.
 - `html/star_distances.html` — Star distances: stellar parallax, the parsec, a true-scale view of the baseline, then the magnitude scale, absolute magnitude, and the distance modulus.
 
 ## Running Locally
-Every page is a single self-contained HTML file with no dependencies. Open it directly in any modern browser, or serve the folder with `python3 -m http.server`.
+Serve the folder with `python3 -m http.server`, then open the local address in a modern browser. Pages such as Geometric Optics load local JavaScript modules and require an HTTP server rather than opening the HTML file directly.
 
 ## Corrections
 These materials may contain errors. If you spot a mistake or have a suggested improvement, please open an issue or let me know — I am happy to update the materials and credit useful corrections.
