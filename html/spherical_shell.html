@@ -5,6 +5,7 @@
 <meta name="color-scheme" content="dark">
 <title>Uniform Spherical Shell — PHYS 320</title>
 <link rel="stylesheet" href="../vendor/katex/katex.min.css">
+<link rel="stylesheet" href="spherical_shell_extensions.css">
 <style>
 :root{--bg:#050607;--rail:#171a1f;--canvas:#0d1015;--deep:#151a20;--panel:#202328;--raised:#292d32;--border:#3b4046;--strong:#4a5057;--hover:#69717a;--text:#e7e9eb;--muted:#979ea6;--cyan:#56c7d9;--magenta:#ee65be;--purple:#a99bff;--amber:#ffcc66;--green:#56dc72;--coral:#ff7f66;--on:#0c181b;--rail-w:300px;--strip-h:270px}
 *,*::before,*::after{box-sizing:border-box}html,body{height:100%;margin:0;overflow:hidden}body{background:var(--bg);color:var(--text);font:13px/1.4 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}.math{font-family:"STIX Two Math","Cambria Math","Times New Roman",serif;font-style:italic}.tabular{font-variant-numeric:tabular-nums}button,input{font:inherit}button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
@@ -76,12 +77,13 @@
 .workspace > .panel:first-child { grid-row:1; }
 .workspace > .panel:last-child { grid-row:3; }
 .h-splitter { grid-row:2; }
+#shellExtensions { grid-row:2; min-width:0; min-height:0; }
 </style>
 </head>
 <body>
 <div id="app">
-<header class="topbar"><a class="brand" href="../index.html" aria-label="Back to PHYS 320 visualizations"><svg class="brand-icon" width="25" height="25" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="8" stroke="var(--cyan)"/><ellipse cx="16" cy="16" rx="14" ry="5" stroke="var(--amber)"/><circle cx="25" cy="14.5" r="1.6" fill="var(--magenta)"/></svg><span class="brand-text"><span class="brand-title">PHYS 320 · Astronomy</span><span class="brand-sub">Uniform spherical shell</span></span></a><nav class="tabbar" aria-label="Visualization view"><div class="segmented" role="tablist"><button id="geometryTab" aria-controls="mainCanvas" class="active" data-tab="geometry" role="tab" aria-selected="true">3D Integration</button><button id="derivationTab" tabindex="-1" aria-controls="derivation" data-tab="derivation" role="tab" aria-selected="false">Derivation</button></div></nav></header>
-<main class="body">
+<header class="topbar"><a class="brand" href="../index.html" aria-label="Back to PHYS 320 visualizations"><svg class="brand-icon" width="25" height="25" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="8" stroke="var(--cyan)"/><ellipse cx="16" cy="16" rx="14" ry="5" stroke="var(--amber)"/><circle cx="25" cy="14.5" r="1.6" fill="var(--magenta)"/></svg><span class="brand-text"><span class="brand-title">PHYS 320 · Astronomy</span><span class="brand-sub">Uniform spherical shell</span></span></a><nav class="tabbar" aria-label="Visualization view"><div class="segmented" role="tablist"><button id="geometryTab" aria-controls="mainCanvas" class="active" data-tab="geometry" role="tab" aria-selected="true">3D Integration</button><button id="derivationTab" tabindex="-1" aria-controls="derivation" data-tab="derivation" role="tab" aria-selected="false">Derivation</button><button id="dysonTab" tabindex="-1" aria-controls="shellExtensions" data-tab="dyson" role="tab" aria-selected="false">Dyson Sphere</button><button id="ringworldTab" tabindex="-1" aria-controls="shellExtensions" data-tab="ringworld" role="tab" aria-selected="false">Ringworld</button></div></nav></header>
+<main class="body" id="integrationBody">
 <aside class="rail" aria-label="Controls">
 <p class="mobile-note">Drag the sliders or enter values. Distances are normalized by shell radius <span class="math">R</span>.</p>
 <section class="card"><p class="eyebrow">1 · Place the test mass</p><div class="sweep-actions"><button id="outsidePreset" type="button">Outside</button><button id="insidePreset" type="button">Inside</button></div><div class="field"><label class="field-label" for="rSlider"><span class="math">r / R</span> · center to exterior</label><div class="field-row"><input id="rSlider" type="range" min="0" max="3" step="0.01" value="1.6"><input id="rNum" class="num" type="number" min="0" max="3" step="0.01" value="1.60" aria-label="Test radius divided by shell radius"></div></div></section><section class="card"><p class="eyebrow">2 · Add the rings</p><p class="intro">Sweep the amber ring. The green surface is the mass included in the sum.</p><div class="sweep-actions"><button id="playSweep" type="button">▶ Sweep shell</button><button id="restartSweep" type="button">Start over</button><button id="finishSweep" type="button">All rings</button></div><div class="field"><label class="field-label" for="thetaSlider"><span class="math">θ</span> · sweep from near pole to far pole</label><div class="field-row"><input id="thetaSlider" type="range" min="0" max="3.1415926536" step="any" value="3.141592653589793"><input id="thetaNum" class="num" type="number" min="0" max="3.1415926536" step="any" value="3.14" aria-label="Ring angle in radians"><span class="unit">rad</span></div></div></section>
@@ -129,13 +131,15 @@
 </article></div><div class="caption" id="caption">Each circular ring pulls along its radial lines. Components perpendicular to the center-to-test axis cancel in pairs, leaving only the inward axial component.</div></div>
 <div class="splitter h-splitter" id="hSplitter" role="separator" aria-label="Resize panels" aria-orientation="horizontal" tabindex="0"></div>
 <div class="panel"><div class="panel-header"><span class="panel-title" id="chartTitle">Same ring masses · two force integrals</span><select id="chartMode" aria-label="Force chart"><option value="rings">Adding rings</option><option value="full">Whole-shell law</option></select></div><div class="panel-body"><canvas id="chartCanvas" aria-label="Two force integrals on identical axes: rings on the shell versus the same mass slices moved to the center. Dashed lines show the other distribution."></canvas></div></div>
-</section></main></div>
+</section></main><section id="shellExtensions" role="tabpanel" hidden></section></div>
 <script defer src="../vendor/katex/katex.min.js"></script>
 <script type="module">
 import { createShellScene } from './spherical_shell_scene.js';
+import { createShellExtensions } from './spherical_shell_extensions.js';
 import { fullForce, accumulatedForce, ringDensity, pointRingDensity, pointAccumulatedForce } from './spherical_shell_model.js';
 import { drawComparison } from './spherical_shell_comparison_plot.js';
 const $ = id => document.getElementById(id);
+const extensions = createShellExtensions($('shellExtensions'));
 const state = { r: 1.6, theta: Math.PI, tab: 'geometry', chart: 'rings' };
 const colors = { shell: '#56c7d9', mass: '#ee65be', ring: '#ffcc66', net: '#56dc72', muted: '#979ea6', line: '#69717a' };
 const main = $('mainCanvas'), chart = $('chartCanvas');
@@ -287,7 +291,7 @@ for (const [id, radius] of [['insidePreset', .5], ['outsidePreset', 1.6]]) $(id)
 });
 for (const id of ['rSlider', 'rNum', 'thetaSlider', 'thetaNum']) $(id).addEventListener('input', stopSweep);
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopSweep(); });
-function draw() { drawGeometry(); drawChart(); }
+function draw() { if (state.tab === 'dyson' || state.tab === 'ringworld') return; drawGeometry(); drawChart(); }
 
 function setTab(name) {
   stopSweep();
@@ -297,6 +301,15 @@ function setTab(name) {
     button.classList.toggle('active', selected); button.setAttribute('aria-selected', selected);
     button.tabIndex = selected ? 0 : -1;
   });
+  const isExtension = name === 'dyson' || name === 'ringworld';
+  $('integrationBody').hidden = isExtension;
+  $('shellExtensions').hidden = !isExtension;
+  if (isExtension) {
+    $('shellExtensions').setAttribute('aria-labelledby', name === 'dyson' ? 'dysonTab' : 'ringworldTab');
+    extensions.show(name);
+    requestAnimationFrame(() => extensions.resize());
+    return;
+  }
   main.hidden = name !== 'geometry'; $('equivalence').hidden = name !== 'geometry'; $('comparisonLabels').hidden = name !== 'geometry'; $('sceneTools').hidden = name !== 'geometry'; $('derivation').hidden = name !== 'derivation';
   $('viewTitle').textContent = name === 'geometry' ? 'Shell versus a central point mass' : 'From rings to Newton’s shell theorem';
   $('caption').hidden = name !== 'geometry';
@@ -307,7 +320,9 @@ for (const button of document.querySelectorAll('[data-tab]')) {
   button.addEventListener('keydown', event => {
     if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
       event.preventDefault();
-      setTab(event.key === 'Home' ? 'geometry' : event.key === 'End' ? 'derivation' : state.tab === 'geometry' ? 'derivation' : 'geometry');
+      const tabs = ['geometry', 'derivation', 'dyson', 'ringworld'];
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (tabs.indexOf(state.tab) + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      setTab(tabs[next]);
       document.querySelector(`[data-tab="${state.tab}"]`).focus();
     }
   });
