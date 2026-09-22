@@ -7,7 +7,7 @@ const state = {
   tab:'ray',
   ray:{f:.676,p:1.5,h:.24,foci:true,labels:true,equations:true,lock:false},
   maker:{n:1.37,R1:.25,R2:null,D:.12,medium:1,advanced:false},
-  plate:{f:2032,D:203.2,angle:.5,unit:'deg',pixel:4.8,width:24,aspect:4/3,grid:true,target:'Moon',scaleMode:'fit',camera:{zoom:1,panX:0,panY:0}}
+  plate:{f:2032,D:203.2,angle:.5,unit:'deg',pixel:4.8,width:24,aspect:4/3,grid:true,target:'Moon',scaleMode:'real',camera:{zoom:1,panX:0,panY:0}}
 };
 const radiusMemory = [.25,-.25];
 const canvas = $('opticsCanvas');

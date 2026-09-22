@@ -4,16 +4,16 @@ const view=import('../html/geometric_optics_view.js');
 global.window={devicePixelRatio:1};
 
 function recordingCanvas(){
-  const strokes=[],stack=[];let path=[];
+  const strokes=[],texts=[],stack=[];let path=[];
   const ctx={strokeStyle:'',fillStyle:'',lineWidth:1,
     save(){stack.push([this.strokeStyle,this.fillStyle,this.lineWidth])},
     restore(){[this.strokeStyle,this.fillStyle,this.lineWidth]=stack.pop()},
     beginPath(){path=[]},moveTo(x,y){path.push([x,y])},lineTo(x,y){path.push([x,y])},
     stroke(){strokes.push({color:this.strokeStyle,path:[...path]})},
     setTransform(){},clearRect(){},fillRect(){},setLineDash(){},fill(){},closePath(){},
-    bezierCurveTo(x1,y1,x2,y2,x3,y3){path.push([x1,y1],[x2,y2],[x3,y3])},fillText(){},arc(){},rect(){},clip(){},strokeRect(){}
+    bezierCurveTo(x1,y1,x2,y2,x3,y3){path.push([x1,y1],[x2,y2],[x3,y3])},fillText(value){texts.push(String(value))},arc(){},rect(){},clip(){},strokeRect(){}
   };
-  return {strokes,canvas:{getBoundingClientRect:()=>({width:800,height:500}),getContext:()=>ctx}};
+  return {strokes,texts,canvas:{getBoundingClientRect:()=>({width:800,height:500}),getContext:()=>ctx}};
 }
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} differs from ${b}`);
 
@@ -30,6 +30,51 @@ test('drawn principal rays meet at the real or virtual image predicted by the le
       close(y+(yy-y)/(xx-x)*(imageX-x),imageY);
     }
   }
+});
+
+test('ray diagram framing stays stable as the object crosses the focal plane',async()=>{
+  const {drawOptics}=await view;
+  const frame=[];
+  let focalApertureHeights=[];
+  const focalDistance=.5;
+  const positiveCutoff=focalDistance*6/(6-focalDistance);
+  const negativeCutoff=focalDistance*-6/(-6-focalDistance);
+  for(const samples of [
+    [focalDistance-1e-8,focalDistance,focalDistance+1e-8],
+    [positiveCutoff-1e-6,positiveCutoff+1e-6],
+    [negativeCutoff-1e-6,negativeCutoff+1e-6],
+  ]){
+    const apertureHeights=[];
+    const frames=samples.map(p=>{
+      const {canvas,strokes}=recordingCanvas();
+      const layout=drawOptics(canvas,{tab:'ray',ray:{f:focalDistance,p,h:.24}});
+      const lens=strokes.find(s=>s.color==='#56c7d9');
+      apertureHeights.push(Math.max(...lens.path.map(point=>point[1]))-Math.min(...lens.path.map(point=>point[1])));
+      return layout;
+    });
+    if(samples.length===3)focalApertureHeights=apertureHeights;
+    frame.push(frames);
+  }
+  assert.ok(Math.max(...focalApertureHeights)-Math.min(...focalApertureHeights)<1e-6);
+  for(const frames of frame){
+    assert.ok(Math.max(...frames.map(layout=>layout.scale))-Math.min(...frames.map(layout=>layout.scale))<.01);
+    assert.ok(Math.max(...frames.map(layout=>layout.cx))-Math.min(...frames.map(layout=>layout.cx))<.01);
+  }
+});
+
+test('finite image beyond the fixed view is reported without changing framing',async()=>{
+  const {drawOptics}=await view;
+  const {canvas,texts}=recordingCanvas();
+  const layout=drawOptics(canvas,{tab:'ray',ray:{f:.5,p:.6,h:.24}});
+  assert.ok(texts.includes('Finite image is outside this view; see q below.'));
+  assert.ok(Number.isFinite(layout.scale));
+});
+
+test('finite image beyond the fixed vertical view is reported',async()=>{
+  const {drawOptics}=await view;
+  const {canvas,texts}=recordingCanvas();
+  drawOptics(canvas,{tab:'ray',ray:{f:.5,p:.75,h:.4}});
+  assert.ok(texts.includes('Finite image is outside this view; see q below.'));
 });
 
 test('lens silhouette is convex or concave in the intended direction',async()=>{

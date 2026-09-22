@@ -148,13 +148,11 @@ function renderRay(ctx, width, height, state) {
   const absF = Math.abs(f);
   const incidentFocus = -f;
   const yThird = result.atInfinity ? null : -h * f / (p - f);
-  const imageWindow = 6;
-  const physicalMin = Math.min(-p, -absF, finiteQ && q < -EPS && Math.abs(q) <= imageWindow ? q : -2.0) - .18;
-  const physicalMax = Math.max(absF, finiteQ && q > EPS && q <= imageWindow ? q : 2.4, 1.6) + .18;
+  const physicalMin = Math.min(-p, -absF, -2.0) - .18;
+  const physicalMax = Math.max(absF, 2.4, 1.6) + .18;
   const span = Math.max(physicalMax - physicalMin, 3.2);
-  const lensHalfHeight = Math.max(.62, Math.min(1.05, Math.max(Math.abs(h)*1.2, yThird===null?0:Math.abs(yThird)*1.15)));
-  const imageFits = finiteQ && Math.abs(q)<=imageWindow && Math.abs(m*h)<=2.5;
-  const verticalExtent=Math.max(lensHalfHeight,Math.abs(h),imageFits?Math.abs(m*h):0);
+  const lensHalfHeight = Math.max(.62, Math.min(1.05, Math.abs(h) * 1.2));
+  const verticalExtent=Math.max(lensHalfHeight,Math.abs(h));
   const scale = Math.min((width - 90) / span, (height - 160) / (2*verticalExtent));
   const xLeft = (width-span*scale)/2, cy = (height-100)/2;
   const mapX = x => xLeft + (x - physicalMin) * scale;
@@ -162,6 +160,7 @@ function renderRay(ctx, width, height, state) {
   const lensX = mapX(0), objectX = mapX(-p), objectTip = [objectX, mapY(h)];
   const xStart = (24-lensX)/scale;
   const xEnd = (width-24-lensX)/scale;
+  const imageFits = finiteQ && q >= xStart && q < xEnd && Math.abs(m*h) <= verticalExtent;
   const thirdVisible = yThird !== null && Math.abs(yThird) <= lensHalfHeight;
   const lensPxHalf = lensHalfHeight * scale;
 
