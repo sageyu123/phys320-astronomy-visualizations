@@ -997,8 +997,8 @@ function drawCmScene(ctx, toScreen, q, e, t, opts){
     const r = bp.rel.r;
     const ux = (bp.r2.x-bp.r1.x)/ (r||1), uy = (bp.r2.y-bp.r1.y)/(r||1);
     const len = clamp(FORCE_ARROW_K/(r*r), 8, 40);
-    drawArrow(ctx, s1, { x:s1.x+ux*len, y:s1.y+uy*len }, COLORS.coral, 1, 1);
-    drawArrow(ctx, s2, { x:s2.x-ux*len, y:s2.y-uy*len }, COLORS.coral, 1, 1);
+    drawArrow(ctx, s1, { x:s1.x+ux*len, y:s1.y-uy*len }, COLORS.coral, 1, 1);
+    drawArrow(ctx, s2, { x:s2.x-ux*len, y:s2.y+uy*len }, COLORS.coral, 1, 1);
   }
   // velocities: green arrows at each body
   if(state.display.vel){
