@@ -14,6 +14,9 @@ Interactive teaching visualizations for PHYS 320 (Astronomy) at NJIT, Fall 2026 
 - `html/spherical_shell.html` — Newton’s shell theorem: a rotatable 3D sphere, animated ring integration with a running force sum and paired force-contribution integrals comparing shell rings with their masses relocated to the center, gravitational force inside and outside a uniform spherical shell, the calculus derivation, and Dyson Sphere / Ringworld comparisons with draggable test masses.
 - `html/geometric_optics.html` — Geometric optics for astronomy: thin-lens ray diagrams, a signed-radius lens-maker view, and focal-plane image size, f-ratio, plate scale, and pixel scale for telescopes.
 - `html/star_distances.html` — Star distances: stellar parallax, the parsec, a true-scale view of the baseline, then the magnitude scale, absolute magnitude, and the distance modulus.
+- `html/nebula_disk.html` — Nebula to disk: why a collapsing, rotating cloud flattens, with sticky-parcel collapse under self-gravity, conserved angular momentum against dissipated energy, and the one-parcel centrifugal barrier.
+- `html/nice_model.html` — Planetary migration (the Nice model): one planetesimal flyby and the planet's response, thousands of such flybys that move Jupiter in and the other giants out, a scripted replay of the 2:1 crossing and the Late Heavy Bombardment, and the Kuiper belt and Oort cloud left behind.
+- `html/planet_building.html` — Building the planets: the snow line and the solids available at each radius, runaway growth in a shearing patch of planetesimals, and the asteroid belt, where Jupiter's stirring makes collisions destructive and its resonances carve the Kirkwood gaps.
 
 ## Running Locally
 Serve the folder with `python3 -m http.server`, then open the local address in a modern browser. Pages such as Geometric Optics load local JavaScript modules and require an HTTP server rather than opening the HTML file directly.

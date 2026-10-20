@@ -41,3 +41,6 @@ shot "html/star_distances.html?tab=parallax&embed=1" "star_distances"
 
 # If a WebGL panel renders black, retry that page's `shot` call with:
 #   --use-angle=swiftshader --enable-unsafe-swiftshader --use-gl=angle
+shot "html/nebula_disk.html?tab=collapse&embed=1&t=3" "nebula_disk"
+shot "html/nice_model.html?tab=replay&embed=1&t=705" "nice_model"
+shot "html/planet_building.html?tab=belt&embed=1&t=15" "planet_building"
