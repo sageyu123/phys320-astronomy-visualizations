@@ -8,8 +8,8 @@ Branch: `claude/great-euler-tlnxd1`. Workflow the author wants: **Fable designs 
 |---|---|
 | Extract Lecture 12 (`Phys320_Lecture12.pptx`) text and equations | Done (transcribed below; most equations were images) |
 | Survey repo conventions | Done (summary below) |
-| Fable design spec | **In progress when the cloud session wrapped.** If `docs/tidal_forces_design.md` is not on this branch, have the designer write it from the brief in "Design brief" below, or design from the outline at the end. |
-| Implementation | Not started. No page files exist yet. |
+| Fable design spec | **Done:** `docs/tidal_forces_design.md`. This is the build spec; it supersedes the starting outline at the end of this file. Physics spot-checked (tide heights, bulge torque, L budget, 4.2 cm/yr recession, lock at ~87 R⊕ / 47 d, Roche 2.04 R_p). |
+| Implementation | Not started. No page files exist yet. Hand `docs/tidal_forces_design.md` to Codex; §11 there gives the build order. |
 
 ## Deliverables
 
