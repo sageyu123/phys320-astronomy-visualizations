@@ -405,7 +405,7 @@ window.__tidal = {
 
 ### 9.1 Unit tests — `tests/tidal_forces_model.test.cjs` (node:test, `import('../html/tidal_forces_model.js')`)
 
-1. **Binomial first order.** For x in [1e-3, 1e-2, 1/60.3, 0.1]: `|tidalBracketExact(x) − (−4x)| / (4x)` is < `2.2·x²` and > `1.8·x²` (the error is 2x² to leading order). At x = 1/60.3: exact = −0.0663320 (±1e-6), approx = −0.0662955, rel err 5.5e-4.
+1. **Binomial first order.** For x in [1e-3, 1e-2, 1/60.3, 0.1]: `|tidalBracketExact(x) − (−4x)| / (4x)` is < `2.2·x²` and > `1.8·x²` (the error is 2x² to leading order). At x = R_EARTH/D_MOON (d/R = 60.336, the true Earth–Moon ratio): exact = −0.0663320 (±1e-6), approx = −0.0662955, rel err 5.5e-4.
 2. **Residual field.** `forceField(samplePoints(), 10)`: the residual at the origin is exactly [0,0]; at (1,0) the x-component is > 0 and ≈ 2/1000 within 35 % (exact 2/D³·(1+…)); at (0,1) the y-component is < 0 and the ratio `|res_y(0,1)| / res_x(1,0)` → 0.5 within 10 % at D = 100 and within 1 % at D = 1000; `res(−1,0).x < 0`. `tidalAccelLinear([1,0],D)` equals `[2/D³,0]`.
 3. **Sun/Moon ratio.** `sunMoonRatio()` ∈ [0.44, 0.47]; with the lecture's rounded inputs (2e30, 7.36e22, 1.5e11, 3.84e8) it is 0.456 (±0.001).
 4. **Equilibrium tides.** `equilibriumTideHeight(M_MOON, D_MOON)` = 0.357 m (±0.005); Sun 0.164 m (±0.003); ratio equals `sunMoonRatio()` to 1e-9. `tideEnvelope` at Δθ = 0 gives 2·amp = 0.781 (±0.005) and at Δθ = π/2 gives 0.289 (±0.005). `tideHeightAt` at the observer under the Moon with Sun off equals `H☾` exactly, at 90° equals −H☾/2.
@@ -419,7 +419,7 @@ window.__tidal = {
 ### 9.2 Page acceptance (headless, via `window.__tidal`)
 
 - Loads without console errors on all five tabs; `?embed=1` shows only the main panel; `?tab=xyz` falls back to `stretch`.
-- Tab 1 readouts: with `set('stretch',{D:60.3})` the rail shows exact `−0.066332`, first-order `−0.066296`, error `0.055 %`, and bulge `0.54 m`; with D = 23,482 (Sun) the bulge reads `0.25 m`; the printed magnification at D = 10 is `×5`.
+- Tab 1 readouts: with the `Moon → Earth` chip (D = D_MOON/R_EARTH = 60.336) the rail shows exact `−0.066332`, first-order `−0.066296`, error `0.055 %`, and bulge `0.54 m`; with D = 23,482 (Sun) the bulge reads `0.25 m`; the printed magnification at D = 10 is `×5`.
 - Tab 2: the readout `ΔF☉/ΔF☾` shows `0.46 ≈ 5/11`; spring `0.78 m`, neap `0.29 m`, high-tide interval `12 h 25 min`; after `step()` totalling 24 h of model time the observer dot is back at its starting angle and the Moon has advanced 12.2°; the chart's `new/1st qtr/full/3rd qtr` ticks are in increasing order and 7.38 d apart.
 - Tab 3: at δ = 3° the header shows `τ < 0 (brakes)`, the torque readout is negative, the ratio readout reads `22 ≈ 20`; at δ = 0 no torque arrow or green arrow is drawn (`labelBoxes()` contains no `net torque` entry); the lower panel with s = 1 draws the face tick on the Earth-facing side for every orbit angle (check 8 angles: tick direction · (Earth − Moon) > 0).
 - Tab 4: readouts at t = 0: `a = 60.3 R⊕`, `day = 23.9 h`, `v = 1025 m/s`, `L_spin 17 %`, `L_orb 83 %`; at t = 13.7 the magenta `tidally locked` line is present and `day` ≈ `month` ≈ 47 d; the budget chart's total line stays at 1 (the two fractions sum to 1 at every sampled t).
