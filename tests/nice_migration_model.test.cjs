@@ -17,5 +17,11 @@ const factorySource=source.slice(source.indexOf('function NiceMigrationModelFact
 let messages=[], transfers=[];const fakeSelf={postMessage(message,buffers){messages.push(message);transfers.push(buffers)}};
 vm.runInNewContext(factorySource+';NiceMigrationModelFactory().installWorker()', {self:fakeSelf,performance,setTimeout:fn=>fn()});
 fakeSelf.onmessage({data:{type:'start',params:{tEnd:.1}}});
-assert.equal(messages.at(-1).type,'done');assert.equal(messages[0].type,'progress');assert.equal(transfers[0].length,5);assert.equal(messages.at(-2).frontier,.1);
+assert.equal(messages.at(-1).type,'done');assert.equal(messages[0].type,'progress');assert.equal(transfers[0].length,6);assert.equal(messages.at(-2).frontier,.1);
 console.log('Blob factory worker protocol: passed');
+
+for(let n=0;n<=600;n++){const sn=sim.snapshot(n/10);assert.ok(sn.direction instanceof Uint8Array);assert.equal(sn.direction.length,1500);for(const d of sn.direction)assert.ok(d<=2)}
+assert.deepEqual(again.snapshot(60).direction,sim.snapshot(60).direction);assert.equal(chunk.direction.length,601*1500);
+let dirChecked=0,dirMerged=0;for(let sid=0;sid<400;sid++){const story=sim.lifeStory(sid);for(let n=1;n<=600;n++){const steps=story.steps.filter(z=>z.t>(n-1)/10+1e-9&&z.t<=n/10+1e-9);if(!steps.length)continue;const z=steps.at(-1),same=steps.filter(y=>Math.abs(y.t-z.t)<1e-9);if(same.length>1)dirMerged++;const bb=z.batchBefore,net=!Number.isFinite(z.after)?1:z.after>bb?1:z.after<bb?2:0;if(!net)continue;const sn=sim.snapshot(n/10),d=sn.direction[story.id];if(Number.isFinite(z.after)&&Math.abs(sn.data[3*story.id]-z.after)>1e-4*z.after)continue;assert.equal(d,net,`direction story ${story.id} at ${n/10}`);dirChecked++}}
+assert.ok(dirChecked>50);console.log('direction steps checked (net over most recent batch):',dirChecked,'of which several steps in one batch:',dirMerged);
+console.log('Snapshot kick directions: passed');
