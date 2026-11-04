@@ -37,8 +37,8 @@ Canvas color constants (mirror the tokens; use these names in code):
 `C={amber:'#ffcc66',cyan:'#56c7d9',magenta:'#ee65be',purple:'#a99bff',coral:'#ff7f66',green:'#56dc72',muted:'#979ea6',text:'#e7e9eb',grid:'rgba(151,158,166,.20)',bg:'#0d1015',earth:'#2f4e63',ocean:'rgba(86,199,217,.38)',moon:'#b9bec4'}`.
 
 Role assignment, used consistently on every tab:
-- **amber** = the primary / forcing body (Sun, or the planet in the Roche tab) and anything "sunward".
-- **cyan** = gravitational force arrows measured relative to the primary; ocean/bulge fill; Earth spin arrow.
+- **amber** = the other / forcing body (Sun, or the planet in the Roche tab) and anything "sunward".
+- **cyan** = gravitational force arrows measured relative to the attracting body; ocean/bulge fill; Earth spin arrow.
 - **coral** = tidal (residual) stretch, tidal acceleration, disruption debris.
 - **magenta** = the subtracted centre vector, torque arrows, "current value" markers on charts, the Roche limit.
 - **green** = self-gravity, orbital velocity arrow, "Moon gains L".
@@ -168,13 +168,13 @@ Common interactions: the main canvas gets `pointerdown/move/up` handlers; drag t
 
 ### 3.1 Tab `stretch` — "Stretch"
 
-**Teaching point.** Gravity is unequal across a finite body. Subtract the centre's pull and what is left stretches the body along the line to the primary and squeezes it across: a football. ΔF ≈ −4GMmR/d³ comes from the binomial expansion and is a first-order result.
+**Teaching point.** Gravity is unequal across a finite body. Subtract the centre's pull and what is left stretches the body along the line to the other body (mass M) and squeezes it across: a football. ΔF ≈ −4GMmR/d³ comes from the binomial expansion and is a first-order result.
 
-**Main panel** — title `Differential gravity across a body`; caption `Left: pull toward the primary at every point · Right: the same arrows minus the centre's arrow · residual arrows magnified`. The canvas is split into two equal halves by a 1 px `C.grid` vertical line. In each half the body is a disc of radius `Rpx = 0.26·min(halfWidth, height)` centred at `(halfWidth/2, height/2)`, fill `C.earth`, stroke `C.muted`. In-canvas titles (bold 12 px, `C.text`, top-left of each half): `Forces toward the primary` and `Minus the centre's force`.
+**Main panel** — title `Differential gravity across a body`; caption `Left: the pull of M at every point · Right: the same arrows minus the centre's arrow · residual arrows magnified`. The canvas is split into two equal halves by a 1 px `C.grid` vertical line. In each half the body is a disc of radius `Rpx = 0.26·min(halfWidth, height)` centred at `(halfWidth/2, height/2)`, fill `C.earth`, stroke `C.muted`. In-canvas titles (bold 12 px, `C.text`, top-left of each half): `Forces toward M` and `Minus the centre's force`.
 
-Left half: at each of the 13 `samplePoints()` draw a dot (2.5 px, `C.text`) and a **cyan** arrow for `abs`, length `kAbs·|abs|` with `kAbs` chosen so the centre arrow is `0.55·Rpx`. The centre arrow is **magenta**, 2.2 px, labelled `F_centre`. The primary: if `D ≤ 3`, draw an **amber** disc of radius `0.35·Rpx` at `(cx + D·Rpx, cy)`; otherwise draw an amber half-disc glow clipped at the right edge of the half, with an amber axis line from the body to the edge and the label `→ primary, d = {D} R` (D formatted: ≤ 100 one decimal; otherwise integer with thousands separator). Arrows always point at the true location `(D·Rpx, 0)`.
+Left half: at each of the 13 `samplePoints()` draw a dot (2.5 px, `C.text`) and a **cyan** arrow for `abs`, length `kAbs·|abs|` with `kAbs` chosen so the centre arrow is `0.55·Rpx`. The centre arrow is **magenta**, 2.2 px, labelled `F_centre`. The other body: if `D ≤ 3`, draw an **amber** disc of radius `0.35·Rpx` at `(cx + D·Rpx, cy)`; otherwise draw an amber half-disc glow clipped at the right edge of the half, with an amber axis line from the body to the edge and the label `→ M, d = {D} R` (D formatted: ≤ 100 one decimal; otherwise integer with thousands separator). Arrows always point at the true location `(D·Rpx, 0)`.
 
-Right half: same dots; **coral** arrows for `res`, length `kRes·|res|` with `kRes` chosen so the largest residual (the near point, (1,0)) is `0.55·Rpx`. A ghost of the subtracted centre vector (magenta, 40 % alpha, dashed) drawn at the centre pointing to the primary, labelled `− F_centre`. The football: a dashed **muted** ellipse, semi-axes `Rpx·1.16` along x and `Rpx·0.92` along y, label `equilibrium shape (exaggerated)` under the body. Magnification label (top-right of the half, `C.coral`): `residual arrows × {Math.round(kRes/kAbs)}` (= (D−1)²/(2D−1) ≈ D/2 − 3/4: ×4 at D = 10, ×29 at D = 60.3, ×11,740 at D = 23,482).
+Right half: same dots; **coral** arrows for `res`, length `kRes·|res|` with `kRes` chosen so the largest residual (the near point, (1,0)) is `0.55·Rpx`. A ghost of the subtracted centre vector (magenta, 40 % alpha, dashed) drawn at the centre pointing to M, labelled `− F_centre`. The football: a dashed **muted** ellipse, semi-axes `Rpx·1.16` along x and `Rpx·0.92` along y, label `equilibrium shape (exaggerated)` under the body. Magnification label (top-right of the half, `C.coral`): `residual arrows × {Math.round(kRes/kAbs)}` (= (D−1)²/(2D−1) ≈ D/2 − 3/4: ×4 at D = 10, ×29 at D = 60.3, ×11,740 at D = 23,482).
 
 Text at the bottom of the right half (`C.muted`): `stretch along the line: +2 · squeeze across: −1 (per unit of GMmR/d³)`.
 
@@ -196,9 +196,9 @@ Header readouts (`#headRead`): `d/R = {D}` · `exact/first-order = {ratio to 4 d
 2. `\Delta F=F_2-F_1=\frac{GMm}{d^2}\left[\left(1+\tfrac{R}{d}\right)^{-2}-\left(1-\tfrac{R}{d}\right)^{-2}\right]` — sub: `[\ldots]={exact}` at the current D
 3. `(1+x)^{n}\approx1+nx\;\Rightarrow\;\Delta F\approx-\frac{4GMmR}{d^{3}}` — sub: `-4R/d={value},\ \text{error}\approx2(R/d)^2={pct}\%`
 4. `\vec a_{\rm tidal}\approx\frac{GM}{d^{3}}\,(2x,\,-y,\,-z)` — sub: `\text{stretch }+2\text{ along the line, squeeze }-1\text{ across}`
-Note `<p>`: `The minus sign says the far side is pulled less. Subtracting the centre's pull leaves a field that stretches the body along the line to the primary and squeezes it across: a football. On Earth the result is a bulge of about half a metre; the ellipse and the residual arrows here are magnified.`
+Note `<p>`: `The minus sign says the far side is pulled less. Subtracting the centre's pull leaves a field that stretches the body along the line to the other body (mass M) and squeezes it across: a football. On Earth the result is a bulge of about half a metre; the ellipse and the residual arrows here are magnified.`
 
-**Rail text.** How to use: `1. Drag left–right on the left view (or use the slider) to move the primary.<br>2. Compare the two halves: equal-looking arrows on the left become a stretch-and-squeeze pattern on the right.<br>3. Watch the lower chart: the first-order formula is excellent once d ≳ 10 R.` What to notice: `All thirteen arrows point at the primary and differ only slightly; the difference is the tide. The residual field is ×2 outward along the line and ×1 inward across it, so the shape is a football, not a teardrop.` About: `Point-mass primary, exact inverse-square forces at thirteen points of a rigid sphere, residual = force minus the force at the centre. The ellipse is a fixed 1.16 : 0.92 illustration, not the computed equilibrium shape; the real equilibrium ocean tide on Earth is 0.54 m peak-to-trough for the Moon and 0.25 m for the Sun (equilibrium theory, no Love numbers). Residual arrows are rescaled so the largest is always visible; the magnification is printed on the view.`
+**Rail text.** How to use: `1. Drag left–right on the left view (or use the slider) to move the other body (mass M).<br>2. Compare the two halves: equal-looking arrows on the left become a stretch-and-squeeze pattern on the right.<br>3. Watch the lower chart: the first-order formula is excellent once d ≳ 10 R.` What to notice: `All thirteen arrows point at the other body (mass M) and differ only slightly; the difference is the tide. The residual field is ×2 outward along the line and ×1 inward across it, so the shape is a football, not a teardrop.` About: `The other body (mass M) is a point mass; exact inverse-square forces at thirteen points of a rigid sphere, residual = force minus the force at the centre. The ellipse is a fixed 1.16 : 0.92 illustration, not the computed equilibrium shape; the real equilibrium ocean tide on Earth is 0.54 m peak-to-trough for the Moon and 0.25 m for the Sun (equilibrium theory, no Love numbers). Residual arrows are rescaled so the largest is always visible; the magnification is printed on the view.`
 
 ### 3.2 Tab `tides` — "Sun & Moon"
 
@@ -314,7 +314,7 @@ Note `<p>`: `Higher orbits are slower but hold more angular momentum, so a forwa
 **Drag.** Dragging the satellite (grab radius 18 px) or anywhere on the canvas sets `r = clamp(dist(pointer, planet)/RpPx, 1.05, 6)`; the rail slider mirrors.
 
 **Controls** (eyebrow `Planet and satellite`):
-- Primary chips: `Saturn` (R_p 60,000 km, ρ_p 690) default, `Jupiter` (71,492 km, 1326), `Earth` (6371 km, 5514), `Sun` (696,000 km, 1408). Sliders `ρ_p` 300–6000 kg m⁻³ step 10 and `R_p` 1 000–1 000 000 km (log slider, num-input in km) — chips set both.
+- Planet chips: `Saturn` (R_p 60,000 km, ρ_p 690) default, `Jupiter` (71,492 km, 1326), `Earth` (6371 km, 5514), `Sun` (696,000 km, 1408). Sliders `ρ_p` 300–6000 kg m⁻³ step 10 and `R_p` 1 000–1 000 000 km (log slider, num-input in km) — chips set both.
 - Satellite chips: `Icy · 1200` default, `Comet · 500`, `Rocky · 3000`, `Moon-like · 3340`; slider `ρ_m` 300–6000 step 10; `R_m` log slider 1–2000 km default **13 km** (num-input).
 - `Distance r / R_p` slider 1.05–6 step 0.01 default **3.0**.
 - Chip `Lecture example` resets to Saturn / icy / 13 km / r = 3.0.
@@ -458,9 +458,12 @@ Also extend the first paragraph's topic list with "tidal effects".
 
 ## 12. Revisions after the first review (2026-11-03)
 
-1. Stretch: show the primary continuously on a draggable logarithmic distance ruler; explain the force fields and residual magnitude.
+1. Stretch: show the other body continuously on a draggable logarithmic distance ruler; explain the force fields and residual magnitude.
 2. Sun & Moon: show a rotating Earth symbol, contrasting ocean and a pinned observer with a radial tide gauge.
 3. Friction: show the Moon's leading bulge and torque with a playable spin-down, time trace, and Earth's present spin/orbit ratio.
 4. Spiral: calculate and annotate the locked Moon's small spin angular momentum, retain the original conserved total, and mark the Moon's face.
 5. Roche: start debris radially and show Keplerian shear into an arc and ring, controlled by elapsed orbits.
 6. Math: render rail labels and explanatory formulas in mathematical type, preserving readout keys and existing hooks.
+
+- Second review: visible references to the attracting body use M on Stretch and the body’s name elsewhere.
+- Second review: Stretch includes a four-stage subtraction demonstration, with shared centre pulls, tip gaps, removal and magnification. Its arrows follow the current distance and use the right panel’s residual scale.
