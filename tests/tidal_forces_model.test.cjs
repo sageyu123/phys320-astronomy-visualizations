@@ -11,3 +11,5 @@ test('calibration',async()=>{const m=await model,k=m.K;near(m.dadt0*k.YEAR*100,4
 test('lock',async()=>{const m=await model,k=m.K,l=m.lockState();near(l.a/k.R_EARTH,86.9,.2);near(l.P/86400,47.2,.2);near(l.t/(1e9*k.YEAR),13.7,.2);near(m.omegaOfA(l.a)/m.n(l.a),1,1e-6);assert.equal(m.evolve(20e9*k.YEAR).locked,true);});
 test('roche',async()=>{const m=await model,k=m.K,R=6e7,r=m.rocheRadius(690,1200,R),rig=m.rocheRadius(690,1200,R,k.F_RIGID);near(r,1.2254e8,1e5);near(r/R,2.04,.01);near(m.rocheRadius(690,1200,R,2.44)/R,2.03,.005);near(rig/R,1.048,.005);near(m.radiusFromMass(1e16,1200)/1000,12.6,.1);for(const s of [1e3,1e6])near(m.tidalAtSatellite(690,R,s,rig)/m.selfGravity(1200,s),1,1e-9);for(const [x,v] of [[3,'intact'],[2.3,'stretched'],[1.9,'disrupted']])assert.equal(m.disruptionState(x*R,r,rig),v);});
 
+
+test('locked Moon spin angular momentum',async()=>{const m=await model,v=m.LspinMoon(m.a0);near(v,2.32e29,2.32e27);assert.ok(v/m.Ltot<1e-5);});
