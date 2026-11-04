@@ -455,3 +455,12 @@ Also extend the first paragraph's topic list with "tidal effects".
 2. Page skeleton from planet_building (chrome, rail, strip, splitters, embed, URL params, hook).
 3. Tabs in order 1, 5, 2, 3, 4 (1 and 5 are static drawings with drag; 2 and 4 add animation; 3 reuses the bulge drawing from 1 and the orbit drawing from 2).
 4. Index card, README line, thumbnail `shot` line; regenerate the thumbnail with `tools/make_thumbs.sh` (or, if Chrome is unavailable, leave a note that the thumb needs capturing).
+
+## 12. Revisions after the first review (2026-11-03)
+
+1. Stretch: show the primary continuously on a draggable logarithmic distance ruler; explain the force fields and residual magnitude.
+2. Sun & Moon: show a rotating Earth symbol, contrasting ocean and a pinned observer with a radial tide gauge.
+3. Friction: show the Moon's leading bulge and torque with a playable spin-down, time trace, and Earth's present spin/orbit ratio.
+4. Spiral: calculate and annotate the locked Moon's small spin angular momentum, retain the original conserved total, and mark the Moon's face.
+5. Roche: start debris radially and show Keplerian shear into an arc and ring, controlled by elapsed orbits.
+6. Math: render rail labels and explanatory formulas in mathematical type, preserving readout keys and existing hooks.

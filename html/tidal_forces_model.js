@@ -21,6 +21,7 @@ export const bulgeTorqueFirstOrder=(D,delta)=>-3*Math.sin(2*delta)/D**3;
 export const stretchRatioEarthOnMoon=()=>K.M_EARTH*K.R_MOON/(K.M_MOON*K.R_EARTH);
 export const Mt=K.M_EARTH+K.M_MOON, mu=K.M_EARTH*K.M_MOON/Mt, omega0=2*Math.PI/K.SIDEREAL_DAY, a0=K.D_MOON;
 export const Lspin=omega=>K.I_EARTH*omega, Lorb=a=>mu*Math.sqrt(K.G*Mt*a), Ltot=Lspin(omega0)+Lorb(a0), n=a=>Math.sqrt(K.G*Mt/a**3), vorb=a=>Math.sqrt(K.G*Mt/a), omegaOfA=a=>(Ltot-Lorb(a))/K.I_EARTH;
+export const LspinMoon=a=>0.3929*K.M_MOON*K.R_MOON**2*n(a);
 export const dPdt=K.PDOT_PER_CENTURY/(100*K.YEAR), dOmegaDt0=-omega0*dPdt/K.SIDEREAL_DAY, torque0=K.I_EARTH*dOmegaDt0, dadt0=-torque0/(.5*mu*Math.sqrt(K.G*Mt/a0));
 export const dadt=a=>dadt0*(a0/a)**5.5, aOfT=t=>(a0**6.5+6.5*dadt0*a0**5.5*t)**(2/13), tOfA=a=>(a**6.5-a0**6.5)/(6.5*dadt0*a0**5.5);
 export function lockState(){let lo=a0,hi=10*a0;for(let i=0;i<100;i++){const mid=(lo+hi)/2;if(omegaOfA(mid)>n(mid))lo=mid;else hi=mid;}const a=(lo+hi)/2;return {a,P:2*Math.PI/n(a),t:tOfA(a)};}
