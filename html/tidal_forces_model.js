@@ -28,3 +28,22 @@ export function lockState(){let lo=a0,hi=10*a0;for(let i=0;i<100;i++){const mid=
 export function evolve(tSeconds){const lock=lockState(),t=Math.max(-1e9*K.YEAR,Math.min(lock.t,tSeconds)),a=t===lock.t?lock.a:aOfT(t),omega=omegaOfA(a),motion=n(a),spin=Lspin(omega),orb=Lorb(a);return {t,a,omega,n:motion,day:2*Math.PI/omega,month:2*Math.PI/motion,v:vorb(a),Lspin:spin,Lorb:orb,Ltot,fracSpin:spin/Ltot,fracOrb:orb/Ltot,locked:a>=lock.a-1};}
 export const primaryMass=(rhoP,Rp)=>4/3*Math.PI*rhoP*Rp**3, satelliteMass=(rhoM,Rm)=>4/3*Math.PI*rhoM*Rm**3, selfGravity=(rhoM,Rm)=>K.G*satelliteMass(rhoM,Rm)/Rm**2, tidalAtSatellite=(rhoP,Rp,Rm,r)=>2*K.G*primaryMass(rhoP,Rp)*Rm/r**3, rocheRadius=(rhoP,rhoM,Rp,f=K.F_ROCHE)=>f*Math.cbrt(rhoP/rhoM)*Rp, radiusFromMass=(mass,rho)=>Math.cbrt(3*mass/(4*Math.PI*rho));
 export const disruptionState=(r,rRoche,rRigid)=>r>1.25*rRoche?'intact':r>rRoche?'stretched':'disrupted', elongation=(r,rRoche)=>Math.max(0,Math.min(1,(rRoche/r)**3));
+// Circular orbit and linearized motion in the parent moon's rotating frame (SI units).
+export const orbitalPeriod=(r,rhoP,Rp)=>2*Math.PI*Math.sqrt(r**3/(K.G*primaryMass(rhoP,Rp)));
+export const ringCloseOrbits=(r,Rm)=>r/(18*Rm);
+export const ringCloseTime=(r,Rm,rhoP,Rp)=>ringCloseOrbits(r,Rm)*orbitalPeriod(r,rhoP,Rp);
+export const hillDebris=(x0,orbits)=>{const theta=2*Math.PI*orbits;return {x: x0*(4-3*Math.cos(theta)),y: 6*x0*(Math.sin(theta)-theta)};};
+export const debrisPieces=(r,Rm,orbits,phi0=0,count=24)=>Array.from({length:count},(_,i)=>{const x0=1.5*Rm*(2*i/(count-1)-1),{x,y}=hillDebris(x0,orbits);return {x0,x,y,phi:phi0+y/r};});
+export const debrisRadialSpread=(Rm,orbits)=>3*Rm*(4-3*Math.cos(2*Math.PI*orbits));
+export const ringWidth=Rm=>12*Rm;
+export const ringBandWidth=Rm=>7*ringWidth(Rm)/4;
+
+// Frozen-in stellar disruption by a million-solar-mass black hole (SI units).
+K.R_SUN=6.957e8;
+export const TDE_MU=K.G*1e6*K.M_SUN, tidalRadius=()=>K.R_SUN*100;
+export function plungePieces(rp,count=40){const vp=Math.sqrt(2*TDE_MU/rp);return Array.from({length:count},(_,i)=>{let delta=K.R_SUN*(2*i/(count-1)-1),r0=rp+delta,h=r0*vp,eps=vp*vp/2-TDE_MU/r0,e=h*h/(TDE_MU*r0)-1;return {delta,r0,h,eps,e,bound:eps<0,weight:1-(delta/K.R_SUN)**2};});}
+// Monotonic Kepler equations: safeguarded Newton iteration inside a bracket.
+function solveMonotone(f,df,target,lo,hi){let x=(lo+hi)/2;for(let i=0;i<100;i++){let v=f(x)-target;if(Math.abs(v)<1e-14*Math.max(1,Math.abs(target)))break;if(v>0)hi=x;else lo=x;let n=x-v/df(x);x=n>lo&&n<hi?n:(lo+hi)/2;}return x;}
+export function propagatePlunge(p,t){let {e,r0,h,eps}=p,mu=TDE_MU,x,y,vx,vy;if(Math.abs(e-1)<1e-8){let B=t*Math.sqrt(mu/(2*r0**3)),D=2*Math.sinh(Math.asinh(1.5*B)/3);x=r0*(1-D*D);y=2*r0*D;let dD=Math.sqrt(mu/(2*r0**3))/(1+D*D);vx=-2*r0*D*dD;vy=2*r0*dD;}else if(e<1){let a=-mu/(2*eps),n=Math.sqrt(mu/a**3),M=((n*t+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI,E=solveMonotone(z=>z-e*Math.sin(z),z=>1-e*Math.cos(z),M,-Math.PI,Math.PI),d=n/(1-e*Math.cos(E)),b=Math.sqrt(1-e*e);x=a*(Math.cos(E)-e);y=a*b*Math.sin(E);vx=-a*Math.sin(E)*d;vy=a*b*Math.cos(E)*d;}else{let a=mu/(2*eps),n=Math.sqrt(mu/a**3),M=n*t,hi=Math.max(1,Math.asinh(Math.abs(M)/e)+1);while(e*Math.sinh(hi)-hi<Math.abs(M))hi*=2;let H=solveMonotone(z=>e*Math.sinh(z)-z,z=>e*Math.cosh(z)-1,M,-hi,hi),d=n/(e*Math.cosh(H)-1),b=Math.sqrt(e*e-1);x=a*(e-Math.cosh(H));y=a*b*Math.sinh(H);vx=-a*Math.sinh(H)*d;vy=a*b*Math.cosh(H)*d;}return {x,y,vx,vy};}
+export function plungeSummary(rp){let pieces=plungePieces(rp),p=pieces[0],a=-TDE_MU/(2*p.eps),tMin=2*Math.PI*Math.sqrt(a**3/TDE_MU),total=pieces.reduce((s,q)=>s+q.weight,0),fracBound=pieces.filter(q=>q.bound).reduce((s,q)=>s+q.weight,0)/total;let tPeak=2*Math.PI*Math.sqrt((rp**2/(2*K.R_SUN))**3/TDE_MU)*(9/5)**(3/4);return {pieces,tMin,fracBound,peak:{t:tPeak,mdot:fallbackRate(rp,tPeak)}};}
+export function fallbackRate(rp,t){let p=plungePieces(rp)[0],a=-TDE_MU/(2*p.eps),tMin=2*Math.PI*Math.sqrt(a**3/TDE_MU);if(t<=tMin)return 0;let eps=-((Math.PI*TDE_MU/(Math.SQRT2*t))**(2/3)),delta=eps*rp**2/TDE_MU;if(Math.abs(delta)>=K.R_SUN)return 0;return 3*K.M_SUN/(4*K.R_SUN)*(1-(delta/K.R_SUN)**2)*rp**2/TDE_MU*(2/3)*Math.abs(eps)/t;}
