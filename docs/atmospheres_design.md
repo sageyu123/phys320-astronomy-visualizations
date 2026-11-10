@@ -968,3 +968,13 @@ The owner chose option A plus a toggle. The real image identifies the planet. Th
    - spinSense is −1 for Venus and Uranus and +1 otherwise.
    - Frame time ≤ 20 ms at 1280×800 with the image view spinning.
    - No label overlaps (labels, parcels' text and the toggle).
+
+#### B.9.10 Photons land across the day hemisphere, not only on the limb (owner, 2026-11-10)
+Packets travel in the screen plane, so every hit lands on the limb. That is right for a 2-D cut but gives the wrong impression. Give each packet a 3-D path instead:
+- **Sampling.** At spawn, draw (y, z) uniformly over the disk of radius R_planet: y is screen-vertical, and z is depth toward the viewer, with z > 0 in front. The spawn rate stays exactly 40/s × (1 AU/r)². The packet moves along +x at the existing speed.
+- **Hit point.** The packet hits the sphere at $x_\mathrm{hit}=x_c-\sqrt{R^2-y^2-z^2}$ (screen px) and is absorbed or reflected there. So hits fill the whole lit half of the disk: densest near the limb and thinning toward the terminator, as the projected illumination does.
+- **Visibility.** Packets with z ≥ 0 stay visible as they cross the disk face to their hit point; draw them over the planet image with the same dash. Packets with z < 0 disappear when they reach the limb (x = x_c − √(R² − y²)), because they are behind the planet. They still count toward the rate and the absorbed/reflected tallies, but their hit marks are not drawn.
+- **Reflection.** Reflected packets leave from the hit point within ±60° of the 3-D outward normal (x_hit − x_c, y, z)/R, projected onto the screen.
+- **Heat parcels** (B.6.8/B.9.9) are born at the visible hit point: latitude and longitude from (y, z). In fast mode they ride the rotation from there.
+- **Hook.** debug().albedoMain gains hitSpread: the standard deviation of the visible hits' x_hit, in units of R.
+- **Check albedoMain.hits:** after 3 s at 0.387 AU, the visible hits cover the lit half disk. Divide the lit half (from x_c − R to x_c) into 4 equal x-bins; every bin must hold ≥ 5 % of the visible hits, and no hit may lie on the night side (x_hit > x_c + 1 px).
