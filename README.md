@@ -1,6 +1,6 @@
 # NJIT PHYS 320 Fall 2026: Astronomy Teaching Visualizations
 
-Interactive teaching visualizations for PHYS 320 (Astronomy) at NJIT, Fall 2026 — covering the historical development of planetary models (Ptolemaic geocentric astronomy and its heliocentric equivalence), sky coordinates, Kepler's laws, two-body orbits, Newton's cannon and orbital energy, stellar parallax and magnitudes, and tidal effects.
+Interactive teaching visualizations for PHYS 320 (Astronomy) at NJIT, Fall 2026 — covering the historical development of planetary models (Ptolemaic geocentric astronomy and its heliocentric equivalence), sky coordinates, Kepler's laws, two-body orbits, Newton's cannon and orbital energy, stellar parallax and magnitudes, tidal effects, and planetary atmospheres and escape.
 
 ## Entry Points
 - Live site: <https://sageyu123.github.io/phys320-astronomy-visualizations/>
@@ -18,6 +18,8 @@ Interactive teaching visualizations for PHYS 320 (Astronomy) at NJIT, Fall 2026 
 - `html/nice_model.html` — Planetary migration (the Nice model): one planetesimal flyby and the planet's response, thousands of such flybys that move Jupiter in and the other giants out, a scripted replay of the 2:1 crossing and the Late Heavy Bombardment, and the Kuiper belt and Oort cloud left behind.
 - `html/planet_building.html` — Building the planets: the snow line and the solids available at each radius, runaway growth in a shearing patch of planetesimals, and the asteroid belt, where Jupiter's stirring makes collisions destructive and its resonances carve the Kirkwood gaps.
 - `html/tidal_forces.html` — Tidal forces: differential gravity across a body and the football shape, Sun versus Moon tides with spring and neap, tidal friction and the braking torque, the Earth–Moon spiral-out by angular-momentum conservation, and the Roche limit with the Saturn-ring example.
+- `html/atmospheric_escape.html` — Atmospheric escape: kinetic theory and the Maxwell–Boltzmann distribution built by collisions, the high-speed tail and Jeans escape, and which bodies keep which gases.
+- `html/planet_atmospheres.html` — Planet atmospheres: albedo and equilibrium temperatures, hydrostatic equilibrium and scale height, Earth's temperature structure, and the magnetosphere.
 
 ## Running Locally
 Serve the folder with `python3 -m http.server`, then open the local address in a modern browser. Pages such as Geometric Optics load local JavaScript modules and require an HTTP server rather than opening the HTML file directly.
